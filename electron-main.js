@@ -5,6 +5,8 @@ const fs = require('fs');
 // 1. Remove AutomationControlled flag and align User-Agent with the EXACT Chromium version
 // so Cloudflare Turnstile (main frame + Web Workers + Sec-CH-UA Client Hints) match 100%.
 app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
+// Hafiflik: önceden açılmış yedek renderer süreci tutma (her zaman boşta ~20-40 MB)
+app.commandLine.appendSwitch('disable-features', 'SpareRendererForSitePerProcess');
 const exactChromeUA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
 app.userAgentFallback = exactChromeUA;
 
@@ -53,7 +55,8 @@ function main() {
   }
   process.env.TORN_DATA_DIR = persistentDataDir;
 
-  const { startServer, stockProductNames, ingestStockDeliveries, warMemberStatuses } = require('./server');
+  const { startServer, stockProductNames, ingestStockDeliveries, warMemberStatuses, flushData, myPlayerId } = require('./server');
+  app.on('will-quit', () => { try { flushData(); } catch {} });
   const { ensureTornTools } = require('./torntools');
   const { externalGoogleLogin } = require('./external-login');
   const updater = require('./updater');
@@ -118,15 +121,26 @@ function main() {
     } catch {}
   }
 
-  /* Torn'un React sayfaları (Crimes 2.0 hub'ı vb.) oyuncu kimliğini `uid` çerezinden okuyup
-     crimesHubApi.php'ye userID olarak gönderir. Eski oturum aktarımından/girişlerden kalan yinelenen
-     ya da yanlış `uid` çerezi bu isteği reddettirir → "Invalid hub status batch response".
-     Sayfanın kendi bildirdiği gerçek kimlikle (script[uid]) karşılaştırıp çerezi onarıyoruz. */
+  /* Torn'un React sayfaları (Crimes 2.0 hub'ı vb.) oyuncu numarasını document.cookie'deki İLK `uid`
+     değerinden okuyup crimesHubApi.php'ye userID olarak gönderir. Eski bir oturum aktarımından kalan
+     yanlış/yinelenen `uid` çerezi öne geçerse Torn "Wrong api key" döner → "Invalid hub status batch response".
+     Doğru numara sırasıyla: sayfanın bildirdiği kimlik, tek sayısal çerez, API key sahibinin numarası. */
   const UID_CHECK_JS = `(() => {
-    const real = document.querySelector('script[uid][name]')?.getAttribute('uid') || null;
+    let real = document.querySelector('script[uid][name]')?.getAttribute('uid') || '';
+    if (!/^\\d+$/.test(real)) { try { real = String(JSON.parse(document.getElementById('torn-user')?.value || 'null')?.id ?? ''); } catch { real = ''; } }
     const uids = document.cookie.split(/;\\s*/).filter((c) => c.startsWith('uid=')).map((c) => decodeURIComponent(c.slice(4)));
-    return { real, uids };
+    return { real: /^\\d+$/.test(real) ? real : null, uids };
   })()`;
+  const uidShape = (v) => (/^\d+$/.test(v) ? `sayı(${v.length})` : `sayı değil(${v.length})`);
+
+  function pickRealUid(r, loggedIn) {
+    if (r.real) return r.real;
+    const numeric = [...new Set(r.uids.filter((u) => /^\d+$/.test(u)))];
+    if (numeric.length === 1) return numeric[0];
+    const appId = myPlayerId();
+    if (appId && (numeric.includes(appId) || (numeric.length === 0 && loggedIn))) return appId;
+    return null;
+  }
 
   async function repairUidCookie(id) {
     const t = tabs.get(id);
@@ -135,26 +149,118 @@ function main() {
     if (wc.isDestroyed() || !isTornUrl(wc.getURL())) return;
     try {
       const r = await wc.executeJavaScript(UID_CHECK_JS, true);
-      if (!r || !/^\d+$/.test(String(r.real || ''))) return; // giriş yapılmamış
-      if (r.uids.length === 1 && r.uids[0] === r.real) return; // sağlıklı
+      if (!r) return;
+      const real = pickRealUid(r, t.loggedIn === true);
+      if (!real) return; // giriş yapılmamış ya da numara belirsiz
+      if (r.uids.length && r.uids.every((u) => u === real)) return; // sağlıklı
       const ses = wc.session;
-      const stale = (await ses.cookies.get({ name: 'uid' })).filter((c) => /(^|\.)torn\.com$/i.test(c.domain));
-      for (const c of stale) {
-        try { await ses.cookies.remove(`https://${c.domain.replace(/^\./, '')}${c.path || '/'}`, 'uid'); } catch {}
-      }
+      const urls = new Set((await ses.cookies.get({ name: 'uid' }))
+        .filter((c) => /(^|\.)torn\.com$/i.test(c.domain))
+        .map((c) => `https://${c.domain.replace(/^\./, '')}${c.path || '/'}`));
+      for (const url of urls) { try { await ses.cookies.remove(url, 'uid'); } catch {} }
       await ses.cookies.set({
-        url: 'https://www.torn.com', domain: '.torn.com', path: '/', name: 'uid', value: r.real,
+        url: 'https://www.torn.com', domain: '.torn.com', path: '/', name: 'uid', value: real,
         secure: true, sameSite: 'lax', expirationDate: Math.floor(Date.now() / 1000) + 365 * 86400,
       });
       try { await ses.cookies.flushStore(); } catch {}
-      log('uid çerezi onarıldı:', `${r.uids.length} çerez → 1`);
+      log('uid çerezi onarıldı:', `[${r.uids.map(uidShape).join(', ') || 'yok'}] → ${uidShape(real)}`);
       // Hata veren sayfa çerezi yüklenirken okuduğu için bir kez yenile
       if (!t.uidRepaired) { t.uidRepaired = true; wc.reload(); }
-    } catch {}
+    } catch (e) { log('uid onarım hatası:', e.message); }
   }
 
   function sendToRenderer(channel, payload) {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+  }
+
+  /* ---- Crimes teşhisi: Crimes sayfası açılınca Torn'un Crimes isteklerini (crimesData / crimesHubApi.php)
+     DevTools protokolüyle izler; yalnızca HATALI yanıtları startup.log'a yazar ve ilk sağlıklı hub yanıtında
+     kendini kapatır. Anahtar/token alanları maskelenir, çerez değerleri yazılmaz. */
+  const CRIMES_REQ = /\/(crimesHubApi\.php|page\.php\?[^#]*sid=crimesData)/i;
+  const maskSecrets = (v, depth = 0) => {
+    if (depth > 6 || v == null || typeof v !== 'object') return v;
+    const out = Array.isArray(v) ? [] : {};
+    for (const [k, x] of Object.entries(v)) {
+      out[k] = /key|token|secret|pass|rfc/i.test(k) && x != null && typeof x !== 'object' ? `[gizli, ${String(x).length} karakter]` : maskSecrets(x, depth + 1);
+    }
+    return out;
+  };
+  const summarizeBody = (text) => {
+    try {
+      const j = maskSecrets(JSON.parse(text));
+      const s = JSON.stringify(j);
+      if (s.length <= 900) return s;
+      const db = j && j.DB && typeof j.DB === 'object' ? j.DB : null;
+      return `JSON ${s.length}b · keys=[${Object.keys(j || {}).join(',')}]${db ? ` · DB.keys=[${Object.keys(db).join(',')}] · DB.time=${db.time} · DB.error=${JSON.stringify(db.error ?? null)}` : ''} · ${s.slice(0, 400)}…`;
+    } catch {
+      return `metin ${text.length}b: ${text.replace(/\s+/g, ' ').slice(0, 500)}`;
+    }
+  };
+  const hubOk = (text) => {
+    try {
+      const j = JSON.parse(text);
+      const db = j && typeof j === 'object' && j.DB && typeof j.DB === 'object' ? j.DB : j;
+      return !!db && typeof db === 'object' && !('error' in db) && !('error' in j);
+    } catch { return false; }
+  };
+  const summarizeForm = (post) => {
+    const fields = {};
+    for (const m of String(post || '').matchAll(/name="([^"]+)"\r?\n\r?\n([^\r\n]*)/g)) fields[m[1]] = m[2];
+    if (!Object.keys(fields).length) for (const [k, v] of new URLSearchParams(String(post || ''))) fields[k] = v;
+    if (fields.userID != null) fields.userID = uidShape(String(fields.userID));
+    return JSON.stringify(maskSecrets(fields));
+  };
+
+  async function watchCrimes(id) {
+    const t = tabs.get(id);
+    if (!t || t.crimesDiag) return;
+    const wc = t.view.webContents;
+    const dbg = wc.debugger;
+    try { if (!dbg.isAttached()) dbg.attach('1.3'); } catch (e) { log('crimes-diag attach:', e.message); return; }
+    t.crimesDiag = { count: 0, reqs: new Map() };
+    const onDetach = () => { t.crimesDiag = null; dbg.removeListener('message', onMessage); dbg.removeListener('detach', onDetach); };
+    t.crimesDiag.stop = () => { try { if (dbg.isAttached()) dbg.detach(); } catch {} onDetach(); };
+    const onMessage = async (_e, method, p) => {
+      const d = t.crimesDiag;
+      if (!d || d.count > 40) return;
+      try {
+        if (method === 'Network.requestWillBeSent' && CRIMES_REQ.test(p.request.url)) {
+          d.reqs.set(p.requestId, { url: p.request.url.replace(/([?&]rfcv=)[^&#]+/i, '$1…'), method: p.request.method, form: p.request.postData ? summarizeForm(p.request.postData) : '' });
+        } else if (method === 'Network.responseReceived' && d.reqs.has(p.requestId)) {
+          const h = p.response.headers || {};
+          const pick = (n) => h[n] ?? h[n.toLowerCase()] ?? Object.entries(h).find(([k]) => k.toLowerCase() === n.toLowerCase())?.[1];
+          Object.assign(d.reqs.get(p.requestId), { status: p.response.status, type: p.response.mimeType, retry: pick('Retry-After'), cfRay: pick('cf-ray'), server: pick('server') });
+        } else if ((method === 'Network.loadingFinished' || method === 'Network.loadingFailed') && d.reqs.has(p.requestId)) {
+          const r = d.reqs.get(p.requestId);
+          d.reqs.delete(p.requestId);
+          const isHub = /crimesHubApi/i.test(r.url);
+          let body = method === 'Network.loadingFailed' ? `YÜKLENEMEDİ: ${p.errorText}${p.blockedReason ? ` (${p.blockedReason})` : ''}` : '';
+          if (!body) {
+            const res = await dbg.sendCommand('Network.getResponseBody', { requestId: p.requestId });
+            const text = res.base64Encoded ? Buffer.from(res.body, 'base64').toString('utf8') : res.body;
+            if (r.status === 200 && hubOk(text)) {
+              if (isHub) { t.crimesOk = true; log('[crimes-diag] Crimes hub yanıtı sağlıklı, izleme kapatıldı'); d.stop(); }
+              return;
+            }
+            body = summarizeBody(text);
+          }
+          d.count++;
+          let uid = '';
+          if (isHub) {
+            const chk = await wc.executeJavaScript(UID_CHECK_JS, true).catch(() => null);
+            const real = chk && pickRealUid(chk, t.loggedIn === true);
+            uid = chk ? `\n    uid çerezleri=[${chk.uids.map(uidShape).join(', ') || 'yok'}] · sayfa kimliği=${chk.real ? 'var' : 'yok'} · doğru numara=${real ? `${uidShape(real)}${real === chk.uids[0] ? ', önde' : ', önde DEĞİL'}` : 'belirsiz'}` : '';
+            if (real && real !== chk.uids[0]) repairUidCookie(id);
+          }
+          log(`[crimes-diag] ${r.method} ${r.url} → ${r.status ?? '-'} ${r.type || ''}${r.retry ? ` retry-after=${r.retry}` : ''}${r.cfRay ? ` cf-ray=${r.cfRay}` : ''}${r.form ? `\n    istek: ${r.form}` : ''}\n    yanıt: ${body}${uid}`);
+        }
+      } catch (e) { log('crimes-diag err:', e.message); }
+    };
+    dbg.on('detach', onDetach);
+    dbg.on('message', onMessage);
+    try {
+      await dbg.sendCommand('Network.enable', { maxPostDataSize: 4096 });
+    } catch (e) { log('crimes-diag enable:', e.message); }
   }
 
   /* ---- LRX Torn yardımcıları: Torn sekmelerine enjekte edilen betikler (torn-helpers/) ---- */
@@ -226,7 +332,7 @@ function main() {
         icon: APP_ICON,
         backgroundColor: '#111111',
         parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
-        webPreferences: { partition: PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true },
+        webPreferences: { partition: PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false },
       },
     };
   }
@@ -270,14 +376,15 @@ function main() {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
+        spellcheck: false,
       },
     });
 
     mainWindow.contentView.addChildView(view);
-    tabs.set(id, { id, view, url, loggedIn: null });
+    tabs.set(id, { id, view, url, loggedIn: null, lastActive: Date.now(), sleptUrl: null });
 
     if (activate) {
-      activeTabId = id;
+      markActive(id);
     }
     // Set initial bounds BEFORE loadURL so Cloudflare Turnstile never sees 0x0 viewport
     const [width, height] = mainWindow.getContentSize();
@@ -309,6 +416,14 @@ function main() {
     guardGoogleNavigation(wc);
 
     wc.on('did-start-loading', () => sendTabUpdate(id));
+    // Torn Crimes'a hem tam yüklemeyle hem de sayfa içi (SPA) geçişle gelinebilir; ikisini de izle
+    wc.on('did-start-navigation', (_e, navUrl, inPlace, isMainFrame) => {
+      const t = tabs.get(id);
+      if (!isMainFrame || !t) return;
+      if (!inPlace) t.crimesOk = false; // yeni belge: Crimes yeniden doğrulanmalı
+      if (/^https:\/\/www\.torn\.com\/page\.php\?(.*&)?sid=crimes(&|#|$)/i.test(navUrl)) { if (!t.crimesOk) watchCrimes(id); }
+      else t.crimesDiag?.stop(); // Crimes'tan çıkıldı
+    });
     wc.on('did-stop-loading', () => { sendTabUpdate(id); checkTornLogin(id); repairUidCookie(id); injectTornHelpers(id); });
     // F12 / Ctrl+Shift+I → Torn sekmesinin geliştirici araçları (sorun teşhisi için)
     wc.on('before-input-event', (e, input) => {
@@ -327,8 +442,47 @@ function main() {
     return { id, url };
   });
 
+  /* ---- Kullanılmayan sekmeleri uyut: uzun süre açılmayan Torn sekmesinin sayfası RAM'den boşaltılır
+     (about:blank), sekmeye dönülünce kaldığı adrese yeniden yüklenir. Ayarlar → app.tabSleep */
+  const TAB_SLEEP_MS = Number(process.env.TT_TAB_SLEEP_MS) || 20 * 60_000; // ortam değişkeni yalnızca test için
+  function markActive(id) {
+    const prev = tabs.get(activeTabId);
+    if (prev) prev.lastActive = Date.now(); // arka plana geçtiği an
+    activeTabId = id || 'tracker';
+    const t = tabs.get(activeTabId);
+    if (t) { t.lastActive = Date.now(); wakeTab(t); }
+  }
+  function sleepTab(t) {
+    const wc = t.view.webContents;
+    if (t.sleptUrl || wc.isDestroyed() || wc.isLoading()) return;
+    const url = wc.getURL();
+    if (!/^https?:\/\//i.test(url)) return;
+    t.sleptUrl = url;
+    wc.loadURL('about:blank').catch(() => {});
+    log('sekme uyutuldu:', t.id);
+  }
+  function wakeTab(t) {
+    if (!t.sleptUrl) return;
+    const url = t.sleptUrl;
+    t.sleptUrl = null;
+    const wc = t.view.webContents;
+    if (wc.isDestroyed()) return;
+    const h = wc.navigationHistory;
+    const blankIdx = h.getActiveIndex();
+    wc.loadURL(url)
+      .then(() => { // Geri tuşu boş sayfaya gitmesin
+        try { if (/^about:blank/.test(h.getEntryAtIndex(blankIdx)?.url || '') && h.getActiveIndex() !== blankIdx) h.removeEntryAtIndex(blankIdx); } catch {}
+      })
+      .catch((e) => log('wake err:', e.message));
+  }
+  setInterval(() => {
+    if (!featureEnabled('app.tabSleep')) return;
+    const now = Date.now();
+    for (const [id, t] of tabs) if (id !== activeTabId && now - t.lastActive > TAB_SLEEP_MS) sleepTab(t);
+  }, 60_000);
+
   ipcMain.handle('tab-activate', async (_event, tabId) => {
-    activeTabId = tabId || 'tracker';
+    markActive(tabId);
     layoutViews();
     if (activeTabId !== 'tracker' && tabs.has(activeTabId)) {
       sendTabUpdate(activeTabId);
@@ -353,6 +507,7 @@ function main() {
     const t = tabs.get(tabId);
     if (!t) return;
     t.url = url;
+    t.sleptUrl = null;
     t.view.webContents.loadURL(url).catch((e) => log('nav err:', e.message));
   });
 
@@ -433,6 +588,7 @@ function main() {
     const t = tabs.get(tabId);
     if (!t) return;
     const wc = t.view.webContents;
+    if (t.sleptUrl) return wakeTab(t); // uyuyan sekme: önce kaldığı sayfayı geri yükle
     if (action === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
     else if (action === 'forward' && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
     else if (action === 'reload') wc.reload();
@@ -457,7 +613,7 @@ function main() {
   // ya da dosyalar uygulama açıkken değişti) yeniden başlatmak gerekir; bunu ayrıca bildiriyoruz.
   const runningVersion = updater.currentVersion();
   const restartPending = () => updater.cmpVersion(updater.currentVersion(), runningVersion) > 0;
-  const relaunch = () => setTimeout(() => { app.relaunch(); app.exit(0); }, 800);
+  const relaunch = () => setTimeout(() => { try { flushData(); } catch {} app.relaunch(); app.exit(0); }, 800);
   ipcMain.handle('app-version', async () => runningVersion);
   ipcMain.handle('update-check', async () => {
     const url = updateUrl();
@@ -502,7 +658,7 @@ function main() {
     const exp = Math.floor(Date.now() / 1000) + 365 * 86400;
     const pairs = [];
     if (phpSessId && String(phpSessId).trim()) pairs.push(['PHPSESSID', String(phpSessId).trim()]);
-    if (uid && String(uid).trim()) pairs.push(['uid', String(uid).trim()]);
+    if (uid && /^\d+$/.test(String(uid).trim())) pairs.push(['uid', String(uid).trim()]);
     if (pass && String(pass).trim()) pairs.push(['pass', String(pass).trim()]);
     if (raw && String(raw).trim()) {
       for (const part of String(raw).split(';')) {
@@ -510,7 +666,7 @@ function main() {
         if (idx > 0) {
           const k = part.slice(0, idx).trim();
           const v = part.slice(idx + 1).trim();
-          if (k && v) pairs.push([k, v]);
+          if (k && v && !(k === 'uid' && !/^\d+$/.test(v))) pairs.push([k, v]);
         }
       }
     }
@@ -534,6 +690,8 @@ function main() {
 
   function setupTornSession(tornSession) {
     tornSession.setUserAgent(exactChromeUA);
+    try { tornSession.setSpellCheckerEnabled(false); } catch {}
+    try { session.defaultSession.setSpellCheckerEnabled(false); } catch {}
   }
 
   function featureEnabled(key) {
@@ -600,6 +758,7 @@ function main() {
           preload: path.join(__dirname, 'preload.js'),
           contextIsolation: true,
           nodeIntegration: false,
+          spellcheck: false,
         },
       });
 

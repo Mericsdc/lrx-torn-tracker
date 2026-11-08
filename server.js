@@ -30,9 +30,9 @@ const DEFAULT_CONFIG = { apiKey: process.env.TORN_API_KEY || '', ffscouterKey: '
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
 }
-function writeJson(file, obj) {
+function writeJson(file, obj, pretty = false) {
   const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2));
+  fs.writeFileSync(tmp, pretty ? JSON.stringify(obj, null, 2) : JSON.stringify(obj)); // büyük dosyalar sıkışık (yarı boyut)
   fs.renameSync(tmp, file);
 }
 
@@ -41,8 +41,15 @@ let history = readJson(HISTORY_FILE, { days: [], addiction: {}, user: {}, stockO
 history.days ||= []; history.addiction ||= {}; history.user ||= {}; history.stockOrders ||= {};
 history.stockDeliveries ||= { at: 0, items: [] };
 
-const saveConfig = () => writeJson(CONFIG_FILE, config);
-const saveHistory = () => writeJson(HISTORY_FILE, history);
+const saveConfig = () => writeJson(CONFIG_FILE, config, true);
+// Geçmiş her yenilemede değil, 10 sn içindeki değişiklikler toplanıp tek seferde yazılır
+let historyTimer = null;
+function flushHistory() {
+  clearTimeout(historyTimer);
+  historyTimer = null;
+  try { writeJson(HISTORY_FILE, history); } catch (e) { console.warn('[history]', e.message); }
+}
+const saveHistory = () => { if (!historyTimer) historyTimer = setTimeout(flushHistory, 10_000); };
 const ffKey = () => config.ffscouterKey || config.apiKey;
 
 /** Torn şirket günü her gün 18:00 TCT (UTC)'de yenilenir */
@@ -279,7 +286,8 @@ const COUNTRIES = {
 const STOCK_FILE = path.join(DATA, 'travel-stock.json');
 let stockLog = readJson(STOCK_FILE, {}); // "kod:id" -> { q, t, restocks: [ts], empties: [ts], samples: [[ts, adet]] }
 let stockDirty = false;
-setInterval(() => { if (stockDirty) { stockDirty = false; try { writeJson(STOCK_FILE, stockLog); } catch {} } }, 60_000).unref();
+const flushStocks = () => { if (stockDirty) { stockDirty = false; try { writeJson(STOCK_FILE, stockLog); } catch {} } };
+setInterval(flushStocks, 60_000).unref();
 const QUARTER = 900; // Torn yurt dışı stokları çeyrek saatlerde yenilenir
 const pushMax = (arr, v, max) => { if (arr[arr.length - 1] !== v) arr.push(v); while (arr.length > max) arr.shift(); };
 const median = (a) => { if (!a.length) return null; const b = [...a].sort((x, y) => x - y); return b[Math.floor(b.length / 2)]; };
@@ -1103,4 +1111,14 @@ if (require.main === module) {
   startServer(PORT);
 }
 
-module.exports = { startServer, server, stockProductNames, ingestStockDeliveries, warMemberStatuses };
+// Kapanış / yeniden başlatma öncesi bekleyen yazmaları diske al
+function flushData() {
+  if (historyTimer) flushHistory();
+  flushStocks();
+}
+process.on('exit', flushData);
+
+// API key sahibinin oyuncu numarası (Torn sekmesindeki `uid` çerezini doğrulamak için)
+const myPlayerId = () => { const id = Number(history.lastOverview?.player?.id); return Number.isInteger(id) && id > 0 ? String(id) : null; };
+
+module.exports = { startServer, server, stockProductNames, ingestStockDeliveries, warMemberStatuses, flushData, myPlayerId };

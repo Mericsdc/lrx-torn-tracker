@@ -68,13 +68,13 @@ svg text { fill: currentColor; }
 }
 
 /* ---------- Smoked Obsidian Liquid Glass ---------- */
+/* Performans: kartlarda backdrop-filter yok. Arka plan zaten neredeyse düz koyu olduğundan
+   bulanıklık görünmüyordu ama her kart için ayrı GPU yüzeyi ve her yazı değişiminde yeniden blur demekti. */
 .glass {
   position: relative;
-  background: linear-gradient(165deg, rgba(20, 25, 29, 0.78) 0%, rgba(9, 11, 14, 0.88) 100%);
+  background: linear-gradient(165deg, rgba(20, 25, 29, 0.93) 0%, rgba(9, 11, 14, 0.96) 100%);
   border: 1px solid var(--stroke);
   border-radius: var(--radius);
-  backdrop-filter: blur(24px) saturate(130%);
-  -webkit-backdrop-filter: blur(24px) saturate(130%);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.09),
     inset 1px 0 0 rgba(255, 255, 255, 0.03),
@@ -92,8 +92,8 @@ svg text { fill: currentColor; }
 }
 .glass-pill {
   display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: var(--radius-sm);
-  background: linear-gradient(180deg, rgba(22, 27, 31, 0.85), rgba(10, 13, 16, 0.9));
-  border: 1px solid var(--stroke); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  background: linear-gradient(180deg, rgba(22, 27, 31, 0.95), rgba(10, 13, 16, 0.97));
+  border: 1px solid var(--stroke);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   color: var(--text);
 }
@@ -150,7 +150,7 @@ svg text { fill: currentColor; }
 .clock small { color: var(--muted); font-size: 10.5px; letter-spacing: 1px; font-weight: 600; }
 .clock .mono { font-size: 14px; font-weight: 600; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tq); }
-.pulse { animation: pulse 2.2s ease-in-out infinite; }
+.pulse { animation: pulse 2.2s ease-in-out 2; } /* sonsuz değil: sürekli kare üretip CPU/GPU'yu uyanık tutmasın */
 @keyframes pulse { 50% { opacity: 0.35; } }
 
 /* ---------- Buttons / inputs ---------- */
@@ -466,7 +466,6 @@ select { background: rgba(6, 8, 10, 0.8); color: var(--text); border: 1px solid 
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   background: linear-gradient(180deg, rgba(10, 13, 16, 0.96), rgba(5, 7, 9, 0.98));
   border-bottom: 1px solid var(--stroke-2);
-  backdrop-filter: blur(22px);
   box-shadow: 0 6px 24px -10px rgba(0, 0, 0, 0.9);
   user-select: none;
 }

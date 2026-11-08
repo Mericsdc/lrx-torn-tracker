@@ -382,7 +382,11 @@ function renderOverview() {
   animateNumbers($('#view-overview'));
 }
 
+// Takip ekranı gerçekten görünüyor mu? (pencere küçültülmemiş ve bir Torn sekmesi üstünü kapatmıyor)
+const trackerVisible = () => !document.hidden && state.activeWsTab === 'tracker';
+
 function tick() {
+  if (!trackerVisible()) return; // görünmezken sayaç güncellemek boşuna CPU
   const now = Date.now();
   // TCT clock
   $('#tct-clock').textContent = tctTime(nowTct());
@@ -1475,7 +1479,15 @@ function activateWorkspaceTab(tabId) {
   }
   renderBrowserTabs();
   if (!isTracker) updateBrowserToolbar();
+  else catchUpTracker();
 }
+
+// Takip ekranına dönünce: sayaçları hemen düzelt, uzun süre gizli kaldıysa veriyi tazele
+function catchUpTracker() {
+  tick();
+  if (Date.now() - (state.overviewAt || 0) > 60_000) loadOverview(false);
+}
+document.addEventListener('visibilitychange', () => { if (trackerVisible()) catchUpTracker(); });
 
 function closeBrowserTab(tabId) {
   const idx = state.browserTabs.findIndex((t) => t.id === tabId);
@@ -2081,9 +2093,10 @@ function startApp(b, fresh = false) {
   // 3. Live Torn API update
   refreshAll(true);
 
-  setInterval(() => loadOverview(false), 30_000);
-  setInterval(() => loadCompany(false), 120_000);
-  setInterval(() => { if (state.view === 'war' && state.factionId && Date.now() - state.targetsAt > 30_000) loadTargets(); }, 10_000);
+  // Görünürken sık, gizliyken seyrek (bildirim tahminleri için genel bakış yine de 2 dk'da bir tazelenir)
+  setInterval(() => { if (trackerVisible() || Date.now() - (state.overviewAt || 0) > 120_000) loadOverview(false); }, 30_000);
+  setInterval(() => { if (trackerVisible()) loadCompany(false); }, 120_000);
+  setInterval(() => { if (trackerVisible() && state.view === 'war' && state.factionId && Date.now() - state.targetsAt > 30_000) loadTargets(); }, 10_000);
 }
 
 (async function boot() {
