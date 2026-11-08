@@ -352,21 +352,43 @@ function main() {
   const updateUrl = () => {
     try { return JSON.parse(fs.readFileSync(path.join(persistentDataDir, 'config.json'), 'utf8')).updateUrl || DEFAULT_UPDATE_URL; } catch { return DEFAULT_UPDATE_URL; }
   };
-  ipcMain.handle('app-version', async () => updater.currentVersion());
+  // Çalışan sürüm = açılışta yüklenen kod. Diskteki package.json daha yeniyse (güncelleme kuruldu
+  // ya da dosyalar uygulama açıkken değişti) yeniden başlatmak gerekir; bunu ayrıca bildiriyoruz.
+  const runningVersion = updater.currentVersion();
+  const restartPending = () => updater.cmpVersion(updater.currentVersion(), runningVersion) > 0;
+  const relaunch = () => setTimeout(() => { app.relaunch(); app.exit(0); }, 800);
+  ipcMain.handle('app-version', async () => runningVersion);
   ipcMain.handle('update-check', async () => {
     const url = updateUrl();
-    if (!url) return { current: updater.currentVersion(), available: false, configured: false };
-    try { return { ...(await updater.checkForUpdate(url)), configured: true }; }
-    catch (e) { return { current: updater.currentVersion(), available: false, configured: true, error: e.message }; }
+    const pending = restartPending();
+    const restartInfo = { current: runningVersion, latest: updater.currentVersion(), available: true, restartOnly: true };
+    if (!url) return pending ? { ...restartInfo, configured: false } : { current: runningVersion, available: false, configured: false };
+    try {
+      const r = await updater.checkForUpdate(url); // r.available: manifest > diskteki sürüm
+      if (pending && !r.available) return { ...r, ...restartInfo, configured: true };
+      return { ...r, current: runningVersion, configured: true };
+    } catch (e) {
+      return pending ? { ...restartInfo, configured: true } : { current: runningVersion, available: false, configured: true, error: e.message };
+    }
+  });
+  // Dosyalar uygulama açıkken güncellenirse arayüze hemen haber ver
+  fs.watchFile(path.join(__dirname, 'package.json'), { interval: 5000 }, () => {
+    if (restartPending()) sendToRenderer('update-pending', { latest: updater.currentVersion() });
   });
   let updating = false;
   ipcMain.handle('update-apply', async () => {
     if (updating) return { ok: false, error: 'Güncelleme zaten sürüyor' };
     updating = true;
     try {
-      await updater.applyUpdate(updateUrl(), (p) => sendToRenderer('update-progress', p));
-      log('update applied, relaunching');
-      setTimeout(() => { app.relaunch(); app.exit(0); }, 800);
+      let download = true;
+      if (restartPending()) {
+        // Yeni sürüm zaten diskte; daha yenisi yayınlanmadıysa sadece yeniden başlat
+        try { download = (await updater.checkForUpdate(updateUrl())).available; } catch { download = false; }
+      }
+      if (download) await updater.applyUpdate(updateUrl(), (p) => sendToRenderer('update-progress', p));
+      sendToRenderer('update-progress', { step: 'restart', message: 'Yeniden başlatılıyor…' });
+      log(download ? 'update applied, relaunching' : 'restart for pending update', runningVersion, '->', updater.currentVersion());
+      relaunch();
       return { ok: true };
     } catch (e) {
       log('update err:', e.message);

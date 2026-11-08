@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUpdateProgress: (callback) => {
     ipcRenderer.on('update-progress', (_event, data) => callback(data));
   },
+  onUpdatePending: (callback) => {
+    ipcRenderer.on('update-pending', (_event, data) => callback(data));
+  },
   onLoginStatus: (callback) => {
     ipcRenderer.on('login-status', (_event, data) => callback(data));
   },

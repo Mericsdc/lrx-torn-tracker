@@ -1742,16 +1742,17 @@ function renderUpdateBtn() {
   const u = state.update;
   const label = $('#update-label'), dot = $('#update-dot'), btn = $('#update-btn');
   if (!btn) return;
-  label.textContent = u?.available ? `v${u.latest} ${tr('hazır', 'ready')}` : `v${u?.current || '—'}`;
+  label.textContent = u?.restartOnly ? `v${u.latest} · ${tr('yeniden başlat', 'restart')}` : u?.available ? `v${u.latest} ${tr('hazır', 'ready')}` : `v${u?.current || '—'}`;
   dot.hidden = !u?.available;
   btn.classList.toggle('has-update', !!u?.available);
-  btn.title = !u ? '' : u.available ? tr(`Yeni sürüm v${u.latest} — kurmak için tıkla`, `New version v${u.latest} — click to install`)
+  btn.title = !u ? '' : u.restartOnly ? tr(`v${u.latest} kuruldu ama çalışan sürüm v${u.current} — yeniden başlatmak için tıkla`, `v${u.latest} is installed but v${u.current} is running — click to restart`)
+    : u.available ? tr(`Yeni sürüm v${u.latest} — kurmak için tıkla`, `New version v${u.latest} — click to install`)
     : u.error ? tr('Güncelleme kontrolü başarısız: ', 'Update check failed: ') + u.error
       : u.configured === false ? tr('Güncelleme adresi ayarlı değil (Ayarlar)', 'Update URL not set (Settings)')
         : tr('En güncel sürüm — tekrar kontrol için tıkla', 'Up to date — click to check again');
 }
-async function checkUpdate(manual) {
-  if (!manual && state.config?.features?.['app.updates'] === false) return;
+async function checkUpdate(manual, force = false) {
+  if (!manual && !force && state.config?.features?.['app.updates'] === false) return;
   if (!window.electronAPI?.updateCheck) { const b = $('#update-btn'); if (b) b.hidden = true; return; }
   state.update = await window.electronAPI.updateCheck().catch((e) => ({ error: e.message }));
   renderUpdateBtn();
@@ -1766,12 +1767,16 @@ $('#update-btn')?.addEventListener('click', async () => {
   const u = state.update;
   if (!u?.available) return checkUpdate(true);
   const notes = u.notes ? `\n\n${u.notes}` : '';
-  if (!confirm(tr(`TornTracker v${u.latest} kurulsun mu? Uygulama yeniden başlayacak.${notes}`, `Install TornTracker v${u.latest}? The app will restart.${notes}`))) return;
-  $('#update-label').textContent = tr('Kuruluyor…', 'Installing…');
+  const ask = u.restartOnly
+    ? tr(`v${u.latest} kuruldu. Yeni sürümün açılması için uygulama yeniden başlatılsın mı?`, `v${u.latest} is installed. Restart the app to load it?`)
+    : tr(`TornTracker v${u.latest} kurulsun mu? Uygulama yeniden başlayacak.${notes}`, `Install TornTracker v${u.latest}? The app will restart.${notes}`);
+  if (!confirm(ask)) return;
+  $('#update-label').textContent = u.restartOnly ? tr('Yeniden başlatılıyor…', 'Restarting…') : tr('Kuruluyor…', 'Installing…');
   const r = await window.electronAPI.updateApply();
   if (!r.ok) { toast(tr('Güncelleme başarısız: ', 'Update failed: ') + r.error); renderUpdateBtn(); }
 });
 window.electronAPI?.onUpdateProgress?.((p) => { $('#update-label').textContent = p.message; });
+window.electronAPI?.onUpdatePending?.(() => checkUpdate(false, true)); // kurulu ama çalışmayan sürüm: ayar kapalı olsa da göster
 setTimeout(() => checkUpdate(false), 2500); // config yüklensin (app.updates ayarı)
 setInterval(() => checkUpdate(false), 6 * 3600_000);
 
