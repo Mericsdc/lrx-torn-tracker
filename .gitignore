@@ -1,0 +1,16 @@
+# Kişisel veriler — API key'ler, geçmiş, oturum bilgileri burada tutulur. ASLA commit etme.
+data/
+*.log
+
+# Bağımlılıklar / derleme çıktıları
+node_modules/
+dist/
+out/
+
+# Ortam değişkenleri
+.env
+.env.*
+
+# OS
+Thumbs.db
+.DS_Store

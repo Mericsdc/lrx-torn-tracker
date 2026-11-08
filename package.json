@@ -1,0 +1,25 @@
+{
+  "name": "torn-tracker",
+  "productName": "TornTracker",
+  "version": "1.2.0",
+  "description": "LRX Torn Tracker – Torn City masaüstü takip uygulaması: şirket stoku, günlük rapor, çalışanlar, gelir tablosu, sayaçlar, Fair Fight savaş hedef önerileri, TornTools ve yerleşik Torn tarayıcısı.",
+  "main": "electron-main.js",
+  "scripts": {
+    "start": "electron .",
+    "web": "node server.js",
+    "build:exe": "npx @electron/packager . TornTracker --platform=win32 --arch=x64 --out=dist --overwrite --ignore=\"^/dist\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@electron/packager": "^19.1.2",
+    "electron": "^41.2.0"
+  },
+  "updateUrl": "https://github.com/ati-space/lrx-torn-tracker/releases/latest/download/latest.json",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ati-space/lrx-torn-tracker.git"
+  }
+}

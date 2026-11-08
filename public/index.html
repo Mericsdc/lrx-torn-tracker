@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LRX Torn Tracker</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+  <link rel="icon" type="image/png" href="/logo-64.png" />
+</head>
+<body>
+  <!-- Liquid background -->
+  <div class="bg" aria-hidden="true">
+    <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+    <div class="grain"></div>
+  </div>
+
+  <!-- LRX Login / Splash -->
+  <section class="auth" id="auth-screen" hidden>
+    <div class="auth-glow" aria-hidden="true"></div>
+    <svg class="auth-skyline" viewBox="0 0 1440 260" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+      <path d="M0 260V196h38v-30h26v30h22v-58h34v58h18v-90h12v-16h10v16h14v90h20v-44h30v44h16v-120h40v120h22v-70h28v70h18v-36h24v36h20v-98h12v-24h8v24h14v98h22v-60h34v60h16v-142h20v-20h6v20h20v142h24v-76h30v76h18v-46h22v46h20v-112h36v112h20v-54h28v54h22v-88h14v-14h8v14h14v88h18v-40h26v40h22v-128h40v128h18v-62h30v62h20v-34h24v34h22v-96h12v-22h10v22h12v96h20v-56h32v56h18v-110h38v110h22v-48h26v48h18v-74h30v74h24v-30h28v30h20v-84h14v-18h8v18h14v84h22v-50h32v50h18v-36h40v-26h22v62h30V260z"/>
+    </svg>
+    <div class="auth-card" id="auth-card">
+      <div class="auth-logo-wrap">
+        <img src="/logo.png" class="auth-logo" alt="LRX Torn Tracker" />
+        <span class="auth-sheen" aria-hidden="true"></span>
+      </div>
+      <h1 class="auth-title">LRX <span>Torn Tracker</span></h1>
+      <div class="auth-rule" aria-hidden="true"></div>
+      <div class="auth-body" id="auth-body">
+        <p class="auth-sub" data-i18n-html="auth.sub">Devam etmek için Torn <b>Limited Access</b> API key'ini gir.</p>
+        <form id="auth-form" autocomplete="off">
+          <div class="auth-field">
+            <input id="auth-key" class="mono" type="password" maxlength="16" spellcheck="false" placeholder="••••••••••••••••" aria-label="Torn API key" />
+            <button type="button" class="auth-eye" id="auth-eye" title="Göster / gizle">◉</button>
+          </div>
+          <button class="auth-btn" id="auth-submit" type="submit"><span data-i18n="auth.login">Giriş Yap</span></button>
+          <div class="auth-error" id="auth-error" role="alert"></div>
+        </form>
+        <div class="auth-help">
+          <a href="#" id="auth-get-key" data-i18n="auth.getKey">Limited API key oluştur →</a>
+          <small data-i18n="auth.privacy">Key yalnızca bu bilgisayarda saklanır ve sadece api.torn.com'a gönderilir.</small>
+        </div>
+      </div>
+      <div class="auth-welcome" id="auth-welcome"></div>
+    </div>
+  </section>
+
+  <!-- Multi-Tab Workspace Bar (.exe Browser + Tracker) -->
+  <header class="workspace-bar" id="workspace-bar">
+    <div class="ws-tabs" id="ws-tabs">
+      <button class="ws-tab pinned active" data-tab="tracker" id="tab-btn-tracker">
+        <span class="ws-tab-mark">◆</span>
+        <span class="ws-tab-title">Torn Tracker</span>
+      </button>
+      <div class="ws-dynamic-tabs" id="browser-tabs"></div>
+      <button class="ws-new-tab" id="new-tab-btn" title="Yeni Torn Sekmesi Aç (Torn Ana Sayfa)">＋</button>
+    </div>
+    <div class="ws-quick">
+      <button class="ws-quick-btn" data-open-url="https://www.torn.com/index.php" data-tab-label="Torn City">
+        <span>🌐</span><span data-i18n="ws.tornHome">Torn Ana Sayfa</span>
+      </button>
+      <button class="ws-quick-btn" data-open-url="https://www.torn.com/companies.php" data-tab-label="JOB / Company">
+        <span>🏢</span><span data-i18n="ws.company">Şirketim</span>
+      </button>
+      <button class="ws-quick-btn" data-open-url="https://www.torn.com/factions.php" data-tab-label="Faction">
+        <span>⚔</span><span>Faction</span>
+      </button>
+      <button class="ws-quick-btn" data-open-url="https://www.torn.com/travelagency.php" data-tab-label="Rehab / Travel">
+        <span>✈</span><span>Rehab / Travel</span>
+      </button>
+      <button class="ws-quick-btn" id="tt-open-btn" title="TornTools">
+        <span>🧰</span><span>TornTools</span><small class="tt-state" id="tt-open-state">…</small>
+      </button>
+    </div>
+  </header>
+
+  <div class="app" id="tracker-app">
+    <!-- Sidebar -->
+    <aside class="sidebar glass">
+      <div class="brand">
+        <img class="brand-logo" src="/logo-64.png" alt="LRX Torn Tracker" width="40" height="40" />
+        <div class="brand-text"><strong>LRX</strong><em>Torn Tracker</em></div>
+      </div>
+
+      <nav class="nav" id="nav">
+        <button class="nav-item active" data-view="overview">
+          <svg viewBox="0 0 24 24"><path d="M3 12l9-8 9 8M5 10v10h5v-6h4v6h5V10"/></svg><span data-i18n="nav.overview">Genel Bakış</span>
+        </button>
+        <button class="nav-item" data-view="stock">
+          <svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M12 11v10"/></svg><span data-i18n="nav.stock">Stok Durumu</span>
+          <i class="nav-badge" id="badge-stock" hidden></i>
+        </button>
+        <button class="nav-item" data-view="report">
+          <svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6"/></svg><span data-i18n="nav.report">Günlük Rapor</span>
+        </button>
+        <button class="nav-item" data-view="employees">
+          <svg viewBox="0 0 24 24"><path d="M16 11a4 4 0 10-8 0 4 4 0 008 0zM4 21c1-4 4.5-6 8-6s7 2 8 6"/></svg><span data-i18n="nav.employees">Çalışanlar</span>
+          <i class="nav-badge" id="badge-emp" hidden></i>
+        </button>
+        <button class="nav-item" data-view="income">
+          <svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 5-6"/></svg><span data-i18n="nav.income">Gelir Tablosu</span>
+        </button>
+        <button class="nav-item" data-view="war">
+          <svg viewBox="0 0 24 24"><path d="M14.5 4.5l5 5L9 20l-5 0 0-5zM12 7l5 5M4 4l4 4"/></svg><span data-i18n="nav.war">Savaş Hedefleri</span>
+        </button>
+        <button class="nav-item" data-view="settings">
+          <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg><span data-i18n="nav.settings">Ayarlar</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="me-chip" id="me-chip">
+          <div class="avatar skeleton"></div>
+          <div class="me-meta"><strong class="skeleton-text">—</strong><small>—</small></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1 id="view-title">Genel Bakış</h1>
+          <p class="sub" id="view-sub">Anlık durum, sayaçlar ve savaş gücü</p>
+        </div>
+        <div class="top-actions">
+          <div class="toggle" id="lang-toggle" title="Dil / Language">
+            <button data-lang="tr" class="active">TR</button>
+            <button data-lang="en">EN</button>
+          </div>
+          <div class="clock glass-pill" title="Torn City Time (UTC)">
+            <span class="dot pulse"></span><span class="mono" id="tct-clock">--:--:--</span><small>TCT</small>
+          </div>
+          <button class="btn glass-pill update-btn" id="update-btn" title="Güncellemeleri denetle">
+            <span class="update-dot" id="update-dot" hidden></span>⬆ <span id="update-label">v—</span>
+          </button>
+          <button class="btn glass-pill" id="refresh-btn">
+            <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/></svg><span data-i18n="top.refresh">Yenile</span>
+          </button>
+        </div>
+      </header>
+
+      <div id="alert-area"></div>
+
+      <!-- ===================== OVERVIEW ===================== -->
+      <section class="view active" id="view-overview">
+        <div class="grid timers">
+          <article class="glass card timer-card" id="t-drug">
+            <div class="ring-wrap">
+              <svg class="ring" viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" cx="60" cy="60" r="52"/></svg>
+              <div class="ring-center"><span class="ring-icon">💊</span></div>
+            </div>
+            <div class="timer-body">
+              <span class="eyebrow">Xanax / Drug Cooldown</span>
+              <div class="timer-value mono" data-timer="drug">—</div>
+              <div class="timer-sub" data-sub="drug">Yükleniyor…</div>
+            </div>
+          </article>
+
+          <article class="glass card timer-card" id="t-edu">
+            <div class="ring-wrap">
+              <svg class="ring" viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" cx="60" cy="60" r="52"/></svg>
+              <div class="ring-center"><span class="ring-icon">🎓</span></div>
+            </div>
+            <div class="timer-body">
+              <span class="eyebrow">Education</span>
+              <div class="timer-value mono" data-timer="edu">—</div>
+              <div class="timer-sub" data-sub="edu">Yükleniyor…</div>
+            </div>
+          </article>
+
+          <article class="glass card timer-card" id="t-day">
+            <div class="ring-wrap">
+              <svg class="ring" viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" cx="60" cy="60" r="52"/></svg>
+              <div class="ring-center"><span class="ring-icon">🌙</span></div>
+            </div>
+            <div class="timer-body">
+              <span class="eyebrow" data-i18n="ov.dayReset">Günün Bitmesine (18:00 TCT)</span>
+              <div class="timer-value mono" data-timer="day">—</div>
+              <div class="timer-sub" data-sub="day">18:00 TCT'de yenilenir</div>
+            </div>
+          </article>
+        </div>
+
+        <div class="grid two">
+          <article class="glass card">
+            <div class="card-head"><h3 data-i18n="ov.bars">Barlar</h3><span class="chip" id="status-chip">—</span></div>
+            <div class="bars" id="bars"></div>
+            <div class="mini-row" id="mini-row"></div>
+          </article>
+
+          <article class="glass card">
+            <div class="card-head">
+              <h3 data-i18n="ov.battlePower">Savaş Gücü</h3>
+              <span class="chip" id="xan-chip">—</span>
+            </div>
+            <div class="bs-totals" id="bs-totals"></div>
+            <table class="tbl compact" id="bs-table"></table>
+          </article>
+        </div>
+
+        <div class="grid three" id="ov-company"></div>
+      </section>
+
+      <!-- ===================== STOCK ===================== -->
+      <section class="view" id="view-stock">
+        <div class="grid kpis" id="stock-kpis"></div>
+        <article class="glass card" id="delivery-card"></article>
+        <article class="glass card">
+          <div class="card-head">
+            <h3 data-i18n="stock.capacity">Depo Kapasitesi</h3>
+            <span class="muted mono" id="storage-label">—</span>
+          </div>
+          <div class="storage-bar" id="storage-bar"></div>
+          <div class="legend" id="storage-legend"></div>
+        </article>
+        <div class="grid products" id="product-cards"></div>
+      </section>
+
+      <!-- ===================== REPORT ===================== -->
+      <section class="view" id="view-report">
+        <article class="glass card report-head">
+          <div>
+            <span class="eyebrow" data-i18n="report.eyebrow">Günlük Satış & Sipariş Raporu</span>
+            <h2 id="report-date">—</h2>
+            <p class="muted" id="report-note">—</p>
+          </div>
+          <div class="report-actions">
+            <label class="seg">
+              <span data-i18n="report.targetStock">Hedef stok</span>
+              <select id="cover-days">
+                <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+                <option value="4">4</option><option value="5">5</option><option value="7">7</option>
+              </select>
+            </label>
+            <button class="btn primary" id="copy-report">
+              <svg viewBox="0 0 24 24"><path d="M9 9h11v11H9zM5 15H4V4h11v1"/></svg><span data-i18n="report.copyBtn">Raporu Kopyala</span>
+            </button>
+          </div>
+        </article>
+        <div class="grid kpis" id="report-kpis"></div>
+        <article class="glass card">
+          <div class="card-head"><h3 data-i18n="report.tableTitle">Ürün Bazlı Satış</h3><span class="muted" data-i18n="report.tableSub">Son gün verisi · ortalama son 7 kayıt</span></div>
+          <div class="tbl-wrap"><table class="tbl" id="report-table"></table></div>
+        </article>
+        <article class="glass card">
+          <div class="card-head"><h3 data-i18n="report.orderList">Sipariş Listesi</h3><span class="chip tq" id="order-total">—</span></div>
+          <div class="order-list" id="order-list"></div>
+        </article>
+      </section>
+
+      <!-- ===================== EMPLOYEES ===================== -->
+      <section class="view" id="view-employees">
+        <div class="grid kpis" id="emp-kpis"></div>
+        <article class="glass card" id="rehab-card"></article>
+        <article class="glass card">
+          <div class="card-head"><h3 data-i18n="emp.tableTitle">Çalışanlar & Addiction</h3><span class="muted" data-i18n="emp.tableSub">Addiction etkinliği düşürür · -8 ve sonrası için REHAB önerilir</span></div>
+          <div class="tbl-wrap"><table class="tbl" id="emp-table"></table></div>
+        </article>
+      </section>
+
+      <!-- ===================== INCOME ===================== -->
+      <section class="view" id="view-income">
+        <div class="grid two">
+          <article class="glass card">
+            <div class="card-head"><h3 data-i18n="inc.pnlTitle">Günlük Gelir Tablosu</h3><span class="muted" data-i18n="inc.lastDay">Son gün</span></div>
+            <div class="pnl" id="pnl"></div>
+          </article>
+          <article class="glass card">
+            <div class="card-head"><h3 data-i18n="inc.donutTitle">Ürün Gelir Dağılımı</h3></div>
+            <div class="donut-wrap" id="donut"></div>
+          </article>
+        </div>
+        <article class="glass card">
+          <div class="card-head"><h3 data-i18n="inc.histTitle">Gelir Geçmişi</h3><span class="muted" id="hist-note">—</span></div>
+          <div class="chart" id="income-chart"></div>
+        </article>
+        <article class="glass card">
+          <div class="card-head"><h3 data-i18n="inc.dayByDay">Gün Gün</h3></div>
+          <div class="tbl-wrap"><table class="tbl" id="income-table"></table></div>
+        </article>
+      </section>
+
+      <!-- ===================== WAR ===================== -->
+      <section class="view" id="view-war">
+        <article class="glass card war-head">
+          <div class="war-select">
+            <span class="eyebrow" data-i18n="war.enemyFaction">Rakip Faction</span>
+            <div class="war-chips" id="war-chips"><span class="muted">…</span></div>
+            <form class="inline-form" id="faction-form">
+              <input class="input mono" id="faction-input" placeholder="Faction ID gir (örn. 8205)" inputmode="numeric" />
+              <button class="btn primary" type="submit" data-i18n="war.scanBtn">Tara</button>
+            </form>
+          </div>
+          <div class="war-me" id="war-me"></div>
+        </article>
+
+        <div id="ff-alert"></div>
+
+        <article class="glass card war-reco" id="war-reco" hidden></article>
+
+        <article class="glass card">
+          <div class="card-head wrap">
+            <div>
+              <h3 id="war-title">Hedefler</h3>
+              <span class="muted" id="war-sub">—</span>
+            </div>
+            <div class="war-tools">
+              <div class="toggle" id="mode-toggle">
+                <button data-mode="noXanax" class="active" data-i18n="war.noXanax">Xanaxsız</button>
+                <button data-mode="withXanax" data-i18n="war.withXanax">Xanaxlı</button>
+              </div>
+              <label class="check"><input type="checkbox" id="f-okay" /> <span data-i18n="war.onlyOkay">Sadece müsait</span></label>
+              <label class="check"><input type="checkbox" id="f-fit" checked /> <span data-i18n="war.onlyFit">Sadece uygun</span></label>
+            </div>
+          </div>
+          <div class="grid kpis small" id="war-kpis"></div>
+          <div class="tbl-wrap"><table class="tbl" id="war-table"></table></div>
+          <p class="footnote" id="war-footnote"></p>
+        </article>
+      </section>
+
+      <!-- ===================== SETTINGS ===================== -->
+      <section class="view" id="view-settings">
+        <div class="grid two">
+          <article class="glass card">
+            <div class="card-head"><h3 data-i18n="set.title">API Ayarları</h3></div>
+            <form class="form" id="settings-form">
+              <label><span data-i18n="set.apiKeyLabel">Torn API Key (Limited)</span>
+                <input class="input mono" id="s-key" placeholder="Değiştirmek için yeni key gir" autocomplete="off" />
+                <small class="muted" id="s-key-current">—</small>
+              </label>
+              <label><span data-i18n="set.ffKeyLabel">FFScouter Key (boşsa Torn key kullanılır)</span>
+                <input class="input mono" id="s-ff" placeholder="Opsiyonel" autocomplete="off" />
+                <small class="muted" id="s-ff-current">—</small>
+              </label>
+              <div class="row">
+                <label><span data-i18n="set.coverLabel">Hedef stok (gün)</span>
+                  <input class="input mono" id="s-cover" type="number" min="1" max="14" />
+                </label>
+                <label><span data-i18n="set.pollLabel">Arka plan kayıt (dk)</span>
+                  <input class="input mono" id="s-poll" type="number" min="5" max="120" />
+                </label>
+              </div>
+              <label><span data-i18n="set.updateLabel">Güncelleme adresi (latest.json)</span>
+                <input class="input mono" id="s-update" placeholder="https://github.com/kullanici/repo/releases/latest/download/latest.json" autocomplete="off" />
+                <small class="muted" id="s-update-current">—</small>
+              </label>
+              <div class="settings-actions">
+                <button class="btn primary" type="submit" data-i18n="set.saveBtn">Kaydet</button>
+                <button class="btn ghost danger" type="button" id="logout-btn" data-i18n="set.logout">Çıkış Yap</button>
+              </div>
+            </form>
+          </article>
+          <article class="glass card">
+            <div class="card-head"><h3 data-i18n="set.ffStatusTitle">FFScouter Durumu</h3><button class="btn ghost sm" id="ff-check" data-i18n="set.checkBtn">Kontrol et</button></div>
+            <div id="ff-status" class="muted">—</div>
+            <div class="info-list" id="set-info-list"></div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Embedded Browser Stage for Torn Tabs (.exe Webview Deck) -->
+  <section class="browser-stage stage-hidden" id="browser-stage">
+    <div class="browser-toolbar">
+      <div class="browser-nav-btns">
+        <button class="b-btn" id="b-back" title="Geri / Back">←</button>
+        <button class="b-btn" id="b-fwd" title="İleri / Forward">→</button>
+        <button class="b-btn" id="b-reload" title="Yenile / Reload">↻</button>
+        <button class="b-btn" id="b-home" title="Torn Ana Sayfa">⌂</button>
+      </div>
+      <form class="browser-url-form" id="browser-url-form">
+        <input class="input mono browser-url-input" id="browser-url" autocomplete="off" placeholder="Torn URL veya Oyuncu ID (XID) yazıp Enter'a basın…" />
+        <button class="btn sm primary" type="submit" data-i18n="ws.go">Git</button>
+      </form>
+      <div class="browser-context-actions" id="browser-context-actions"></div>
+      <button class="btn sm primary" id="b-login-help" title="Google Giriş & Oturum Aktarma">🔑 <span data-i18n="ws.loginHelp">Oturum Aktar</span></button>
+      <button class="btn sm ghost" id="b-external" title="Harici Tarayıcıda Aç">↗ <span data-i18n="ws.ext">Tarayıcıda</span></button>
+    </div>
+    <div class="webview-deck" id="webview-deck"></div>
+  </section>
+
+  <!-- Google Sign-In & Cookie Import Modal -->
+  <div class="modal-backdrop" id="login-modal" hidden>
+    <div class="glass card modal-card">
+      <div class="card-head">
+        <h3>🔑 Torn Giriş & Oturum Aktarma (Google Hesabı İçin)</h3>
+        <button class="btn sm ghost" id="login-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="alert info" style="margin-bottom:14px">
+          <div>
+            <b>Neden Google "Oturumunuz açılamadı / Bu tarayıcı güvenli olmayabilir" diyor?</b><br>
+            Google, masaüstü <code>.exe</code> uygulamalarının (Electron) içindeki gömülü tarayıcılarda Google hesabıyla girişi engeller. TornTracker bu yüzden Google girişini <b>bilgisayarındaki Chrome/Edge'de</b> yaptırıp oturumu otomatik olarak uygulamaya aktarır.
+          </div>
+        </div>
+        <div class="glass card" style="padding:14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+          <div style="min-width:260px;flex:1">
+            <h4 style="color:var(--tq);margin-bottom:6px">Yöntem 1 · Google ile Giriş (Chrome/Edge üzerinden) — Önerilen</h4>
+            <p class="muted" style="font-size:12.5px;line-height:1.55">
+              Butona bas → Chrome (yoksa Edge) TornTracker'a özel ayrı bir pencerede Torn'u açar → orada <b>Google ile giriş</b> yap. Giriş algılanınca oturum buraya aktarılır ve o pencere kendiliğinden kapanır. Torn'daki Google (G) butonuna basınca da bu akış otomatik başlar.
+            </p>
+            <div class="sub-text" id="ext-login-status" style="margin-top:6px"></div>
+          </div>
+          <button type="button" class="btn primary" id="ext-login-btn">🔐 Google ile Giriş Yap</button>
+        </div>
+        <div class="grid two" style="margin-bottom:14px">
+          <div class="glass card" style="padding:14px">
+            <h4 style="color:var(--tq);margin-bottom:6px">Yöntem 2 · Torn E-posta & Şifre</h4>
+            <p class="muted" style="font-size:12.5px;line-height:1.55">
+              Torn giriş ekranında Google (G) butonu yerine doğrudan <b>E-posta ve Şifrenizi</b> yazarak giriş yapın.<br><br>
+              Hesabınızı Google ile açtıysanız ve Torn şifreniz yoksa, Torn giriş ekranında bir kez <b>"Forgot Password?"</b> diyerek e-postanıza şifre tanımlayabilirsiniz.
+            </p>
+          </div>
+          <div class="glass card" style="padding:14px">
+            <h4 style="color:var(--tq);margin-bottom:6px">Yöntem 3 · Tarayıcıdaki Açık Oturumu Elle Aktar</h4>
+            <p class="muted" style="font-size:12.5px;line-height:1.55">
+              Normal tarayıcınızda (Chrome/Edge) Torn açıkken <b>F12</b> → <b>Application</b> → <b>Cookies</b> → <code>https://www.torn.com</code> bölümünden <code>PHPSESSID</code> (ve varsa <code>uid</code> / <code>pass</code>) değerini aşağıya yapıştırın:
+            </p>
+          </div>
+        </div>
+        <form class="form" id="cookie-form">
+          <div class="row">
+            <label><span>PHPSESSID (Zorunlu)</span>
+              <input class="input mono" id="c-sess" placeholder="Örn: a1b2c3d4e5f6..." autocomplete="off" />
+            </label>
+            <label><span>uid (Opsiyonel - Kalıcı Oturum)</span>
+              <input class="input mono" id="c-uid" placeholder="Örn: 1234567" autocomplete="off" />
+            </label>
+          </div>
+          <label><span>pass (Opsiyonel) veya Tüm Cookie Metni</span>
+            <input class="input mono" id="c-pass" placeholder="pass değeri veya PHPSESSID=...; uid=...; pass=..." autocomplete="off" />
+          </label>
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px">
+            <button type="button" class="btn ghost" id="login-modal-cancel">Kapat</button>
+            <button type="submit" class="btn primary">✓ Oturumu Uygula & Yenile</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
