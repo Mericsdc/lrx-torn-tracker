@@ -179,6 +179,36 @@ function formatRehabMsg(name, addiction) {
     .replace(/\{name\}/gi, decode(name))
     .replace(/\{addiction\}/gi, String(addiction));
 }
+/* Rehab mesajını Torn private chat'ten gönder (Electron). Olmazsa Mesaj ekranı + pano. */
+const chatSending = new Set();
+async function sendRehabChat(emp, btn) {
+  const name = decode(emp.name);
+  const msg = formatRehabMsg(emp.name, emp.addiction);
+  const fallback = async (why) => {
+    await copyText(msg, tr(`Chat açılamadı (${why}) · Mesaj kopyalandı, Ctrl+V ile yapıştır`, `Couldn't open chat (${why}) · Message copied, paste with Ctrl+V`));
+    openInTab(`https://www.torn.com/messages.php#/p=compose&XID=${emp.id}`, { activate: true });
+  };
+  if (!window.electronAPI?.tornChatSend) return fallback(tr('tarayıcı modu', 'browser mode'));
+  if (chatSending.has(emp.id)) return;
+  chatSending.add(emp.id);
+  btn?.classList.add('spin');
+  toast(tr(`${name} için chat açılıyor…`, `Opening chat with ${name}…`));
+  try {
+    const url = `https://www.torn.com/profiles.php?XID=${emp.id}`;
+    const tab = openInTab(url, { activate: true, reuse: true });
+    const r = await window.electronAPI.tornChatSend({ tabId: tab.id, name, message: msg });
+    if (r?.ok && r.sent !== false) toast(tr(`✓ Rehab mesajı ${name} kişisine chat'ten gönderildi`, `✓ Rehab message sent to ${name} via chat`));
+    else if (r?.ok) toast(tr(`Mesaj chat kutusuna yazıldı · Enter ile gönder`, `Message typed into chat · press Enter to send`));
+    else if (r?.step === 'load' && state.tornLoggedIn === false) await fallback(tr("Torn'a giriş yapılmamış", 'not logged in to Torn'));
+    else await fallback(r?.step || 'hata');
+  } catch (e) {
+    await fallback(e.message);
+  } finally {
+    chatSending.delete(emp.id);
+    btn?.classList.remove('spin');
+  }
+}
+
 async function copyText(txt, okMsg = tr('Kopyalandı', 'Copied')) {
   try { await navigator.clipboard.writeText(txt); } catch {
     const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
@@ -409,7 +439,7 @@ function tick() {
   // hospital countdowns in war table
   $$('[data-until]').forEach((x) => {
     const r = Number(x.dataset.until) - nowTct() / 1000;
-    x.textContent = r > 0 ? clock(r) : tr('çıktı', 'out');
+    x.textContent = r > 0 ? (x.dataset.short ? shortClock(r) : clock(r)) : tr('çıktı', 'out');
   });
 }
 
@@ -514,7 +544,7 @@ function renderStock(c) {
   $('#delivery-card').innerHTML = `
     <div class="card-head wrap">
       <div>
-        <h3>🚚 ${tr('Stok Siparişleri & Teslimat Süreleri', 'Stock Orders & Delivery Timers')}</h3>
+        <h3>🚚 ${tr('Sipariş Zamanı', 'Order Timing')}</h3>
         <span class="muted">${onOrderProds.length ? tr(`${onOrderProds.length} üründe toplam ${n0(c.totals.onOrder)} adet sipariş yolda · Şirket gün sonu: 18:00 TCT (<span class="mono" data-eta="${c.nextResetMs}">—</span> kaldı)`, `${n0(c.totals.onOrder)} units on order across ${onOrderProds.length} products · Company reset: 18:00 TCT (<span class="mono" data-eta="${c.nextResetMs}">—</span> left)`) : tr('Şu an yolda olan sipariş bulunmuyor.', 'No stock orders currently in transit.')}</span>
       </div>
       <div class="delivery-controls">
@@ -526,33 +556,7 @@ function renderStock(c) {
         <button class="btn sm" data-order-sync="4">${tr('4sa önce', '4h ago')}</button>
         <button class="btn sm ${c.deliveryMode === '18tct' ? 'primary' : ''}" data-order-mode="18tct" title="${tr('18:00 TCT günlük şirket yenilenmesine göre sayaç', 'Timer anchored to 18:00 TCT daily company reset')}">18:00 TCT</button>
       </div>
-    </div>
-    ${onOrderProds.length ? `<div class="delivery-grid">${onOrderProds.map((p) => {
-      const od = p.orderDelivery;
-      const col = PALETTE[c.products.indexOf(p) % PALETTE.length];
-      const etaLocal = new Date(od.etaMs).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-      return `<div class="delivery-item">
-        <div class="delivery-top">
-          <strong><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${col};margin-right:6px"></span>${esc(p.name)}</strong>
-          <span class="chip tq mono">+${n0(p.on_order)} ${tr('adet', 'units')}</span>
-        </div>
-        <div class="delivery-mid">
-          <div>
-            <small class="muted">${tr('KALAN TESLİMAT SÜRESİ', 'DELIVERY TIME LEFT')}</small>
-            <div class="delivery-timer mono" data-eta="${od.etaMs}">${clock((od.etaMs - Date.now()) / 1000)}</div>
-          </div>
-          <div style="text-align:right">
-            <small class="muted">${tr('TAHMİNİ VARIŞ', 'EST. ARRIVAL')}</small>
-            <div class="mono">${etaLocal} <span class="sub-text">(${od.mode === '18tct' ? '18:00 TCT' : od.deliveryHours + tr('sa kargo', 'h transit')})</span></div>
-          </div>
-        </div>
-        <div class="bar"><i data-eta-bar="${od.etaMs}" data-eta-total="${od.cycleTotalMs}" style="width:50%;background:var(--tq)"></i></div>
-        <div class="delivery-foot">
-          <span class="sub-text">${tr('Raftaki stok:', 'Shelf stock:')} <b>${daysTxt(p.daysLeft)}${tr('g', 'd')} (${hoursTxt(p.hoursLeft)})</b></span>
-          <span class="chip ${od.safeUntilDelivery ? 'green' : 'danger'}">${od.safeUntilDelivery ? tr('Teslimata kadar yeterli ✓', 'Safe until delivery ✓') : tr('Teslimattan önce biter ⚠', 'Runs out before delivery ⚠')}</span>
-        </div>
-      </div>`;
-    }).join('')}</div>` : ''}`;
+    </div>`;
 
   const total = s.space || c.totals.inStock + c.totals.onOrder || 1;
   $('#storage-label').textContent = s.space ? `${n0(s.used)} / ${n0(s.space)}` : n0(s.used);
@@ -580,8 +584,9 @@ function renderStock(c) {
         <div><small>${tr('+ Sipariş ile', '+ With Order')}</small><strong>${daysTxt(p.daysLeftWithOrder)}${tr('g', 'd')} <span class="muted">(${hoursTxt(p.hoursLeftWithOrder)})</span></strong></div>
       </div>
       <div class="product-delivery">
-        ${od ? `<div class="pd-row"><span>🚚 ${tr('Teslimata kalan', 'Delivery ETA')}</span><strong class="mono tq-text" data-eta="${od.etaMs}">${clock((od.etaMs - Date.now()) / 1000)}</strong></div>
-          <div class="bar" style="height:4px;margin-top:6px"><i data-eta-bar="${od.etaMs}" data-eta-total="${od.cycleTotalMs}" style="width:50%;background:var(--tq)"></i></div>` : `<div class="pd-row"><span class="muted">${tr('Yolda sipariş yok', 'No order in transit')}</span><span class="muted">—</span></div>`}
+        ${od ? `<div class="pd-row"><span>🚚 ${tr('Teslimata kalan', 'Delivery ETA')} <span class="chip tq mono">+${n0(p.on_order)}</span></span><strong class="mono tq-text" data-eta="${od.etaMs}">${clock((od.etaMs - Date.now()) / 1000)}</strong></div>
+          <div class="bar" style="height:4px;margin-top:6px"><i data-eta-bar="${od.etaMs}" data-eta-total="${od.cycleTotalMs}" style="width:50%;background:var(--tq)"></i></div>
+          <div class="pd-row" style="margin-top:7px"><span class="sub-text">${tr('Varış', 'Arrives')} <b class="mono">${new Date(od.etaMs).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</b> · ${od.mode === '18tct' ? '18:00 TCT' : od.deliveryHours + tr('sa kargo', 'h transit')}</span><span class="chip ${od.safeUntilDelivery ? 'green' : 'danger'}">${od.safeUntilDelivery ? tr('Yeterli ✓', 'Safe ✓') : tr('Önce biter ⚠', 'Runs out ⚠')}</span></div>` : `<div class="pd-row"><span class="muted">${tr('Yolda sipariş yok', 'No order in transit')}</span><span class="muted">—</span></div>`}
       </div>
       <div class="product-foot"><span class="muted">${tr('Önerilen sipariş', 'Suggested order')}</span>${p.need ? `<strong class="tq-text mono">${n0(p.need)} ${tr('adet', 'units')} · ${cmoney(p.orderCost)}</strong>` : `<span class="chip green">${tr('Gerek yok', 'None needed')}</span>`}</div>
     </article>`;
@@ -748,7 +753,7 @@ function renderEmployees(c) {
         <div class="rehab-msg-box" data-emp-msg="${x.id}">${esc(msg)}</div>
         <div class="rehab-actions">
           <button class="btn sm" data-copy-rehab="${x.id}">📋 ${tr('Mesajı Kopyala', 'Copy Message')}</button>
-          <a class="btn sm primary" data-send-rehab="${x.id}" href="https://www.torn.com/messages.php#/p=compose&XID=${x.id}" target="_blank" rel="noopener">✉ ${tr("Kopyala & Torn'da Gönder ↗", 'Copy & Send in Torn ↗')}</a>
+          <button class="btn sm primary" data-send-rehab="${x.id}" title="${tr('Torn private chat üzerinden gönder', 'Send via Torn private chat')}">💬 ${tr('Chat ile Gönder', 'Send via Chat')}</button>
         </div>
       </div>`;
     }).join('')}</div>` : `<div class="empty-state">${tr('Addiction değeri negatif olan çalışan bulunmuyor.', 'No employees with negative addiction.')}</div>`}`;
@@ -769,7 +774,7 @@ function renderEmployees(c) {
         <td>${addictionChip(x.addiction)}</td>
         <td>${sparkline(x.addictionHistory)}</td>
         <td class="num ${x.inactivity < 0 ? 'neg' : 'muted'}">${x.inactivity || 0}</td>
-        <td>${x.addiction < 0 ? `<div style="display:flex;gap:6px"><button class="btn sm ${x.addiction <= -8 ? 'primary' : ''}" data-copy-rehab="${x.id}" title="${esc(formatRehabMsg(x.name, x.addiction))}">📋 ${tr('Kopyala', 'Copy')}</button><a class="btn sm ghost" data-send-rehab="${x.id}" href="https://www.torn.com/messages.php#/p=compose&XID=${x.id}" target="_blank" rel="noopener" title="${tr('Kopyala ve Torn Mesaj ekranını aç', 'Copy & open Torn Compose')}">✉ ${tr('Gönder', 'Send')}</a></div>` : '<span class="muted">—</span>'}</td></tr>`;
+        <td>${x.addiction < 0 ? `<div style="display:flex;gap:6px"><button class="btn sm ${x.addiction <= -8 ? 'primary' : ''}" data-copy-rehab="${x.id}" title="${esc(formatRehabMsg(x.name, x.addiction))}">📋 ${tr('Kopyala', 'Copy')}</button><button class="btn sm ghost" data-send-rehab="${x.id}" title="${tr('Torn private chat üzerinden gönder', 'Send via Torn private chat')}">💬 ${tr('Gönder', 'Send')}</button></div>` : '<span class="muted">—</span>'}</td></tr>`;
     }).join('')
   }</tbody>`;
 }
@@ -806,7 +811,9 @@ function renderIncome(c) {
   // chart
   const days = c.days.slice(-30);
   $('#hist-note').textContent = tr(`${c.days.length} gün kayıtlı`, `${c.days.length} days recorded`);
-  $('#income-chart').innerHTML = days.length >= 2 ? barChart(days) :
+  incomeChartDays = days.length >= 2 ? days : null;
+  if (incomeChartDays) renderIncomeChart();
+  else $('#income-chart').innerHTML =
     `<div class="empty"><div><b class="tq-text">${tr('Geçmiş birikiyor', 'Building history')}</b><br>${tr('Sunucu açık kaldıkça her gün otomatik kayıt alınır.', 'Daily snapshots are recorded automatically while the server runs.')}<br><span class="muted">${tr('Şimdilik 7 günlük ortalama:', 'Current 7-day average:')} ${money(i.weeklyAvg)} / ${tr('gün', 'day')}</span></div></div>`;
 
   $('#income-table').innerHTML = `<thead><tr><th>${tr('Tarih', 'Date')}</th><th class="num">${tr('Müşteri', 'Customers')}</th><th class="num">${tr('Gelir', 'Revenue')}</th><th class="num">${tr('Ürün maliyeti', 'COGS')}</th><th class="num">${tr('Maaş', 'Wages')}</th><th class="num">${tr('Reklam', 'Ads')}</th><th class="num">Net</th><th class="num">${tr('Popülerlik', 'Popularity')}</th></tr></thead><tbody>${
@@ -814,21 +821,111 @@ function renderIncome(c) {
   }</tbody>`;
 }
 
-function barChart(days) {
-  const W = 900, H = 260, pl = 60, pr = 16, pt = 16, pb = 30;
-  const max = Math.max(...days.map((d) => d.revenue), 1);
-  const min = Math.min(0, ...days.map((d) => d.net));
-  const span = max - min;
-  const y = (v) => pt + (1 - (v - min) / span) * (H - pt - pb);
-  const bw = (W - pl - pr) / days.length;
-  const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => { const v = min + f * span; return `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(255,255,255,.05)"/><text x="${pl - 8}" y="${y(v) + 4}" text-anchor="end" fill="#56666b" font-size="11" font-family="JetBrains Mono">${cmoney(v)}</text>`; }).join('');
-  const bars = days.map((d, i) => { const w = Math.min(72, bw * 0.56), x = pl + i * bw + (bw - w) / 2; return `<rect x="${x}" y="${y(d.revenue)}" width="${w}" height="${Math.max(0, y(0) - y(d.revenue))}" rx="4" fill="url(#gRev)" stroke="rgba(201,169,106,0.4)" stroke-width="1"><title>${d.date}: ${money(d.revenue)}</title></rect>`; }).join('');
-  const line = days.map((d, i) => `${pl + i * bw + bw / 2},${y(d.net)}`).join(' L');
-  const dots = days.map((d, i) => `<circle cx="${pl + i * bw + bw / 2}" cy="${y(d.net)}" r="3.5" fill="#020405" stroke="#e9f3f4" stroke-width="1.6"><title>Net ${money(d.net)}</title></circle>`).join('');
-  const labels = days.map((d, i) => (days.length <= 14 || i % Math.ceil(days.length / 10) === 0) ? `<text x="${pl + i * bw + bw / 2}" y="${H - 8}" text-anchor="middle" fill="#56666b" font-size="11" font-family="JetBrains Mono">${d.date.slice(5)}</text>` : '').join('');
-  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><defs><linearGradient id="gRev" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d9bd84" stop-opacity=".85"/><stop offset="1" stop-color="#5a4a2c" stop-opacity=".2"/></linearGradient></defs>
-    ${grid}${bars}<path d="M${line}" fill="none" stroke="#eef2f3" stroke-width="2" stroke-opacity=".85"/>${dots}${labels}</svg>
-    <div class="legend"><span><b style="background:#c9a96a"></b>${tr('Gelir', 'Revenue')}</span><span><b style="background:#eef2f3"></b>${tr('Net kâr', 'Net profit')}</span></div>`;
+/* ---------- Gelir Geçmişi grafiği ----------
+   Gerçek piksel genişliğinde çizilir (esneme yok). Her gün: Gelir çubuğu + gider yığını
+   (ürün maliyeti / maaş / reklam), net kâr çizgisi, sıfır çizgisi ve zarar bölgesi. */
+let incomeChartDays = null, incomeChartW = 0;
+const IC_COLORS = { rev: '#c9a96a', cogs: '#8f9aa6', wages: '#646e79', ads: '#3f4852', pos: '#5fd39a', neg: '#ef7d8f' };
+function niceStep(x) {
+  const p = Math.pow(10, Math.floor(Math.log10(Math.max(x, 1))));
+  const m = x / p;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p;
+}
+function shortDate(iso) {
+  const [, m, d] = String(iso).split('-');
+  const tr_ = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
+  const en_ = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${Number(d)} ${(state.lang === 'en' ? en_ : tr_)[Number(m) - 1] || ''}`;
+}
+function renderIncomeChart() {
+  const el = $('#income-chart');
+  if (!el || !incomeChartDays) return;
+  incomeChartW = el.clientWidth || incomeChartW || 900;
+  el.innerHTML = incomeChart(incomeChartDays, Math.max(320, Math.round(incomeChartW)));
+}
+if (window.ResizeObserver && $('#income-chart')) {
+  new ResizeObserver(() => {
+    const w = $('#income-chart').clientWidth;
+    if (w && Math.abs(w - incomeChartW) > 2) renderIncomeChart();
+  }).observe($('#income-chart'));
+}
+
+function incomeChart(days, W) {
+  const H = 290, pl = 66, pr = 14, pt = 22, pb = 34;
+  const cost = (d) => (d.cogs || 0) + (d.wages || 0) + (d.ads || 0);
+  const hi = Math.max(...days.map((d) => Math.max(d.revenue || 0, cost(d))), 1);
+  const lo = Math.min(0, ...days.map((d) => d.net || 0));
+  const step = niceStep((hi - lo) / 4);
+  const top = Math.ceil(hi / step) * step, bot = Math.floor(lo / step) * step;
+  const y = (v) => pt + ((top - v) / (top - bot || 1)) * (H - pt - pb);
+  const gw = (W - pl - pr) / days.length;
+  const bw = Math.max(4, Math.min(30, gw * 0.3));
+  const showVals = gw >= 70;
+  const mono = 'font-family="JetBrains Mono, monospace"';
+
+  let grid = '';
+  for (let v = bot; v <= top + 1e-6; v += step) {
+    const zero = Math.abs(v) < 1e-6;
+    grid += `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="${zero ? 'rgba(255,255,255,.28)' : 'rgba(255,255,255,.05)'}" ${zero ? '' : 'stroke-dasharray="3 4"'}/>`
+      + `<text x="${pl - 10}" y="${y(v) + 4}" text-anchor="end" fill="${zero ? '#c3c9cf' : '#5f6870'}" font-size="11" ${mono}>${cmoney(v)}</text>`;
+  }
+  const lossZone = bot < 0 ? `<rect x="${pl}" y="${y(0)}" width="${W - pl - pr}" height="${y(bot) - y(0)}" fill="rgba(220,76,100,.05)"/>
+    <text x="${W - pr - 6}" y="${y(bot) - 6}" text-anchor="end" fill="rgba(239,125,143,.55)" font-size="10" letter-spacing="1.5" font-weight="600">${tr('ZARAR', 'LOSS')}</text>` : '';
+
+  let bars = '', hits = '', labels = '', vals = '';
+  const pts = [];
+  days.forEach((d, i) => {
+    const cx = pl + gw * (i + 0.5);
+    const rx = cx - bw - 2, kx = cx + 2;
+    // revenue
+    bars += `<rect x="${rx}" y="${y(d.revenue)}" width="${bw}" height="${Math.max(0, y(0) - y(d.revenue))}" rx="3" fill="url(#icRev)"/>`;
+    // cost stack
+    let base = 0;
+    for (const [k, v] of [['cogs', d.cogs || 0], ['wages', d.wages || 0], ['ads', d.ads || 0]]) {
+      if (v <= 0) continue;
+      bars += `<rect x="${kx}" y="${y(base + v)}" width="${bw}" height="${Math.max(0, y(base) - y(base + v))}" fill="${IC_COLORS[k]}" opacity=".9"/>`;
+      base += v;
+    }
+    pts.push([cx, y(d.net)]);
+    if (showVals) {
+      vals += `<text x="${rx + bw / 2}" y="${y(d.revenue) - 6}" text-anchor="middle" fill="${IC_COLORS.rev}" font-size="10.5" font-weight="600" ${mono}>${cmoney(d.revenue)}</text>`;
+      const ny = y(d.net) + (d.net < 0 ? 18 : -10);
+      vals += `<text x="${cx}" y="${ny}" text-anchor="middle" fill="${d.net >= 0 ? IC_COLORS.pos : IC_COLORS.neg}" font-size="10.5" font-weight="600" ${mono}>${d.net >= 0 ? '+' : ''}${cmoney(d.net)}</text>`;
+    }
+    const every = Math.ceil(days.length / Math.max(1, Math.floor((W - pl - pr) / 58)));
+    if (i % every === 0 || i === days.length - 1) labels += `<text x="${cx}" y="${H - 10}" text-anchor="middle" fill="#7d8790" font-size="11">${shortDate(d.date)}</text>`;
+    const tip = [`${d.date}`, `${tr('Gelir', 'Revenue')}: ${money(d.revenue)}`, `${tr('Ürün maliyeti', 'COGS')}: ${money(d.cogs)}`, `${tr('Maaş', 'Wages')}: ${money(d.wages)}`, `${tr('Reklam', 'Ads')}: ${money(d.ads)}`, `Net: ${money(d.net)}`, `${tr('Müşteri', 'Customers')}: ${n0(d.customers)}`].join('\n');
+    hits += `<rect class="ic-hit" x="${pl + gw * i}" y="${pt}" width="${gw}" height="${H - pt - pb}"><title>${esc(tip)}</title></rect>`;
+  });
+  const netPath = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+  const dots = days.map((d, i) => `<circle cx="${pts[i][0]}" cy="${pts[i][1]}" r="4" fill="#0b0c0e" stroke="${d.net >= 0 ? IC_COLORS.pos : IC_COLORS.neg}" stroke-width="2"/>`).join('');
+
+  // summary
+  const n = days.length;
+  const avgRev = days.reduce((a, d) => a + d.revenue, 0) / n;
+  const avgNet = days.reduce((a, d) => a + d.net, 0) / n;
+  const best = days.reduce((a, d) => (d.revenue > a.revenue ? d : a), days[0]);
+  const last = days[n - 1], prev = days[n - 2];
+  const chg = prev?.revenue ? (last.revenue - prev.revenue) / prev.revenue : 0;
+  const margin = avgRev ? avgNet / avgRev : 0;
+  const summary = `<div class="ic-summary">
+    <div><small>${tr('Ort. günlük gelir', 'Avg daily revenue')}</small><strong class="mono">${money(avgRev)}</strong></div>
+    <div><small>${tr('Ort. net kâr', 'Avg net profit')}</small><strong class="mono ${avgNet >= 0 ? 'pos' : 'neg'}">${money(avgNet)}</strong><em>${pct(margin, 1)} ${tr('marj', 'margin')}</em></div>
+    <div><small>${tr('En iyi gün', 'Best day')}</small><strong class="mono">${money(best.revenue)}</strong><em>${shortDate(best.date)}</em></div>
+    <div><small>${tr('Son gün değişim', 'Last day change')}</small><strong class="mono ${chg >= 0 ? 'pos' : 'neg'}">${chg >= 0 ? '▲' : '▼'} ${pct(Math.abs(chg), 1)}</strong><em>${tr('önceki güne göre gelir', 'revenue vs previous day')}</em></div>
+  </div>`;
+
+  return `${summary}<svg class="ic-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    <defs><linearGradient id="icRev" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e3cc97"/><stop offset="1" stop-color="#8a7243"/></linearGradient></defs>
+    ${lossZone}${grid}${hits}${bars}
+    <path d="${netPath}" fill="none" stroke="rgba(233,237,240,.8)" stroke-width="1.8" stroke-linejoin="round"/>${dots}${vals}${labels}</svg>
+    <div class="legend">
+      <span><b style="background:${IC_COLORS.rev}"></b>${tr('Gelir', 'Revenue')}</span>
+      <span><b style="background:${IC_COLORS.cogs}"></b>${tr('Ürün maliyeti', 'COGS')}</span>
+      <span><b style="background:${IC_COLORS.wages}"></b>${tr('Maaş', 'Wages')}</span>
+      <span><b style="background:${IC_COLORS.ads}"></b>${tr('Reklam', 'Ads')}</span>
+      <span><b style="background:#e9edf0;border-radius:50%"></b>${tr('Net kâr (çizgi)', 'Net profit (line)')}</span>
+    </div>`;
 }
 
 /* =========================================================
@@ -1182,8 +1279,8 @@ document.addEventListener('click', async (e) => {
     e.preventDefault();
     const id = Number(sendBtn.dataset.sendRehab);
     const emp = state.company.employees.find((x) => x.id === id);
-    if (emp) await copyText(formatRehabMsg(emp.name, emp.addiction), tr(`${decode(emp.name)} mesajı kopyalandı · Sekmede Ctrl+V ile yapıştır`, `Message copied for ${decode(emp.name)} · Paste with Ctrl+V in tab`));
-    openInTab(`https://www.torn.com/messages.php#/p=compose&XID=${id}`, { activate: true });
+    if (!emp) return;
+    sendRehabChat(emp, sendBtn);
     return;
   }
   const quickBtn = e.target.closest('[data-open-url]');
@@ -1383,19 +1480,47 @@ function clearDropMarks() {
   });
 })();
 
+/* Sekme başlığındaki hastane / hapis sayacı */
+function tabStatusTimer(url) {
+  const xid = extractPlayerId(url);
+  if (!xid) return '';
+  const st = state.playerInfo[xid]?.data?.status;
+  const until = Number(st?.until) || 0;
+  if (!st || (st.state !== 'Hospital' && st.state !== 'Jail') || until <= nowTct() / 1000) return '';
+  const hosp = st.state === 'Hospital';
+  return `<span class="ws-tab-timer ${hosp ? 'hosp' : 'jail'}" title="${esc(st.description || st.state)}">${hosp ? '🏥' : '⛓'}<span class="mono" data-short="1" data-until="${until}">${shortClock(until - nowTct() / 1000)}</span></span>`;
+}
+function shortClock(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const p = (v) => String(v).padStart(2, '0');
+  return h ? `${h}:${p(m)}:${p(s)}` : `${m}:${p(s)}`;
+}
+
+const seenWsTabs = new Set();
 function renderBrowserTabs() {
   const wrap = $('#browser-tabs');
   if (!wrap) return;
   // Sürükleme sırasında yeniden çizmek sürüklemeyi iptal eder → bitince çiz
   if (tabDrag.id) { tabDrag.pendingRender = true; return; }
   wrap.innerHTML = state.browserTabs.map((t) => `
-    <div class="ws-tab ${state.activeWsTab === t.id ? 'active' : ''}" draggable="true" data-ws-tab="${t.id}" title="${esc(t.title)} — ${esc(t.url)}">
+    <div class="ws-tab ${state.activeWsTab === t.id ? 'active' : ''} ${seenWsTabs.has(t.id) ? '' : 'ws-tab-new'}" draggable="true" data-ws-tab="${t.id}" title="${esc(t.title)} — ${esc(t.url)}">
       ${t.loading ? '<span class="ws-tab-spin"></span>' : `<span class="ws-tab-mark">${esc(t.icon)}</span>`}
       <span class="ws-tab-title">${esc(t.title)}</span>
+      ${tabStatusTimer(t.url)}
       <button class="ws-tab-close" data-close-tab="${t.id}" title="${tr('Sekmeyi kapat', 'Close tab')}">×</button>
     </div>
   `).join('');
+  for (const t of state.browserTabs) {
+    seenWsTabs.add(t.id);
+    const x = extractPlayerId(t.url);
+    if (x) refreshPlayerInfo(x);
+  }
 }
+// Açık profil / saldırı sekmelerindeki oyuncuların durumunu tazele (yeni hastane süresi vb.)
+setInterval(() => {
+  for (const t of state.browserTabs) { const x = extractPlayerId(t.url); if (x) refreshPlayerInfo(x, 25_000); }
+}, 15_000);
 
 function updateBrowserToolbar() {
   const tab = state.browserTabs.find((t) => t.id === state.activeWsTab);
@@ -1440,6 +1565,7 @@ async function refreshPlayerInfo(xid, maxAgeMs = 20_000) {
   }
   const tab = state.browserTabs.find((t) => t.id === state.activeWsTab);
   if (tab && extractPlayerId(tab.url) === xid) updateBrowserToolbar();
+  if (state.browserTabs.some((t) => extractPlayerId(t.url) === xid)) renderBrowserTabs();
 }
 
 function updateLoginHelpVisibility() {

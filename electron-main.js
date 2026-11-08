@@ -255,6 +255,79 @@ function main() {
     t.view.webContents.loadURL(url).catch((e) => log('nav err:', e.message));
   });
 
+  /* Profil sayfasından Torn private chat'i açıp mesajı gönderir.
+     Selector'lar TornTools'un chat v3 seçicileriyle aynı (#chatRoot [class*='item___'] …). */
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function waitProfileLoaded(wc, ms = 25000) {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      if (wc.isDestroyed()) return false;
+      if (!wc.isLoading() && /profiles\.php/i.test(wc.getURL())) return true;
+      await sleep(200);
+    }
+    return false;
+  }
+  const chatJs = (name, step) => `(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const until = async (fn, ms) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(150); } return null; };
+    const target = ${JSON.stringify(String(name || '').toLowerCase())};
+    const boxes = () => [...document.querySelectorAll("#chatRoot [class*='item___']")].filter((b) => b.querySelector('textarea, button'));
+    const findBox = () => boxes().find((b) => {
+      const h = b.querySelector("button [class*='title___'], button [class*='name___'], [class*='chat-box-header__name']");
+      return h && h.textContent.trim().toLowerCase().includes(target);
+    });
+    if (${JSON.stringify(step)} === 'open') {
+      let box = findBox();
+      if (!box) {
+        const btn = await until(() => document.querySelector("a[class*='profile-button-initiateChat'], a[class*='initiateChat'], [class*='profile-button'][aria-label*='chat' i], [class*='profile-button'][title*='chat' i]"), 12000);
+        if (!btn) return { ok: false, step: 'button' };
+        btn.click();
+        box = await until(findBox, 8000);
+      }
+      if (!box) return { ok: false, step: 'box' };
+      let ta = box.querySelector('textarea');
+      if (!ta) { box.querySelector('button')?.click(); ta = await until(() => box.querySelector('textarea'), 3000); }
+      if (!ta) return { ok: false, step: 'textarea' };
+      ta.scrollIntoView({ block: 'nearest' });
+      ta.focus();
+      return { ok: true };
+    }
+    const box = findBox();
+    const ta = box && box.querySelector('textarea');
+    if (!ta || !ta.value.trim()) return { ok: false, step: 'text' };
+    const send = box.querySelector("[class*='chat-box-footer__send-icon-wrapper__'], button[class*='iconWrapper___']");
+    if (send) { send.click(); await sleep(400); return { ok: true, sent: !ta.value.trim(), via: 'button' }; }
+    return { ok: true, sent: false, via: 'none' };
+  })()`;
+
+  ipcMain.handle('torn-chat-send', async (_event, { tabId, name, message }) => {
+    const t = tabs.get(tabId);
+    if (!t) return { ok: false, step: 'tab' };
+    const wc = t.view.webContents;
+    try {
+      if (!(await waitProfileLoaded(wc))) return { ok: false, step: 'load' };
+      const opened = await wc.executeJavaScript(chatJs(name, 'open'), true);
+      if (!opened?.ok) return opened || { ok: false, step: 'open' };
+      wc.focus();
+      await sleep(150);
+      await wc.insertText(String(message || '').replace(/\s*\n+\s*/g, ' ').trim());
+      await sleep(300);
+      const res = await wc.executeJavaScript(chatJs(name, 'send'), true);
+      if (res?.ok && !res.sent) {
+        // Gönder butonu bulunamadı → gerçek Enter tuşu
+        wc.focus();
+        wc.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
+        wc.sendInputEvent({ type: 'char', keyCode: '\r' });
+        wc.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' });
+        return { ok: true, sent: true, via: 'enter' };
+      }
+      return res;
+    } catch (e) {
+      log('torn-chat-send err:', e.message);
+      return { ok: false, step: 'error', error: e.message };
+    }
+  });
+
   ipcMain.handle('tab-action', async (_event, { tabId, action }) => {
     const t = tabs.get(tabId);
     if (!t) return;

@@ -732,7 +732,12 @@ a { color: var(--gold-2); }
 .view.active > *:nth-child(4), .view.active .grid > .glass:nth-child(4) { animation-delay: .15s; }
 .view.active > *:nth-child(5), .view.active .grid > .glass:nth-child(5) { animation-delay: .20s; }
 .view.active > *:nth-child(n+6), .view.active .grid > .glass:nth-child(n+6) { animation-delay: .25s; }
-.ws-tab { animation: tabIn .35s var(--ease-out); }
+.ws-tab.ws-tab-new { animation: tabIn .35s var(--ease-out); }
+.ws-tab:has(.ws-tab-timer) { max-width: 300px; }
+.ws-tab-timer { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; padding: 0 6px; height: 19px; border-radius: 5px; font-size: 11px; }
+.ws-tab-timer .mono { font-weight: 600; letter-spacing: .2px; }
+.ws-tab-timer.hosp { color: #f5b3be; background: rgba(220, 76, 100, 0.16); border: 1px solid rgba(220, 76, 100, 0.38); }
+.ws-tab-timer.jail { color: #e8c88a; background: rgba(217, 155, 38, 0.14); border: 1px solid rgba(217, 155, 38, 0.34); }
 @keyframes tabIn { from { opacity: 0; transform: translateY(-4px) scale(.96); } }
 body.app-enter .app { animation: appEnter .9s var(--ease-out) both; }
 @keyframes appEnter { from { opacity: 0; transform: scale(.985); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
@@ -840,3 +845,16 @@ body.auth-open { overflow: hidden; }
 .auth-glow { opacity: .55; z-index: 0; }
 .auth-card { z-index: 1; }
 .auth.splash .auth-card { background: radial-gradient(closest-side, rgba(0, 0, 0, 0.75), transparent); }
+
+/* Gelir Geçmişi grafiği */
+#income-chart svg.ic-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.ic-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.ic-summary > div { padding: 10px 12px; border-radius: var(--radius-sm); background: rgba(0, 0, 0, 0.32); border: 1px solid var(--stroke); display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ic-summary small { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+.ic-summary strong { font-size: 16px; font-weight: 600; color: #eef0f2; }
+.ic-summary strong.pos { color: var(--ok); } .ic-summary strong.neg { color: var(--danger); }
+.ic-summary em { font-style: normal; font-size: 11px; color: var(--muted-2); }
+.ic-hit { fill: transparent; transition: fill .15s; }
+.ic-hit:hover { fill: rgba(255, 255, 255, 0.035); }
+#delivery-card .card-head { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
+@media (max-width: 900px) { .ic-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
