@@ -274,25 +274,123 @@ const COUNTRIES = {
   mex: ['Mexico', 26], cay: ['Cayman Islands', 35], can: ['Canada', 41], haw: ['Hawaii', 134], uni: ['United Kingdom', 159],
   arg: ['Argentina', 167], swi: ['Switzerland', 175], jap: ['Japan', 225], chi: ['China', 242], uae: ['UAE', 271], sou: ['South Africa', 297],
 };
+/* Yurt dışı stok takibi: her gözlemi kaydedip restock / tükenme zamanlarını çıkarır */
+const STOCK_FILE = path.join(DATA, 'travel-stock.json');
+let stockLog = readJson(STOCK_FILE, {}); // "kod:id" -> { q, t, restocks: [ts], empties: [ts], samples: [[ts, adet]] }
+let stockDirty = false;
+setInterval(() => { if (stockDirty) { stockDirty = false; try { writeJson(STOCK_FILE, stockLog); } catch {} } }, 60_000).unref();
+const QUARTER = 900; // Torn yurt dışı stokları çeyrek saatlerde yenilenir
+const pushMax = (arr, v, max) => { if (arr[arr.length - 1] !== v) arr.push(v); while (arr.length > max) arr.shift(); };
+const median = (a) => { if (!a.length) return null; const b = [...a].sort((x, y) => x - y); return b[Math.floor(b.length / 2)]; };
+
+function recordStock(code, update, list) {
+  if (!update) return;
+  for (const it of list) {
+    const k = `${code}:${it.id}`;
+    const q = Number(it.quantity) || 0;
+    const e = stockLog[k] ||= { q, t: update, restocks: [], empties: [], samples: [] };
+    if (update <= e.t && e.samples.length) continue;
+    if (q > e.q) {
+      // Alımlar stoğu yalnızca azaltır: artış = restock. Gözlem aralığındaki son çeyreğe yuvarla.
+      pushMax(e.restocks, Math.max(e.t, Math.floor(update / QUARTER) * QUARTER), 12);
+      e.samples = [];
+    } else if (q === 0 && e.q > 0) pushMax(e.empties, update, 12);
+    e.samples.push([update, q]);
+    if (e.samples.length > 30) e.samples.shift();
+    e.q = q; e.t = update; stockDirty = true;
+  }
+}
+
+function stockStats(code, id, q, update) {
+  const e = stockLog[`${code}:${id}`];
+  if (!e) return {};
+  // Tükenme hızı (adet/dk): son restocktan beri, ilk sıfıra kadar olan örnekler
+  let rate = null;
+  const firstZero = e.samples.findIndex(([, v]) => v === 0);
+  const smp = firstZero >= 0 ? e.samples.slice(0, firstZero + 1) : e.samples;
+  if (smp.length >= 2) {
+    const [t0, q0] = smp[0], [t1, q1] = smp[smp.length - 1];
+    if (t1 - t0 >= 300 && q0 > q1) rate = (q0 - q1) / ((t1 - t0) / 60);
+  }
+  const emptyAt = q > 0 && rate ? Math.round(update + (q / rate) * 60) : null;
+  // Boş kalma süresi: her restocktan önceki son tükenme anına göre
+  const gaps = [];
+  for (const r of e.restocks) {
+    const em = [...e.empties].reverse().find((x) => x < r);
+    if (em && r - em < 12 * 3600) gaps.push(r - em);
+  }
+  const gap = median(gaps);
+  const lastEmpty = e.empties[e.empties.length - 1] || null;
+  let estRestock = null;
+  if (gap != null) {
+    const base = q === 0 ? (lastEmpty || update) : emptyAt;
+    if (base) estRestock = Math.ceil((base + gap) / QUARTER) * QUARTER;
+  }
+  const iv = e.restocks.slice(1).map((r, i) => r - e.restocks[i]).filter((x) => x > 0);
+  return { rate, emptyAt, estRestock, lastRestock: e.restocks[e.restocks.length - 1] || null, interval: median(iv), samples: e.samples.length };
+}
+
+/* YATA + Prometheus: miktar için en taze kaynak, restock tahmini Prometheus'tan */
+async function fetchStocks() {
+  return cached('travel:stocks', 120_000, async () => {
+    const get = async (url, name) => {
+      const r = await fetch(url, { headers: { 'User-Agent': 'LRX-Torn-Tracker' }, signal: AbortSignal.timeout(15_000) });
+      if (!r.ok) throw new Error(`${name} HTTP ${r.status}`);
+      const j = await r.json();
+      if (!j || typeof j.stocks !== 'object') throw new Error(`${name}: beklenmeyen veri`);
+      return j;
+    };
+    const [y, p] = await Promise.allSettled([
+      get('https://yata.yt/api/v1/travel/export/', 'YATA'),
+      get('https://api.prombot.co.uk/api/travel', 'Prometheus'),
+    ]);
+    const yata = y.status === 'fulfilled' ? y.value : null;
+    const prom = p.status === 'fulfilled' ? p.value : null;
+    if (!yata && !prom) throw new ApiError(`Stok verisi alınamadı (${y.reason?.message}; ${p.reason?.message})`, 'TRAVEL');
+    const out = {};
+    for (const code of new Set([...Object.keys(yata?.stocks || {}), ...Object.keys(prom?.stocks || {})])) {
+      const yc = yata?.stocks?.[code], pc = prom?.stocks?.[code];
+      const src = !pc || (yc && (yc.update || 0) >= (pc.update || 0)) ? yc : pc;
+      const next = {};
+      for (const it of pc?.stocks || []) {
+        const t = it.nextRestock ? Math.round(Date.parse(it.nextRestock) / 1000) : null;
+        if (t) next[it.id] = t;
+      }
+      const list = Array.isArray(src?.stocks) ? src.stocks : [];
+      recordStock(code, Number(src?.update) || 0, list);
+      out[code] = { update: Number(src?.update) || 0, source: src === yc ? 'YATA' : 'Prometheus', stocks: list, next };
+    }
+    return { countries: out, sources: { yata: !!yata, prom: !!prom } };
+  });
+}
+
 async function getTravelProfit() {
-  const [yata, items, me] = await Promise.all([
-    cached('yata:travel', 120_000, async () => {
-      const r = await fetch('https://yata.yt/api/v1/travel/export/', { headers: { 'User-Agent': 'LRX-Torn-Tracker' } });
-      if (!r.ok) throw new ApiError(`YATA HTTP ${r.status}`, 'YATA');
-      return r.json();
-    }),
+  const [st, items, me] = await Promise.all([
+    fetchStocks(),
     torn('torn/?selections=items', 3600_000),
     torn('user/?selections=travel', 30_000).catch(() => ({})),
   ]);
   const market = items.items || {};
-  const countries = Object.entries(yata.stocks || {}).map(([code, c]) => ({
-    code, name: COUNTRIES[code]?.[0] || code, minutes: COUNTRIES[code]?.[1] || null, update: c.update,
-    items: (c.stocks || []).map((s) => {
+  const nowS = Math.floor(Date.now() / 1000);
+  const countries = Object.entries(st.countries).map(([code, c]) => ({
+    code, name: COUNTRIES[code]?.[0] || code, minutes: COUNTRIES[code]?.[1] || null, update: c.update, source: c.source,
+    items: c.stocks.map((s) => {
       const mv = Number(market[s.id]?.market_value) || 0;
-      return { id: s.id, name: s.name, type: market[s.id]?.type || '', cost: s.cost, qty: s.quantity, market: mv, profit: mv ? mv - s.cost : null };
+      const q = Number(s.quantity) || 0;
+      const stats = stockStats(code, s.id, q, c.update);
+      const prom = c.next[s.id] || null;
+      // Prometheus tahmini 3 saatten fazla gecikmişse güvenilmez say
+      const promOk = prom && prom > nowS - 3 * 3600 ? prom : null;
+      const nextRestock = q > 0 ? null : (promOk || stats.estRestock || null);
+      return {
+        id: s.id, name: s.name, type: market[s.id]?.type || '', cost: s.cost, qty: q, market: mv, profit: mv ? mv - s.cost : null,
+        nextRestock, restockSrc: nextRestock ? (nextRestock === promOk ? 'Prometheus' : 'tahmin') : null,
+        emptyAt: stats.emptyAt || null, rate: stats.rate ? Math.round(stats.rate * 10) / 10 : null,
+        lastRestock: stats.lastRestock || null, interval: stats.interval || null,
+      };
     }),
   }));
-  return { countries, method: me.travel?.method || null, fetchedAt: Date.now(), yataAt: yata.timestamp || null };
+  return { countries, method: me.travel?.method || null, fetchedAt: Date.now(), serverNow: nowS, sources: st.sources };
 }
 
 function pruneUserHistory() {
@@ -721,9 +819,13 @@ function schedulePoll() {
   pollTimer = setInterval(() => {
     fetchCompany(true).catch((e) => console.warn('[poll] company:', e.message));
     getOverview().catch(() => {});
-    if (config.features?.networth !== false) getNetworth().catch(() => {});
+    if (config.features?.['page.networth'] !== false) getNetworth().catch(() => {});
   }, mins * 60_000);
 }
+// Yurt dışı stok geçmişi sürekli birikmeli (restock / tükenme tahmini için)
+const pollStocks = () => { if (config.features?.['page.travel'] !== false) fetchStocks().catch((e) => console.warn('[poll] travel:', e.message)); };
+setInterval(pollStocks, 3 * 60_000).unref();
+setTimeout(pollStocks, 8000).unref();
 
 /* ------------------------------------------------------------------ */
 /* HTTP                                                                */

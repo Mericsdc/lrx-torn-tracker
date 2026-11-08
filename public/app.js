@@ -487,6 +487,7 @@ function syncCompanyMode() {
   const j = state.overview?.player?.job;
   const coBtn = $('.ws-quick-btn[data-open-url="https://www.torn.com/companies.php"]');
   if (coBtn && j) coBtn.hidden = !(Number(j.company_id) > 0);
+  window.applyNavVisibility?.(); // İş Asistanı: işi varsa gizle
   const d = directorKnown();
   if (d === false && state.companyMode) applyCompanyMode(false);
   else if (d === true && !state.companyMode) { applyCompanyMode(true); loadCompany(true); }
@@ -1910,6 +1911,12 @@ $('#auth-get-key')?.addEventListener('click', (e) => {
   e.preventDefault();
   if (window.electronAPI?.openExternal) window.electronAPI.openExternal(NEW_KEY_URL);
   else window.open(NEW_KEY_URL, '_blank', 'noopener');
+});
+$('#auth-credit')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  const url = e.currentTarget.href;
+  if (window.electronAPI?.openExternal) window.electronAPI.openExternal(url);
+  else window.open(url, '_blank', 'noopener');
 });
 $('#auth-key')?.addEventListener('input', (e) => {
   e.target.value = e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 16);

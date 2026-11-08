@@ -8,10 +8,10 @@
 
 /* ---------- Özellik tanımları ---------- */
 const FEATURE_DEFS = [
-  { group: 'pages', key: 'page.job', def: true, tr: ['İş Asistanı', 'Çalışma statlarına uygun şirket pozisyonları'], en: ['Job Assistant', 'Company positions that fit your working stats'] },
+  { group: 'pages', key: 'page.job', def: true, tr: ['İş Asistanı', 'Uygun şirket pozisyonları · bir işin varken gizlenir'], en: ['Job Assistant', 'Positions that fit your working stats · hidden while you have a job'] },
   { group: 'pages', key: 'page.gym', def: true, tr: ['Gym & Statlar', 'Battle stat geçmişi ve günlük artış'], en: ['Gym & Stats', 'Battle stat history and daily gains'] },
   { group: 'pages', key: 'page.networth', def: true, tr: ['Networth', 'Servet dökümü ve günlük değişim'], en: ['Networth', 'Wealth breakdown and daily change'] },
-  { group: 'pages', key: 'page.travel', def: true, tr: ['Seyahat Kârı', 'Yurt dışı alışverişte sefer başı kâr (YATA)'], en: ['Travel Profit', 'Profit per trip from abroad shopping (YATA)'] },
+  { group: 'pages', key: 'page.travel', def: true, tr: ['Seyahat Kârı', 'Kâr, stok ve restock zamanları (YATA + Prometheus)'], en: ['Travel Profit', 'Profit, stock and restock times (YATA + Prometheus)'] },
   { group: 'pages', key: 'page.war', def: true, tr: ['Savaş Hedefleri', 'Fair Fight hedef önerileri'], en: ['War Targets', 'Fair Fight target suggestions'] },
   { group: 'pages', key: 'page.company', def: true, tr: ['Şirket sayfaları', 'Stok, rapor, çalışanlar, gelir (yalnızca direktör)'], en: ['Company pages', 'Stock, report, employees, income (directors only)'] },
 
@@ -24,6 +24,7 @@ const FEATURE_DEFS = [
   { group: 'notify', key: 'notify.education', def: true, tr: ['Eğitim bitti', ''], en: ['Education finished', ''] },
   { group: 'notify', key: 'notify.travel', def: true, tr: ['Uçak indi', ''], en: ['Plane landed', ''] },
   { group: 'notify', key: 'notify.hospital', def: true, tr: ['Hastaneden çıktın', ''], en: ['You left hospital', ''] },
+  { group: 'notify', key: 'notify.restock', def: true, tr: ['Takip ettiğin ürün (★): kalkış zamanı ve restock', ''], en: ['Watched item (★): departure time and restock', ''] },
   { group: 'notify', key: 'notify.targets', def: true, tr: ['Açık sekmedeki oyuncu hastaneden çıktı', ''], en: ['Player in an open tab left hospital', ''] },
 
   { group: 'app', key: 'app.animations', def: true, tr: ['Animasyonlar', 'Geçişler, sayaç animasyonları, kart efektleri'], en: ['Animations', 'Transitions, counters, card effects'] },
@@ -47,19 +48,30 @@ async function setFeature(key, val) {
 }
 
 /* Görünürlük / tema ayarlarını uygula */
-function applyFeatures() {
-  for (const [view, key] of Object.entries(EXTRA_VIEWS)) {
-    const b = $(`.nav-item[data-view="${view}"]`);
-    if (b) b.hidden = !feat(key);
+/* Bir işi var mı? (şirket çalışanı/direktörü ya da şehir işi) — İş Asistanı yalnızca işsizken görünür */
+function hasJob() {
+  const j = state.overview?.player?.job;
+  if (!j) return false;
+  return Number(j.company_id) > 0 || Boolean(j.job && j.job !== 'None');
+}
+function viewHidden(v) {
+  if (v === 'job' && hasJob()) return true;
+  if (EXTRA_VIEWS[v] && !feat(EXTRA_VIEWS[v])) return true;
+  return COMPANY_VIEWS.includes(v) && !(feat('page.company') && state.companyMode !== false);
+}
+function applyNavVisibility() {
+  for (const v of [...Object.keys(EXTRA_VIEWS), ...COMPANY_VIEWS]) {
+    const b = $(`.nav-item[data-view="${v}"]`);
+    if (b) b.hidden = viewHidden(v);
   }
-  const companyOn = feat('page.company') && state.companyMode !== false;
-  for (const v of COMPANY_VIEWS) { const b = $(`.nav-item[data-view="${v}"]`); if (b) b.hidden = !companyOn; }
-  const ov = $('#ov-company'); if (ov) ov.hidden = !companyOn;
+  const ov = $('#ov-company'); if (ov) ov.hidden = viewHidden('stock');
+  if (viewHidden(state.view)) showView('overview');
+}
+function applyFeatures() {
+  applyNavVisibility();
   document.body.classList.toggle('no-anim', !feat('app.animations'));
   const tt = $('#tt-open-btn'); if (tt) tt.hidden = !feat('app.torntools');
   const ub = $('#update-btn'); if (ub) ub.hidden = !feat('app.updates');
-  const hidden = (v) => (EXTRA_VIEWS[v] && !feat(EXTRA_VIEWS[v])) || (COMPANY_VIEWS.includes(v) && !companyOn);
-  if (hidden(state.view)) showView('overview');
   renderFeatureSettings();
 }
 
@@ -178,6 +190,24 @@ function notifyEvents() {
     const st = d?.status;
     if (st?.state === 'Hospital' && st.until) {
       ev.push({ type: 'notify.targets', at: st.until * 1000 - state.skew, title: `🏥 ${decode(d.name || '#' + xid)}`, body: tr('Hastaneden çıktı — saldırılabilir', 'Left hospital — attackable'), url: `https://www.torn.com/page.php?sid=attack&user2ID=${xid}`, id: xid });
+    }
+  }
+  // Takip edilen ürünler: restock anında inecek şekilde kalkış hatırlatması
+  const td = travelState.data;
+  if (td && travelState.watch.size) {
+    const mult = TRAVEL_METHODS[travelMethod()] || 1;
+    for (const c of td.countries) {
+      if (!c.minutes) continue;
+      for (const it of c.items) {
+        const k = `${c.code}:${it.id}`;
+        if (!travelState.watch.has(k) || it.qty > 0 || !it.nextRestock) continue;
+        ev.push({
+          type: 'notify.restock', id: k, at: (it.nextRestock - c.minutes * mult * 60) * 1000 - state.skew,
+          title: `✈ ${tr('Kalkış zamanı', 'Time to fly')}: ${c.name}`,
+          body: tr(`Şimdi uçarsan ${it.name} restock'una (${hhmm(it.nextRestock)}) yetişirsin`, `Fly now to land at the ${it.name} restock (${hhmm(it.nextRestock)})`),
+          url: 'https://www.torn.com/travelagency.php',
+        });
+      }
     }
   }
   return ev;
@@ -382,67 +412,275 @@ function renderNetworth(d) {
 
 /* ---------- Seyahat Kârı ---------- */
 const TRAVEL_METHODS = { Standard: 1, Airstrip: 0.7, Private: 0.5, Business: 0.3 };
+const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+const lsList = (k) => { try { const v = JSON.parse(localStorage.getItem(k) || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
 const travelState = {
-  data: null, at: 0,
-  cap: Number(localStorage.getItem('tt.travel.cap')) || 15,
-  method: localStorage.getItem('tt.travel.method') || '',
-  inStock: localStorage.getItem('tt.travel.inStock') !== '0',
-  type: localStorage.getItem('tt.travel.type') || 'all',
+  data: null, at: 0, q: '',
+  cap: Number(lsGet('tt.travel.cap', 15)) || 15,
+  method: lsGet('tt.travel.method', ''),
+  stock: lsGet('tt.travel.stock', 'arrival'), // all | now | arrival
+  type: lsGet('tt.travel.type', 'all'),
+  sort: lsGet('tt.travel.sort', 'perHour'),
+  minProfit: Number(lsGet('tt.travel.minProfit', 0)) || 0, // saatlik $
+  maxFlight: Number(lsGet('tt.travel.maxFlight', 0)) || 0, // tek yön dk (0 = sınırsız)
+  countries: new Set(lsList('tt.travel.countries')), // boş = hepsi
+  watch: new Set(lsList('tt.travel.watch')),
+  watchOnly: lsGet('tt.travel.watchOnly', '0') === '1',
 };
+function saveTravelPrefs() {
+  const t = travelState;
+  lsSet('tt.travel.cap', String(t.cap)); lsSet('tt.travel.method', t.method); lsSet('tt.travel.stock', t.stock);
+  lsSet('tt.travel.type', t.type); lsSet('tt.travel.sort', t.sort); lsSet('tt.travel.minProfit', String(t.minProfit));
+  lsSet('tt.travel.maxFlight', String(t.maxFlight)); lsSet('tt.travel.countries', JSON.stringify([...t.countries]));
+  lsSet('tt.travel.watch', JSON.stringify([...t.watch])); lsSet('tt.travel.watchOnly', t.watchOnly ? '1' : '0');
+}
+const travelMethod = () => {
+  const d = travelState.data;
+  return travelState.method || (TRAVEL_METHODS[d?.method] ? d.method : 'Standard');
+};
+const hhmm = (sec) => new Date(sec * 1000 - state.skew).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+const mins = (m) => (m == null ? '—' : m >= 60 ? `${Math.floor(m / 60)}${tr('sa', 'h')} ${String(Math.round(m % 60)).padStart(2, '0')}${tr('dk', 'm')}` : `${Math.round(m)}${tr('dk', 'm')}`);
+function tvFmt(s) {
+  if (s <= 0) return s > -900 ? tr('şimdi', 'now') : tr(`${Math.round(-s / 60)}dk gecikti`, `${Math.round(-s / 60)}m late`);
+  s = Math.floor(s);
+  if (s < 3600) return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  return `${Math.floor(s / 3600)}${tr('sa', 'h')} ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}${tr('dk', 'm')}`;
+}
+const tvAt = (sec) => `<span class="mono tv-cd" data-tv-at="${sec}">${tvFmt(sec - nowTct() / 1000)}</span>`;
+
+async function fetchTravel() {
+  const prev = travelState.data;
+  const d = await api('/api/travel');
+  travelState.data = d; travelState.at = Date.now();
+  // Takip edilen ürün yeniden stoklandıysa haber ver
+  if (prev && feat('notify') && feat('notify.restock') && travelState.watch.size) {
+    const old = new Map(prev.countries.flatMap((c) => c.items.map((i) => [`${c.code}:${i.id}`, i.qty])));
+    for (const c of d.countries) for (const i of c.items) {
+      const k = `${c.code}:${i.id}`;
+      if (!travelState.watch.has(k) || old.get(k) !== 0 || !(i.qty > 0)) continue;
+      const key = `notify.restock.in:${k}`;
+      if (Date.now() - (notified.get(key) || 0) < 20 * 60_000) continue;
+      rememberNotified(key, Date.now());
+      notify(key, `📦 ${i.name} ${tr('stokta', 'in stock')}`, tr(`${c.name}: ${n0(i.qty)} adet`, `${c.name}: ${n0(i.qty)} available`), { url: 'https://www.torn.com/travelagency.php' });
+    }
+  }
+  return d;
+}
 async function loadTravel(force = false) {
   const el = $('#travel-body');
   if (!travelState.data) el.innerHTML = loadingBox();
-  if (!force && travelState.data && Date.now() - travelState.at < 120_000) return renderTravel();
-  try { travelState.data = await api('/api/travel'); travelState.at = Date.now(); renderTravel(); }
-  catch (e) { el.innerHTML = errorBox(e); }
-}
-function renderTravel() {
-  const d = travelState.data; if (!d) return;
-  const method = travelState.method || (TRAVEL_METHODS[d.method] ? d.method : 'Standard');
-  const mult = TRAVEL_METHODS[method] || 1;
-  const cap = Math.max(1, travelState.cap);
-  const types = [...new Set(d.countries.flatMap((c) => c.items.map((i) => i.type)).filter(Boolean))].sort();
-  const rows = [];
-  for (const c of d.countries) {
-    const round = c.minutes ? 2 * c.minutes * mult : null;
-    for (const it of c.items) {
-      if (it.profit == null || it.profit <= 0) continue;
-      if (travelState.inStock && it.qty <= 0) continue;
-      if (travelState.type !== 'all' && it.type !== travelState.type) continue;
-      const units = travelState.inStock ? Math.min(cap, it.qty) : cap;
-      const trip = units * it.profit;
-      rows.push({ c, it, units, trip, perHour: round ? trip / (round / 60) : 0, round });
+  if (force || !travelState.data || Date.now() - travelState.at > 120_000) {
+    try { await fetchTravel(); } catch (e) {
+      if (!travelState.data) { el.innerHTML = errorBox(e); return; }
+      toast(tr('Seyahat verisi yenilenemedi: ', 'Could not refresh travel data: ') + e.message);
     }
   }
-  rows.sort((a, b) => b.perHour - a.perHour);
-  const bestByCountry = d.countries.map((c) => rows.find((r) => r.c.code === c.code)).filter(Boolean).sort((a, b) => b.perHour - a.perHour);
-  const mins = (m) => (m == null ? '—' : m >= 60 ? `${Math.floor(m / 60)}${tr('sa', 'h')} ${Math.round(m % 60)}${tr('dk', 'm')}` : `${Math.round(m)}${tr('dk', 'm')}`);
-  const age = d.countries.length ? Math.round((Date.now() / 1000 - Math.min(...d.countries.map((c) => c.update || Date.now() / 1000))) / 60) : null;
-  $('#travel-body').innerHTML = `
-    <article class="glass card travel-controls">
-      <label>${tr('Taşıma kapasitesi', 'Carry capacity')} <input class="input mono" id="tv-cap" type="number" min="1" max="100" value="${cap}"></label>
-      <label>${tr('Uçuş tipi', 'Travel type')} <select id="tv-method">${Object.keys(TRAVEL_METHODS).map((m) => `<option value="${m}" ${m === method ? 'selected' : ''}>${m} (×${TRAVEL_METHODS[m]})</option>`).join('')}</select></label>
-      <label>${tr('Tür', 'Type')} <select id="tv-type"><option value="all">${tr('Hepsi', 'All')}</option>${types.map((t) => `<option ${t === travelState.type ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
-      <label class="check"><input type="checkbox" id="tv-stock" ${travelState.inStock ? 'checked' : ''}> ${tr('Sadece stokta olanlar', 'In stock only')}</label>
-      <span class="muted">${tr('Kaynak: YATA', 'Source: YATA')}${age != null ? ` · ${tr('en eski veri', 'oldest data')} ${age} ${tr('dk', 'min')}` : ''} · ${tr('uçak bileti hariç', 'excludes ticket cost')}</span>
-    </article>
-    <div class="grid travel-best">${bestByCountry.slice(0, 6).map((r) => `<div class="glass kpi"><div class="label"><span lang="en">${esc(r.c.name)}</span> · ${mins(r.round / 2)}</div><div class="value tq">${cmoney(r.perHour)}<span class="sub-text">/${tr('sa', 'h')}</span></div><div class="hint">${esc(r.it.name)} · ${cmoney(r.trip)} ${tr('sefer başı', 'per trip')}</div></div>`).join('') || emptyBox(tr('Kârlı ürün yok', 'No profitable items'), '')}</div>
-    <article class="glass card"><div class="card-head"><h3>${tr('En kârlı ürünler', 'Most profitable items')}</h3><span class="muted">${tr('Saatlik kâra göre · gidiş-dönüş süresi', 'By hourly profit · round-trip time')}</span></div>
-      <div class="tbl-wrap"><table class="tbl compact"><thead><tr><th>${tr('Ülke', 'Country')}</th><th>${tr('Ürün', 'Item')}</th><th class="num">${tr('Alış', 'Cost')}</th><th class="num">${tr('Market', 'Market')}</th><th class="num">${tr('Adet kârı', 'Profit/unit')}</th><th class="num">${tr('Stok', 'Stock')}</th><th class="num">${tr('Sefer kârı', 'Per trip')}</th><th class="num">${tr('Gidiş-dönüş', 'Round trip')}</th><th class="num">${tr('Saatlik', 'Per hour')}</th></tr></thead><tbody>
-      ${rows.slice(0, 40).map((r) => `<tr><td>${esc(r.c.name)}</td><td><b>${esc(r.it.name)}</b> <span class="sub-text">${esc(r.it.type)}</span></td><td class="num">${money(r.it.cost)}</td><td class="num">${money(r.it.market)}</td><td class="num pos">${money(r.it.profit)}</td><td class="num ${r.it.qty <= 0 ? 'neg' : ''}">${n0(r.it.qty)}</td><td class="num">${money(r.trip)} <span class="sub-text">×${r.units}</span></td><td class="num">${mins(r.round)}</td><td class="num tq-text"><b>${cmoney(r.perHour)}</b></td></tr>`).join('')}
-      </tbody></table></div></article>`;
-  const save = () => {
-    try {
-      localStorage.setItem('tt.travel.cap', String(travelState.cap)); localStorage.setItem('tt.travel.method', travelState.method);
-      localStorage.setItem('tt.travel.inStock', travelState.inStock ? '1' : '0'); localStorage.setItem('tt.travel.type', travelState.type);
-    } catch {}
-    renderTravel();
-  };
-  $('#tv-cap').addEventListener('change', (e) => { travelState.cap = Math.min(100, Math.max(1, Number(e.target.value) || 15)); save(); });
-  $('#tv-method').addEventListener('change', (e) => { travelState.method = e.target.value; save(); });
-  $('#tv-type').addEventListener('change', (e) => { travelState.type = e.target.value; save(); });
-  $('#tv-stock').addEventListener('change', (e) => { travelState.inStock = e.target.checked; save(); });
+  renderTravel();
 }
+
+/* Varışta stok durumu */
+function stockStatus(it, now, arrive) {
+  if (it.qty > 0) return it.emptyAt && it.emptyAt < arrive ? 'risk' : 'ok';
+  if (it.nextRestock) {
+    if (it.nextRestock <= now) return now - it.nextRestock <= 45 * 60 ? 'due' : 'stale'; // çok gecikmiş tahmin güvenilmez
+    return it.nextRestock <= arrive ? 'restock' : 'later';
+  }
+  return 'no';
+}
+const STATUS_CHIP = {
+  ok: ['green', '✓', ['Varışta stokta', 'In stock on arrival']],
+  risk: ['warn', '⚠', ['Varışta bitebilir', 'May sell out before you land']],
+  restock: ['blue', '⟳', ['Varışa kadar gelir', 'Restocks before you land']],
+  due: ['warn', '⟳', ['Restock her an', 'Restock due any moment']],
+  later: ['dim', '⏳', ['Varıştan sonra gelir', 'Restocks after you land']],
+  stale: ['dim', '?', ['Tahmin gecikti', 'Estimate overdue']],
+  no: ['danger', '✗', ['Stok yok', 'Out of stock']],
+};
+const statusChip = (s) => { const [cls, ic, label] = STATUS_CHIP[s]; return `<span class="chip ${cls}">${ic} ${tr(label[0], label[1])}</span>`; };
+
+function travelRows({ ignoreStock = false } = {}) {
+  const d = travelState.data, t = travelState;
+  const mult = TRAVEL_METHODS[travelMethod()] || 1;
+  const now = nowTct() / 1000;
+  const cap = Math.max(1, t.cap);
+  const q = t.q.trim().toLowerCase();
+  const rows = [];
+  for (const c of d.countries) {
+    if (!c.minutes) continue;
+    const oneWay = c.minutes * mult;
+    if (t.maxFlight && oneWay > t.maxFlight) continue;
+    if (t.countries.size && !t.countries.has(c.code)) continue;
+    const arrive = now + oneWay * 60;
+    for (const it of c.items) {
+      const key = `${c.code}:${it.id}`;
+      const watched = t.watch.has(key);
+      if (t.watchOnly && !watched) continue;
+      if (!watched && (it.profit == null || it.profit <= 0)) continue;
+      if (t.type !== 'all' && it.type !== t.type) continue;
+      if (q && !it.name.toLowerCase().includes(q)) continue;
+      const st = stockStatus(it, now, arrive);
+      if (!ignoreStock && t.stock === 'now' && it.qty <= 0) continue;
+      if (!ignoreStock && t.stock === 'arrival' && (st === 'no' || st === 'later' || st === 'stale')) continue;
+      const units = it.qty > 0 ? Math.min(cap, it.qty) : cap;
+      const trip = units * (it.profit || 0);
+      const round = 2 * oneWay;
+      const perHour = trip / (round / 60);
+      if (t.minProfit && perHour < t.minProfit) continue;
+      rows.push({ c, it, key, watched, st, units, trip, round, oneWay, perHour, arrive });
+    }
+  }
+  const sorters = {
+    perHour: (a, b) => b.perHour - a.perHour,
+    trip: (a, b) => b.trip - a.trip,
+    unit: (a, b) => (b.it.profit || 0) - (a.it.profit || 0),
+    restock: (a, b) => (a.it.nextRestock || Infinity) - (b.it.nextRestock || Infinity) || b.perHour - a.perHour,
+    flight: (a, b) => a.oneWay - b.oneWay || b.perHour - a.perHour,
+  };
+  rows.sort(sorters[t.sort] || sorters.perHour);
+  return rows;
+}
+
+function renderTravel() {
+  const d = travelState.data; if (!d) return;
+  const t = travelState;
+  const method = travelMethod();
+  const mult = TRAVEL_METHODS[method] || 1;
+  const types = [...new Set(d.countries.flatMap((c) => c.items.map((i) => i.type)).filter(Boolean))].sort();
+  const opt = (v, label, cur) => `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${label}</option>`;
+  const countryChips = d.countries.filter((c) => c.minutes).map((c) => `<button class="tv-cbtn ${t.countries.has(c.code) ? 'active' : ''}" data-country="${c.code}" title="${esc(c.name)}"><span lang="en">${esc(c.name)}</span> <small>${mins(c.minutes * mult)}</small></button>`).join('');
+  $('#travel-body').innerHTML = `
+    <article class="glass card tv-controls">
+      <div class="tv-row">
+        <input class="input" id="tv-q" placeholder="${tr('Ürün ara… (ör. Xanax, Plushie)', 'Search items… (e.g. Xanax, Plushie)')}" value="${esc(t.q)}">
+        <div class="tv-countries"><button class="tv-cbtn ${t.countries.size ? '' : 'active'}" data-country="*">${tr('Tüm ülkeler', 'All countries')}</button>${countryChips}</div>
+      </div>
+      <div class="tv-row tv-filters">
+        <label>${tr('Kapasite', 'Capacity')} <input class="input mono" id="tv-cap" type="number" min="1" max="100" value="${t.cap}"></label>
+        <label>${tr('Uçuş', 'Travel')} <select id="tv-method">${Object.keys(TRAVEL_METHODS).map((m) => opt(m, `${m} (×${TRAVEL_METHODS[m]})`, method)).join('')}</select></label>
+        <label>${tr('Tür', 'Type')} <select id="tv-type">${opt('all', tr('Hepsi', 'All'), t.type)}${types.map((x) => opt(esc(x), esc(x), t.type)).join('')}</select></label>
+        <label>${tr('Stok', 'Stock')} <select id="tv-stock">${opt('arrival', tr('Varışta stokta olacak', 'In stock on arrival'), t.stock)}${opt('now', tr('Şu an stokta', 'In stock now'), t.stock)}${opt('all', tr('Hepsi', 'All'), t.stock)}</select></label>
+        <label>${tr('Uçuş süresi', 'Flight time')} <select id="tv-maxflight">${opt(0, tr('Hepsi', 'Any'), t.maxFlight)}${[60, 120, 180, 240].map((m) => opt(m, `≤ ${mins(m)}`, t.maxFlight)).join('')}</select></label>
+        <label>${tr('Min. saatlik', 'Min. per hour')} <select id="tv-min">${[0, 50e3, 100e3, 250e3, 500e3, 1e6].map((v) => opt(v, v ? cmoney(v) : tr('Hepsi', 'Any'), t.minProfit)).join('')}</select></label>
+        <label>${tr('Sırala', 'Sort')} <select id="tv-sort">${opt('perHour', tr('Saatlik kâr', 'Profit / hour'), t.sort)}${opt('trip', tr('Sefer kârı', 'Profit / trip'), t.sort)}${opt('unit', tr('Adet kârı', 'Profit / unit'), t.sort)}${opt('restock', tr('Restock zamanı', 'Restock time'), t.sort)}${opt('flight', tr('Uçuş süresi', 'Flight time'), t.sort)}</select></label>
+        <label class="check"><input type="checkbox" id="tv-watchonly" ${t.watchOnly ? 'checked' : ''}> ★ ${tr('Sadece takip ettiklerim', 'Watched only')}</label>
+        <button class="btn sm ghost" id="tv-reset">${tr('Filtreleri sıfırla', 'Reset filters')}</button>
+      </div>
+    </article>
+    <div id="tv-results"></div>`;
+  renderTravelResults();
+}
+
+function renderTravelResults() {
+  const d = travelState.data, box = $('#tv-results');
+  if (!d || !box) return;
+  const t = travelState;
+  const now = nowTct() / 1000;
+  const rows = travelRows();
+  const best = [];
+  for (const r of [...rows].sort((a, b) => b.perHour - a.perHour)) if (!best.some((b) => b.c.code === r.c.code)) best.push(r);
+  // Yaklaşan restocklar: stok filtresinden bağımsız, şu an stokta olmayan kârlı ürünler
+  const upcoming = travelRows({ ignoreStock: true })
+    .filter((r) => r.it.qty <= 0 && r.it.nextRestock && r.it.nextRestock > now - 15 * 60 && r.it.nextRestock < now + 6 * 3600)
+    .sort((a, b) => a.it.nextRestock - b.it.nextRestock).slice(0, 14);
+  const ages = d.countries.map((c) => c.update).filter(Boolean);
+  const age = ages.length ? Math.round((now - Math.min(...ages)) / 60) : null;
+  const src = [d.sources?.yata && 'YATA', d.sources?.prom && 'Prometheus'].filter(Boolean).join(' + ') || '—';
+  const star = (r) => `<button class="tv-star ${r.watched ? 'on' : ''}" data-watch="${r.key}" title="${r.watched ? tr('Takipten çıkar', 'Unwatch') : tr('Takip et: restock / kalkış bildirimi', 'Watch: restock / departure alerts')}">${r.watched ? '★' : '☆'}</button>`;
+  const stockCell = (r) => {
+    const it = r.it;
+    const sub = it.qty > 0 && it.emptyAt ? `<div class="sub-text">≈ ${tvAt(it.emptyAt)} ${tr('sonra biter', 'until empty')}${it.rate ? ` · −${n0(it.rate)}/${tr('dk', 'm')}` : ''}</div>` : '';
+    return `<span class="${it.qty <= 0 ? 'neg' : ''}">${n0(it.qty)}</span>${sub}`;
+  };
+  const restockCell = (r) => {
+    const it = r.it;
+    if (it.nextRestock) return `${tvAt(it.nextRestock)}<div class="sub-text">${hhmm(it.nextRestock)} · ${it.restockSrc === 'Prometheus' ? 'Prometheus' : tr('tahmin', 'estimate')}</div>`;
+    if (it.qty > 0 && it.lastRestock) return `<span class="muted">${tr('son', 'last')} ${hhmm(it.lastRestock)}</span>`;
+    return '<span class="muted">—</span>';
+  };
+  box.innerHTML = `
+    <div class="grid travel-best">${best.slice(0, 6).map((r) => `<div class="glass kpi"><div class="label"><span lang="en">${esc(r.c.name)}</span> · ${mins(r.oneWay)}</div><div class="value tq">${cmoney(r.perHour)}<span class="sub-text">/${tr('sa', 'h')}</span></div><div class="hint">${esc(r.it.name)} · ${cmoney(r.trip)} ${tr('sefer başı', 'per trip')}</div></div>`).join('') || emptyBox(tr('Filtreye uyan kârlı ürün yok', 'No profitable items match the filters'), '')}</div>
+    <article class="glass card">
+      <div class="card-head"><div><h3>⟳ ${tr('Yaklaşan restocklar', 'Upcoming restocks')}</h3><span class="muted">${tr('Kalkış saati = restock anında inecek şekilde · ★ ile takip edersen kalkış ve stok bildirimi gelir', 'Departure = land right at the restock · ★ an item for departure and restock alerts')}</span></div></div>
+      ${upcoming.length ? `<div class="tv-up">${upcoming.map((r) => {
+        const depart = r.it.nextRestock - r.oneWay * 60;
+        const go = depart > now
+          ? `${tr('Kalkış', 'Depart')} <b class="mono">${hhmm(depart)}</b> · ${tvAt(depart)}`
+          : `<b class="pos">${tr('Şimdi kalk', 'Fly now')}</b> · ${tr('varış', 'land')} ${hhmm(now + r.oneWay * 60)}`;
+        return `<div class="tv-up-row ${r.watched ? 'watched' : ''}">
+          ${star(r)}
+          <div class="tv-up-time"><b class="mono">${hhmm(r.it.nextRestock)}</b>${tvAt(r.it.nextRestock)}</div>
+          <div class="tv-up-item"><b>${esc(r.it.name)}</b><span class="sub-text"><span lang="en">${esc(r.c.name)}</span> · ${mins(r.oneWay)} · ${r.it.restockSrc === 'Prometheus' ? 'Prometheus' : tr('tahmin', 'estimate')}</span></div>
+          <div class="tv-up-profit"><span class="pos mono">${money(r.it.profit)}</span><span class="sub-text">${cmoney(r.trip)} ${tr('sefer', 'trip')}</span></div>
+          <div class="tv-up-go">${go}</div>
+        </div>`;
+      }).join('')}</div>` : emptyBox(tr('Önümüzdeki 6 saatte beklenen restock yok', 'No restocks expected in the next 6 hours'), tr('Filtreleri genişletmeyi dene.', 'Try widening the filters.'))}
+    </article>
+    <article class="glass card">
+      <div class="card-head wrap"><div><h3>${tr('Ürünler', 'Items')} <span class="chip">${rows.length}</span></h3><span class="muted">${tr('Kaynak', 'Source')}: ${src}${age != null ? ` · ${tr('en eski veri', 'oldest data')} ${age} ${tr('dk', 'min')}` : ''} · ${tr('uçak bileti hariç', 'excludes ticket cost')}</span></div></div>
+      ${rows.length ? `<div class="tbl-wrap"><table class="tbl compact tv-table"><thead><tr><th></th><th>${tr('Ülke', 'Country')}</th><th>${tr('Ürün', 'Item')}</th><th class="num">${tr('Alış → Market', 'Cost → Market')}</th><th class="num">${tr('Adet kârı', 'Profit/unit')}</th><th class="num">${tr('Stok', 'Stock')}</th><th>${tr('Restock', 'Restock')}</th><th>${tr('Varışta', 'On arrival')}</th><th class="num">${tr('Sefer kârı', 'Per trip')}</th><th class="num">${tr('Saatlik', 'Per hour')}</th></tr></thead><tbody>
+      ${rows.slice(0, 60).map((r) => `<tr class="${r.watched ? 'watched' : ''}"><td>${star(r)}</td><td><span lang="en">${esc(r.c.name)}</span><div class="sub-text">${mins(r.oneWay)}</div></td><td><b>${esc(r.it.name)}</b> <span class="sub-text">${esc(r.it.type)}</span></td><td class="num">${money(r.it.cost)}<div class="sub-text">${money(r.it.market)}</div></td><td class="num ${(r.it.profit || 0) > 0 ? 'pos' : 'neg'}">${money(r.it.profit || 0)}</td><td class="num">${stockCell(r)}</td><td>${restockCell(r)}</td><td>${statusChip(r.st)}</td><td class="num">${money(r.trip)} <span class="sub-text">×${r.units}</span></td><td class="num tq-text"><b>${cmoney(r.perHour)}</b></td></tr>`).join('')}
+      </tbody></table></div>` : emptyBox(tr('Filtreye uyan ürün yok', 'No items match the filters'), tr('Stok filtresini "Hepsi" yapmayı ya da ülke seçimini genişletmeyi dene.', 'Try setting Stock to "All" or selecting more countries.'))}
+    </article>`;
+}
+
+/* Filtre olayları (tek sefer bağlanır; #travel-body kalıcı) */
+(() => {
+  const body = $('#travel-body'); if (!body) return;
+  const changed = () => { saveTravelPrefs(); renderTravelResults(); };
+  body.addEventListener('input', (e) => { if (e.target.id === 'tv-q') { travelState.q = e.target.value; renderTravelResults(); } });
+  body.addEventListener('change', (e) => {
+    const t = travelState, v = e.target.value;
+    switch (e.target.id) {
+      case 'tv-cap': t.cap = Math.min(100, Math.max(1, Number(v) || 15)); e.target.value = t.cap; break;
+      case 'tv-method': t.method = v; saveTravelPrefs(); return renderTravel(); // uçuş süreleri değişir
+      case 'tv-type': t.type = v; break;
+      case 'tv-stock': t.stock = v; break;
+      case 'tv-maxflight': t.maxFlight = Number(v) || 0; break;
+      case 'tv-min': t.minProfit = Number(v) || 0; break;
+      case 'tv-sort': t.sort = v; break;
+      case 'tv-watchonly': t.watchOnly = e.target.checked; break;
+      default: return;
+    }
+    changed();
+  });
+  body.addEventListener('click', (e) => {
+    const cb = e.target.closest('[data-country]');
+    if (cb) {
+      const code = cb.dataset.country, set = travelState.countries;
+      if (code === '*') set.clear(); else if (set.has(code)) set.delete(code); else set.add(code);
+      $$('[data-country]', body).forEach((b) => b.classList.toggle('active', b.dataset.country === '*' ? !set.size : set.has(b.dataset.country)));
+      return changed();
+    }
+    const w = e.target.closest('[data-watch]');
+    if (w) {
+      const k = w.dataset.watch;
+      if (travelState.watch.has(k)) travelState.watch.delete(k); else {
+        travelState.watch.add(k);
+        if (!feat('notify') || !feat('notify.restock')) toast(tr('Bildirimler kapalı — Ayarlar › Özellikler', 'Notifications are off — Settings › Features'));
+        else if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+      }
+      return changed();
+    }
+    if (e.target.closest('#tv-reset')) {
+      Object.assign(travelState, { q: '', type: 'all', stock: 'arrival', sort: 'perHour', minProfit: 0, maxFlight: 0, watchOnly: false });
+      travelState.countries.clear();
+      saveTravelPrefs(); renderTravel();
+    }
+  });
+})();
+
+/* Geri sayımlar + otomatik yenileme */
+setInterval(() => {
+  if (state.view !== 'travel') return;
+  const now = nowTct() / 1000;
+  $$('[data-tv-at]').forEach((el) => { const s = Number(el.dataset.tvAt) - now; el.textContent = tvFmt(s); el.classList.toggle('due', s <= 0); });
+}, 1000);
+setInterval(() => {
+  const bg = travelState.watch.size && feat('page.travel') && feat('notify') && feat('notify.restock');
+  if (state.view !== 'travel' && !bg) return;
+  fetchTravel().then(() => { if (state.view === 'travel') renderTravelResults(); }).catch(() => {});
+}, 120_000);
 
 /* ---------- Görünüm kancaları ---------- */
 const EXTRA_LOADERS = { job: loadJob, gym: loadGym, networth: loadNetworth, travel: loadTravel };
