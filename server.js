@@ -831,6 +831,76 @@ async function getTargets(factionId) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Seviye 15 altı: Baldr's Levelling Targets                           */
+/* ------------------------------------------------------------------ */
+// oran.pw/baldrstargets'ın kullandığı açık topluluk listesi. Hedeflerin durumu kullanıcının kendi key'iyle,
+// yalnızca sayfa açıkken ve dakikada en fazla ~30 istekle (hastanedekiler çıkış saatine kadar hiç) kontrol edilir.
+const LEVEL_LISTS_URL = 'https://raw.githubusercontent.com/Baldr-Geek/Baldrs-List/refs/heads/main/data.json';
+const LEVEL_STOP_CODES = new Set(['NO_KEY', 2, 8, 9, 10, 13, 14, 16, 18]); // key/erişim sorunu: taramayı durdur
+const plainNum = (v) => Number(String(v ?? '').replace(/[^\d.]/g, '')) || 0;
+
+function getLevelLists() {
+  return cached('level-lists', 6 * 3600_000, async () => {
+    const r = await fetch(LEVEL_LISTS_URL, { headers: { 'User-Agent': 'TornTracker' } });
+    if (!r.ok) throw new ApiError(`Hedef listesi alınamadı (HTTP ${r.status})`, 'LIST_HTTP', 'levelling');
+    const lists = {};
+    for (const [name, rows] of Object.entries((await r.json()) || {})) {
+      const arr = (Array.isArray(rows) ? rows : Object.values(rows || {}))
+        .map((x) => ({ id: Number(x.id), name: String(x.name || ''), lvl: plainNum(x.lvl), total: plainNum(x.total), str: plainNum(x.str), def: plainNum(x.def), spd: plainNum(x.spd), dex: plainNum(x.dex) }))
+        .filter((x) => Number.isInteger(x.id) && x.id > 0);
+      if (arr.length) lists[name] = arr;
+    }
+    if (!Object.keys(lists).length) throw new ApiError('Hedef listesi boş geldi', 'LIST_EMPTY', 'levelling');
+    return lists;
+  });
+}
+
+const levelScan = { list: null, wantedAt: 0, running: false, error: null, stoppedAt: 0, status: new Map() }; // id -> { state, until, description, level, at }
+function levelStale(s, now) {
+  if (!s) return true;
+  if ((s.state === 'Hospital' || s.state === 'Jail') && s.until) return s.until * 1000 <= now;
+  return now - s.at > (s.state === 'Okay' ? 3 : 6) * 60_000;
+}
+async function runLevelScan() {
+  if (levelScan.running) return;
+  levelScan.running = true;
+  try {
+    while (Date.now() - levelScan.wantedAt < 20_000) { // sayfa kapanınca (istek gelmeyince) durur
+      const rows = (await getLevelLists())[levelScan.list] || [];
+      const now = Date.now();
+      const next = [...rows].sort((a, b) => b.lvl - a.lvl).find((r) => levelStale(levelScan.status.get(r.id), now));
+      if (!next) { await sleep(3000); continue; }
+      try {
+        const u = await torn(`user/${next.id}?selections=basic`, 60_000);
+        levelScan.status.set(next.id, { state: u.status?.state || '?', until: Number(u.status?.until) || 0, description: u.status?.description || '', level: Number(u.level) || 0, at: Date.now() });
+        levelScan.error = null;
+        levelScan.stoppedAt = 0;
+      } catch (e) {
+        levelScan.error = e.message;
+        if (LEVEL_STOP_CODES.has(e.code)) { levelScan.stoppedAt = Date.now(); break; }
+        if (e.code === 6) levelScan.status.set(next.id, { state: 'Unknown', until: 0, description: '', level: 0, at: Date.now() });
+        await sleep(e.code === 5 ? 60_000 : 5000);
+      }
+      await sleep(2000);
+    }
+  } finally { levelScan.running = false; }
+}
+async function getLevelling(listName) {
+  const lists = await getLevelLists();
+  const names = Object.keys(lists);
+  const list = lists[listName] ? listName : names[0];
+  levelScan.list = list;
+  levelScan.wantedAt = Date.now();
+  // Key hatası sonrası 2 dk bekle; her sayfa yenilemesinde boşuna istek atma
+  if (Date.now() - levelScan.stoppedAt > 120_000) runLevelScan().catch((e) => { levelScan.error = e.message; });
+  const targets = lists[list].map((r) => {
+    const s = levelScan.status.get(r.id);
+    return { ...r, lvl: s?.level || r.lvl, status: s && s.state !== 'Unknown' ? { state: s.state, until: s.until, description: s.description } : null, checkedAt: s?.at || 0 };
+  });
+  return { lists: names, list, targets, checked: targets.filter((t) => t.checkedAt).length, error: levelScan.error, myLevel: history.lastOverview?.player?.level ?? null };
+}
+
+/* ------------------------------------------------------------------ */
 /* Arka plan poller                                                    */
 /* ------------------------------------------------------------------ */
 let pollTimer = null;
@@ -892,6 +962,7 @@ async function handleApi(req, res, url) {
     if (p === '/api/networth') return send(res, 200, await getNetworth(url.searchParams.get('force') === '1'));
     if (p === '/api/job') return send(res, 200, await getJobInfo());
     if (p === '/api/travel') return send(res, 200, await getTravelProfit());
+    if (p === '/api/levelling') return send(res, 200, await getLevelling(url.searchParams.get('list') || ''));
     if (p === '/api/config' && req.method === 'POST') {
       const b = await readBody(req);
       if (typeof b.apiKey === 'string' && b.apiKey.trim()) { config.apiKey = b.apiKey.trim(); cache.clear(); }

@@ -13,6 +13,7 @@ const FEATURE_DEFS = [
   { group: 'pages', key: 'page.networth', def: true, tr: ['Networth', 'Servet dökümü ve günlük değişim'], en: ['Networth', 'Wealth breakdown and daily change'] },
   { group: 'pages', key: 'page.travel', def: true, tr: ['Seyahat Kârı', 'Kâr, stok ve restock zamanları (YATA + Prometheus)'], en: ['Travel Profit', 'Profit, stock and restock times (YATA + Prometheus)'] },
   { group: 'pages', key: 'page.war', def: true, tr: ['Savaş Hedefleri', 'Fair Fight hedef önerileri'], en: ['War Targets', 'Fair Fight target suggestions'] },
+  { group: 'pages', key: 'page.levelling', def: true, tr: ['Seviye 15 altı', "Baldr's Levelling Targets ve Başlangıç Rehberi · yalnızca seviye 15'in altındayken görünür"], en: ['Under level 15', "Baldr's Levelling Targets and Beginner Guide · shown only below level 15"] },
   { group: 'pages', key: 'page.company', def: true, tr: ['Şirket sayfaları', 'Stok, rapor, çalışanlar, gelir (yalnızca direktör)'], en: ['Company pages', 'Stock, report, employees, income (directors only)'] },
 
   { group: 'notify', key: 'notify', def: true, master: true, tr: ['Masaüstü bildirimleri', 'Tümünü aç / kapat'], en: ['Desktop notifications', 'Turn all on / off'] },
@@ -38,7 +39,8 @@ const FEATURE_DEFS = [
   { group: 'app', key: 'app.updates', def: true, tr: ['Otomatik güncelleme kontrolü', 'Açılışta ve 6 saatte bir'], en: ['Automatic update check', 'On startup and every 6 hours'] },
 ];
 const FEATURE_DEF_MAP = Object.fromEntries(FEATURE_DEFS.map((f) => [f.key, f]));
-const EXTRA_VIEWS = { job: 'page.job', gym: 'page.gym', networth: 'page.networth', travel: 'page.travel', war: 'page.war' };
+const EXTRA_VIEWS = { job: 'page.job', gym: 'page.gym', networth: 'page.networth', travel: 'page.travel', war: 'page.war', level: 'page.levelling', guide: 'page.levelling' };
+const LEVELLING_VIEWS = ['level', 'guide'];
 
 function feat(key) {
   const v = state.config?.features?.[key];
@@ -59,8 +61,12 @@ function hasJob() {
   if (!j) return false;
   return Number(j.company_id) > 0 || Boolean(j.job && j.job !== 'None');
 }
+/* Seviye 15 altı sekmeleri: seviye bilinmiyorsa ya da 15+ ise gizli */
+const myLevel = () => Number(state.overview?.player?.level) || 0;
+const underLevel15 = () => myLevel() > 0 && myLevel() < 15;
 function viewHidden(v) {
   if (v === 'job' && hasJob()) return true;
+  if (LEVELLING_VIEWS.includes(v) && !underLevel15()) return true;
   if (EXTRA_VIEWS[v] && !feat(EXTRA_VIEWS[v])) return true;
   return COMPANY_VIEWS.includes(v) && !(feat('page.company') && state.companyMode !== false);
 }
@@ -71,6 +77,7 @@ function applyNavVisibility() {
   }
   const ov = $('#ov-company'); if (ov) ov.hidden = viewHidden('stock');
   if (viewHidden(state.view)) showView('overview');
+  else if (state.view === 'guide') renderGuide(); // her overview yenilemesinde kişisel adımlar güncellensin
 }
 function applyFeatures() {
   applyNavVisibility();
@@ -86,12 +93,16 @@ Object.assign(I18N, {
   'nav.gym': ['Gym & Statlar', 'Gym & Stats'],
   'nav.networth': ['Networth', 'Networth'],
   'nav.travel': ['Seyahat Kârı', 'Travel Profit'],
+  'nav.level': ["Baldr's Levelling Targets", "Baldr's Levelling Targets"],
+  'nav.guide': ['Başlangıç Rehberi', 'Beginner Guide'],
 });
 Object.assign(VIEW_META, {
   job: { tr: ['İş Asistanı', 'Çalışma statlarına göre uygun pozisyonlar'], en: ['Job Assistant', 'Positions that fit your working stats'] },
   gym: { tr: ['Gym & Statlar', 'Battle stat geçmişi ve günlük artış'], en: ['Gym & Stats', 'Battle stat history and daily gains'] },
   networth: { tr: ['Networth', 'Servet dökümü ve değişim'], en: ['Networth', 'Wealth breakdown and change'] },
   travel: { tr: ['Seyahat Kârı', 'Yurt dışından alışverişte en kârlı ürünler'], en: ['Travel Profit', 'Most profitable items to buy abroad'] },
+  level: { tr: ["Baldr's Levelling Targets", "Seviye 15'e hızlı çıkmak için düşük statlı hedefler"], en: ["Baldr's Levelling Targets", 'Low-stat targets for a fast climb to level 15'] },
+  guide: { tr: ['Başlangıç Rehberi', 'İş, eğitim, gym ve alışveriş: seviye 15 öncesi yol haritası'], en: ['Beginner Guide', 'Job, education, gym and shopping: a roadmap to level 15'] },
 });
 
 /* ---------- Ayarlar → Özellikler kartı ---------- */
@@ -689,8 +700,224 @@ setInterval(() => {
   fetchTravel().then(() => { if (state.view === 'travel') renderTravelResults(); }).catch(() => {});
 }, 120_000);
 
+/* ---------- Seviye 15 altı: Baldr's Levelling Targets ---------- */
+const levelState = {
+  data: null,
+  list: (() => { try { return localStorage.getItem('tt.level.list') || ''; } catch { return ''; } })(),
+  okOnly: false,
+  shellFor: null,
+};
+
+async function loadLevel() {
+  const el = $('#level-body');
+  if (!levelState.data) el.innerHTML = loadingBox();
+  try {
+    levelState.data = await api('/api/levelling?list=' + encodeURIComponent(levelState.list));
+    levelState.list = levelState.data.list;
+    renderLevel();
+  } catch (e) { if (!levelState.data) el.innerHTML = errorBox(e); }
+}
+
+// Saldırılabilir olanlar önce (seviye yüksekten), sonra hastaneden en erken çıkacaklar, sonra kontrol edilmeyenler
+function levelRows() {
+  const now = nowTct() / 1000;
+  const rank = (t) => {
+    const s = t.status?.state;
+    if (s === 'Okay') return 0;
+    if ((s === 'Hospital' || s === 'Jail') && t.status.until > now) return 1;
+    if (!t.status || s === 'Hospital' || s === 'Jail') return 2;
+    return 3;
+  };
+  return levelState.data.targets
+    .filter((t) => !levelState.okOnly || t.status?.state === 'Okay')
+    .sort((a, b) => rank(a) - rank(b) || (rank(a) === 1 ? a.status.until - b.status.until : b.lvl - a.lvl || a.total - b.total));
+}
+
+function levelShell(d) {
+  const lvl = myLevel();
+  return `
+    <article class="glass card">
+      <div class="card-head wrap"><h3>🎯 Baldr's Levelling Targets</h3>
+        ${lvl ? `<span class="chip tq">${tr('Seviye', 'Level')} ${lvl} · ${tr(`15'e ${15 - lvl} seviye`, `${15 - lvl} to level 15`)}</span>` : ''}</div>
+      <p class="muted lv-lead">${tr(
+        'Bu listelerde seviyesi yüksek ama statları çok düşük, uzun süredir oynamayan oyuncular var. Seviye 15\'e en hızlı bu hedeflerle çıkılır.',
+        'These lists hold long-inactive players with a high level but very low stats. They are the fastest way to reach level 15.')}</p>
+      <div class="alert info"><div><b>⚔ ${tr('Kazanınca LEAVE seç.', 'When you win, choose LEAVE.')}</b> ${tr(
+        'En yüksek EXP bu şekilde gelir. Mug para çalmak, Hospitalize rakibi hastanede tutmak içindir; ikisi de daha az EXP verir.',
+        'That is how you get the most EXP. Mug is for stealing cash and Hospitalize for keeping them in hospital; both give less EXP.')}</div></div>
+      <ul class="lv-tips">
+        <li>${tr('Her saldırı 25 enerji harcar. Seviyesi yüksek hedef daha çok EXP verir; liste bu yüzden en yüksek seviyeden başlar.', 'Each attack costs 25 energy. Higher-level targets give more EXP, so the list starts with the highest level.')}</li>
+        <li>${tr('Önce dört statını da yaklaşık 300\'e çıkar (Başlangıç Rehberi), sonra enerjini buraya harca.', 'First get all four stats to about 300 (Beginner Guide), then spend your energy here.')}</li>
+        <li>${tr('Hedef hastanedeyse ya da kaybedersen sıradakine geç; durumlar kendiliğinden güncellenir.', 'If a target is in hospital or you lose, move to the next one; statuses refresh by themselves.')}</li>
+      </ul>
+    </article>
+    <article class="glass card">
+      <div class="card-head wrap">
+        <div class="lv-controls">
+          <select id="lv-list" aria-label="${tr('Liste', 'List')}">${d.lists.map((n) => `<option value="${esc(n)}" ${n === d.list ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
+          <label class="check"><input type="checkbox" id="lv-okonly" ${levelState.okOnly ? 'checked' : ''}> ${tr('Sadece saldırılabilir', 'Attackable only')}</label>
+        </div>
+        <span class="muted" id="lv-progress"></span>
+      </div>
+      <div class="tbl-wrap"><table class="tbl compact">
+        <thead><tr><th>#</th><th>${tr('Oyuncu', 'Player')}</th><th class="num">${tr('Seviye', 'Level')}</th><th class="num">${tr('Toplam stat', 'Total stats')}</th><th>${tr('Durum', 'Status')}</th><th></th></tr></thead>
+        <tbody id="lv-tbody"></tbody>
+      </table></div>
+      <p class="muted lv-source">${tr('Kaynak', 'Source')}: <a href="https://oran.pw/baldrstargets/" target="_blank" rel="noopener">Baldr's Levelling List</a> · ${tr(
+        'durumlar kendi API key\'inle, yalnızca bu sayfa açıkken ve Torn sınırını zorlamadan yavaşça kontrol edilir.',
+        'statuses are checked with your own API key, only while this page is open and slowly enough to stay within Torn\'s limit.')}</p>
+    </article>`;
+}
+
+function renderLevel() {
+  const d = levelState.data; if (!d) return;
+  const key = `${state.lang}|${d.list}|${d.lists.join('|')}|${myLevel()}`;
+  if (levelState.shellFor !== key || !$('#lv-tbody')) { $('#level-body').innerHTML = levelShell(d); levelState.shellFor = key; }
+  const rows = levelRows();
+  const best = rows.find((t) => t.status?.state === 'Okay');
+  const atkIcon = '<svg viewBox="0 0 24 24"><path d="M14.5 4.5l5 5L9 20H4v-5zM4 4l4 4"/></svg>';
+  $('#lv-tbody').innerHTML = rows.map((t, i) => {
+    const st = t.status;
+    const statusCell = st ? statusTimerChip(st, true) : `<span class="muted">${t.checkedAt ? '?' : tr('kontrol ediliyor…', 'checking…')}</span>`;
+    return `<tr class="${t === best ? 'lv-best' : st && st.state !== 'Okay' ? 'lv-dim' : ''}">
+      <td class="mono muted">${i + 1}</td>
+      <td><a href="https://www.torn.com/profiles.php?XID=${t.id}">${esc(t.name)}</a> <span class="muted mono">[${t.id}]</span>${t === best ? ` <span class="chip tq">⭐ ${tr('En yüksek EXP', 'Best EXP')}</span>` : ''}</td>
+      <td class="num">${t.lvl}</td>
+      <td class="num" title="STR ${n0(t.str)} · DEF ${n0(t.def)} · SPD ${n0(t.spd)} · DEX ${n0(t.dex)}">${n0(t.total)}</td>
+      <td>${statusCell}</td>
+      <td><a class="attack-btn" href="https://www.torn.com/page.php?sid=attack&user2ID=${t.id}">${atkIcon}${tr('Saldır', 'Attack')}</a></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="6" class="muted">${tr('Şu an saldırılabilir hedef yok; filtreyi kapat ya da başka listeye geç.', 'No attackable targets right now; clear the filter or pick another list.')}</td></tr>`;
+  const okCount = d.targets.filter((t) => t.status?.state === 'Okay').length;
+  $('#lv-progress').innerHTML = d.error
+    ? `<span class="neg">${esc(d.error)}</span>`
+    : `${tr('Saldırılabilir', 'Attackable')}: <b>${okCount}</b> · ${tr('kontrol edilen', 'checked')} ${d.checked}/${d.targets.length}`;
+}
+
+$('#level-body')?.addEventListener('change', (e) => {
+  if (e.target.id === 'lv-list') {
+    levelState.list = e.target.value;
+    try { localStorage.setItem('tt.level.list', levelState.list); } catch {}
+    levelState.data = null;
+    loadLevel();
+  } else if (e.target.id === 'lv-okonly') {
+    levelState.okOnly = e.target.checked;
+    renderLevel();
+  }
+});
+// Sayfa açıkken durumları 5 sn'de bir al (sunucu taramayı yalnızca bu istekler gelirken sürdürür)
+setInterval(() => { if (state.view === 'level' && trackerVisible()) loadLevel(); }, 5000);
+
+/* ---------- Seviye 15 altı: Başlangıç Rehberi ---------- */
+const GUIDE_SECTIONS = [
+  { icon: '🧭', title: ['Büyük resim', 'The big picture'], items: [
+    ['Torn bir maratondur. Her gün düzenli olarak enerji ve nerve harcamak, bir günde her şeyi yapmaya çalışmaktan çok daha hızlı ilerletir.', 'Torn is a marathon. Spending your energy and nerve steadily every day gets you further than trying to do everything at once.'],
+    ['İlk hedefin seviye 15: yurt dışı seyahat açılır ve para kazanmak asıl o zaman başlar.', 'Your first goal is level 15: it unlocks travel abroad, which is where real money starts.'],
+    ['Hastaneye düşmek ya da hapse girmek oyunun doğal parçası. Hapisteyken yüksek seviyeli oyuncular seni bust edip çıkarabilir.', 'Landing in hospital or jail is part of the game. While jailed, higher-level players may bust you out.'],
+  ] },
+  { icon: '🏋️', title: ['Gym nasıl ilerletilir', 'How to progress in the gym'], items: [
+    ['Gym kazancını enerji, happy (mutluluk) ve gym belirler. Happy bir çarpan gibi çalışır; daha iyi ev, daha yüksek taban happy demektir. İlk ara hedef olarak Mansion iyi bir seçimdir; personel tutmak happy\'yi artırır ama günlük gideri vardır.', 'Gym gains depend on energy, happy and the gym itself. Happy works like a multiplier, and a better property means a higher base happy. A Mansion is a good first milestone; staff raise happy but cost upkeep every day.'],
+    ['Antrenmana taban happy ile başlama. Şehirdeki dükkânlardan alınan ucuz bir şeker ya da lolipop bile happy\'yi yükseltir.', 'Never train at base happy. Even a cheap candy or lollipop from a city shop raises it.'],
+    ['Enerjini tek seferde harca. Her antrenmandan sonra happy biraz düşer; tüm enerjiyi tek tıkta harcarsan oyun hepsini başlangıçtaki yüksek happy ile hesaplar.', 'Spend all your energy in one go. Happy drops a little after each train; one big train is calculated at your starting, highest happy.'],
+    ['Bulunduğun gym\'de en çok kazanç veren statı çalış. Statları eşit tutmaya çalışmak verimsizdir; geride kalanları ileride dengeli gym\'lerde yakalarsın.', 'Train the stat with the best gain in your current gym. Forcing equal stats is inefficient; you can catch up the lagging ones later in balanced gyms.'],
+    ['Yeni gym\'ler belli miktarda enerji harcayınca açılır. Dolu duran enerji barı kayıptır.', 'New gyms unlock after you spend a set amount of energy. A full energy bar sitting idle is wasted progress.'],
+    ['300 kuralı: dört stat da yaklaşık 300 olana kadar enerjini gym\'e ver. Sonra enerjiyi saldırılara (Baldr\'s Levelling Targets) çevir ve seviye atla.', 'The 300 rule: train until all four stats are around 300. Then switch your energy to attacks (Baldr\'s Levelling Targets) and level up.'],
+    ['Donator Pack en değerli uzun vadeli yatırımlardan biridir: maksimum enerji 150 olur ve daha hızlı dolar. Xanax +250 enerji verir ama uzun cooldown\'u ve bağımlılığı vardır.', 'A Donator Pack is one of the best long-term buys: max energy becomes 150 and refills faster. Xanax gives +250 energy but has a long cooldown and adds addiction.'],
+  ] },
+  { icon: '💼', title: ['Hangi işe girmeli', 'Which job to take'], items: [
+    ['Şehir işleri (City Jobs) iş puanı (JP) ve rütbe ödülleri verir; son rütbenin ödülü kalıcıdır.', 'City jobs give job points (JP) and rank rewards; the final-rank reward is permanent.'],
+    ['Education: başlamak için en iyisi. JP\'yi çalışma statlarına çevirebilirsin; son rütbe tüm kurs sürelerini kalıcı olarak %10 kısaltır.', 'Education: the best place to start. JP converts into working stats, and the final rank permanently cuts every course time by 10%.'],
+    ['Army: erken dönemde savaşa katkı verir; JP\'yi Strength ya da Defense\'e çevirebilirsin.', 'Army: helps your combat early on; JP converts into Strength or Defense.'],
+    ['Medical: son rütbe başkalarını revive etme yeteneği verir, bu da iyi bir gelir kaynağıdır. Law: son rütbe crime EXP\'sine ve skill kazancına kalıcı %5 ekler.', 'Medical: the final rank lets you revive others, which pays well. Law: the final rank adds a permanent 5% to crime EXP and skill gain.'],
+    ['Grocer ve Casino başlangıçta pek değmez.', 'Grocer and Casino are rarely worth it early on.'],
+    ['Oyuncu şirketlerinden gym\'e yardımcı olanlar: Fitness Center (gym kazancı +%3, happy kaybı azalır), Music Store (gym deneyimi +%30, yeni gym\'ler daha hızlı açılır), Gents / Ladies Strip Club (Dexterity / Defense kazancı +%10), Sweet Shop ve Adult Novelties (happy), Pub ve Restaurant (enerji / nerve).', 'Player companies that help training: Fitness Center (+3% gym gains, less happy loss), Music Store (+30% gym experience, gyms unlock faster), Gents / Ladies Strip Club (+10% Dexterity / Defense gains), Sweet Shop and Adult Novelties (happy), Pub and Restaurant (energy / nerve).'],
+    ['Çalışma statların pozisyon şartının altındaysa daha yavaş artar. İşsizken uygulamadaki İş Asistanı sana uygun pozisyonları listeler.', 'Working stats grow slower while they are below a position\'s requirement. While unemployed, the Job Assistant page lists positions that fit you.'],
+  ] },
+  { icon: '🎓', title: ['Eğitim sırası', 'Education order'], items: [
+    ['Kurslar gerçek zamanlı ilerler (14 gün = gerçekten 14 gün). Her zaman açık bir kursun olsun.', 'Courses run in real time (14 days really is 14 days). Always keep one running.'],
+    ['1) BIO1340 → BIO2127 (Intravenous Therapy): blood bag kullanabilirsin; hastanede daha az kalırsın.', '1) BIO1340 → BIO2127 (Intravenous Therapy): lets you use blood bags, so you spend less time in hospital.'],
+    ['2) Sports Science: SPT1430, ardından SPT2440 / 2450 / 2460 / 2470. Her biri bir statın gym kazancına +%1 ekler; bölüm diploması tüm statlara kalıcı +%2 verir.', '2) Sports Science: SPT1430, then SPT2440 / 2450 / 2460 / 2470. Each adds +1% gym gains to one stat; the bachelor\'s degree adds a permanent +2% to all stats.'],
+    ['Merit\'lerini erken dönemde Education perk\'lerine harcamak kurs sürelerini kısaltır. West Side University (WSU) hissesinin ödülü de eğitim süresini %10 kısaltır.', 'Spending early merits on Education perks shortens courses. The West Side University (WSU) stock benefit cuts education time by another 10%.'],
+    ['Bağımlılığın çok yükselirse kurstan atılabilirsin; uyuşturucuyu ölçülü kullan.', 'If your addiction gets too high you can be kicked out of a course, so use drugs in moderation.'],
+  ] },
+  { icon: '🛒', title: ['Ne almalı, ne almamalı', 'What to buy, what to skip'], items: [
+    ['Al: happy için ucuz şekerler, ev yükseltmeleri, ileride Xanax ve (BIO2127\'den sonra) blood bag.', 'Buy: cheap candy for happy, property upgrades, later Xanax and (after BIO2127) blood bags.'],
+    ['Alma: statların taşıyamayacağı pahalı silah ve zırhlar, crime aletleri (oynadıkça bulursun) ve kumarhane; kumarhane uzun vadede hep kaybettirir.', 'Skip: expensive weapons and armor your stats cannot use, crime tools (you find them as you play) and the casino, which always loses in the long run.'],
+    ['Hiçbir eşyayı çöpe atma: değersiz görünen eşyalar bile markette satılır, önce fiyatına bak.', 'Never trash items: even junk-looking items sell on the market, so check the price first.'],
+    ['Uyuşturucuda başta yalnızca Xanax (enerji), Ecstasy (happy\'yi ikiye katlar) ve Cannabis (nerve) işe yarar. Speed ve PCP\'de overdose kalıcı stat kaybına yol açabilir; uzak dur.', 'Early on only Xanax (energy), Ecstasy (doubles happy) and Cannabis (nerve) matter. Overdosing on Speed or PCP can cost you stats permanently; avoid them.'],
+  ] },
+  { icon: '🕵️', title: ['Crimes (nerve)', 'Crimes (nerve)'], items: [
+    ['Listenin başından bir suç seç ve onu ilerlet; başarı çubuğu yeşilken dene.', 'Pick one crime from the top of the list and level it up; attempt it while the success bar is green.'],
+    ['Alet satın alma; ihtiyacın olanlar oynadıkça çıkar.', 'Do not buy tools; the ones you need drop as you play.'],
+  ] },
+  { icon: '🧰', title: ['Yardımcı araçlar', 'Helpful tools'], items: [
+    ['TornTools bu uygulamada yerleşik gelir: sayaçlar, market değerleri ve daha fazlası.', 'TornTools is built into this app: timers, market values and more.'],
+    ['Torn Stats: API key\'inle statlarını ve gelişimini takip eder. Torn PDA: telefonda oynuyorsan çok kullanışlı.', 'Torn Stats tracks your stats and progress via your API key. Torn PDA is very handy if you play on your phone.'],
+  ] },
+  { icon: '✈', title: ['Seviye 15 sonrası', 'After level 15'], items: [
+    ['Seyahat açılınca uygulamadaki Seyahat Kârı sayfası hangi üründen ne kazanacağını gösterir.', 'Once travel unlocks, the app\'s Travel Profit page shows what each item earns.'],
+    ['Uzun vadeli hedef: pistli bir Private Island (pilotla uçuş daha kısa sürer) ve Large Suitcase (daha çok eşya taşırsın).', 'Long-term goal: a Private Island with an airstrip (a private pilot flies faster) and a Large Suitcase (more items per trip).'],
+    ['Başındaysan kısa uçuşlar, uzun süre uzak kalacaksan uzun uçuşlar daha kârlıdır. Üzerinde fazla nakitle iniş yapma; mug edilebilirsin.', 'Short flights pay best while you are at the keyboard, long ones when you will be away. Do not land carrying lots of cash; you can get mugged.'],
+  ] },
+];
+
+const STAT_NAMES = { strength: 'Strength', defense: 'Defense', speed: 'Speed', dexterity: 'Dexterity' };
+function guideSteps() {
+  const o = state.overview; if (!o) return [];
+  const steps = [];
+  const stats = Object.entries(o.battle?.stats || {}).map(([k, s]) => [STAT_NAMES[k] || k, Number(s.base) || 0]);
+  const low = stats.filter(([, v]) => v < 300);
+  if (stats.length && low.length) {
+    steps.push({ done: false, text: tr(`Gym: ${low.map(([n, v]) => `${n} ${n0(v)}`).join(', ')} henüz 300'ün altında. Enerjini gym'de harca.`, `Gym: ${low.map(([n, v]) => `${n} ${n0(v)}`).join(', ')} still below 300. Spend your energy in the gym.`) });
+  } else if (stats.length) {
+    steps.push({ done: true, text: tr('Dört stat da 300+: enerjini Levelling hedeflerine harca.', 'All four stats are 300+: spend your energy on levelling targets.'), action: `<button class="btn sm" data-goto-view="level">🎯 ${tr('Hedeflere git', 'Open targets')}</button>` });
+  }
+  const job = o.player?.job || {};
+  if (hasJob()) {
+    const name = Number(job.company_id) > 0 ? job.company_name : job.job;
+    steps.push({ done: true, text: tr(`İşin var: ${esc(name || '')} ${job.position ? `(${esc(job.position)})` : ''}`, `You have a job: ${esc(name || '')} ${job.position ? `(${esc(job.position)})` : ''}`) });
+  } else {
+    steps.push({ done: false, text: tr('Henüz işin yok: başlangıç için en iyisi Education şehir işi.', 'No job yet: the Education city job is the best start.'), action: feat('page.job') ? `<button class="btn sm" data-goto-view="job">💼 ${tr('İş Asistanı', 'Job Assistant')}</button>` : '' });
+  }
+  const edu = o.education || {};
+  const eduBtn = `<button class="btn sm ghost" data-open-url="https://www.torn.com/page.php?sid=education" data-tab-label="${tr('Eğitim', 'Education')}">🎓 ${tr('Eğitim sayfası', 'Education page')}</button>`;
+  if (edu.currentId) steps.push({ done: true, text: tr(`Kurs devam ediyor: ${esc(edu.current || '')}`, `Course in progress: ${esc(edu.current || '')}`) });
+  else steps.push({ done: false, text: tr('Şu an kurs okumuyorsun: BIO1340 ile başla, sonra BIO2127 ve Sports Science.', 'You are not studying: start with BIO1340, then BIO2127 and Sports Science.'), action: eduBtn });
+  const happy = o.bars?.happy;
+  if (happy && happy.maximum) {
+    if (happy.current <= happy.maximum) steps.push({ done: false, text: tr(`Happy taban seviyede (${n0(happy.current)}). Antrenmandan önce ucuz bir şekerle yükselt.`, `Happy is at base (${n0(happy.current)}). Raise it with cheap candy before training.`) });
+    else steps.push({ done: true, text: tr(`Happy tabanın üstünde (${n0(happy.current)}): antrenman için iyi an.`, `Happy is above base (${n0(happy.current)}): good time to train.`) });
+  }
+  const en = o.bars?.energy;
+  if (en && en.maximum && en.current >= en.maximum) steps.push({ done: false, text: tr(`Enerjin dolu (${en.current}/${en.maximum}), boşa gidiyor: şimdi harca.`, `Energy is full (${en.current}/${en.maximum}) and going to waste: spend it now.`) });
+  return steps;
+}
+
+function renderGuide() {
+  const lvl = myLevel();
+  const steps = guideSteps();
+  const pctTo15 = lvl ? Math.min(100, (lvl / 15) * 100) : 0;
+  $('#guide-body').innerHTML = `
+    <article class="glass card">
+      <div class="card-head wrap"><h3>👉 ${tr('Sıradaki adımların', 'Your next steps')}</h3>${lvl ? `<span class="chip tq">${tr('Seviye', 'Level')} ${lvl} / 15</span>` : ''}</div>
+      ${lvl ? `<div class="storage-bar gd-progress"><i style="width:${pctTo15}%;background:var(--tq)"></i></div>` : ''}
+      ${steps.length ? `<ul class="gd-steps">${steps.map((s) => `<li class="${s.done ? 'done' : 'todo'}"><span>${s.done ? '✅' : '▫️'}</span><div>${s.text}</div>${s.action || ''}</li>`).join('')}</ul>`
+        : `<p class="muted">${tr('Kişisel öneriler için önce genel bakış verilerinin yüklenmesi gerekiyor.', 'Personal tips appear once your overview data has loaded.')}</p>`}
+    </article>
+    ${GUIDE_SECTIONS.map((sec) => `
+      <article class="glass card">
+        <div class="card-head"><h3>${sec.icon} ${tr(sec.title[0], sec.title[1])}</h3></div>
+        <ul class="gd-list">${sec.items.map(([a, b]) => `<li>${esc(tr(a, b))}</li>`).join('')}</ul>
+      </article>`).join('')}`;
+}
+
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-goto-view]');
+  if (b) { e.preventDefault(); showView(b.dataset.gotoView); }
+});
+
 /* ---------- Görünüm kancaları ---------- */
-const EXTRA_LOADERS = { job: loadJob, gym: loadGym, networth: loadNetworth, travel: loadTravel };
+const EXTRA_LOADERS = { job: loadJob, gym: loadGym, networth: loadNetworth, travel: loadTravel, level: loadLevel, guide: renderGuide };
 window.onViewShown = (v) => {
   if (v === 'settings') renderFeatureSettings();
   if (EXTRA_LOADERS[v]) EXTRA_LOADERS[v]();

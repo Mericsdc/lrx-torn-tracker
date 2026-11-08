@@ -92,6 +92,13 @@
         <button class="nav-item active" data-view="overview">
           <svg viewBox="0 0 24 24"><path d="M3 12l9-8 9 8M5 10v10h5v-6h4v6h5V10"/></svg><span data-i18n="nav.overview">Genel Bakış</span>
         </button>
+        <!-- Yalnızca seviye 15'in altındayken görünür (features.js → viewHidden) -->
+        <button class="nav-item" data-view="level" hidden>
+          <svg viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6l-5.4 2.9 1.2-6-4.5-4.2 6.1-.7z"/></svg><span data-i18n="nav.level">Baldr's Levelling Targets</span>
+        </button>
+        <button class="nav-item" data-view="guide" hidden>
+          <svg viewBox="0 0 24 24"><path d="M4 5a2 2 0 012-2h13v16H6a2 2 0 00-2 2zM4 5v16M8 7h7M8 11h5"/></svg><span data-i18n="nav.guide">Başlangıç Rehberi</span>
+        </button>
         <button class="nav-item" data-view="stock">
           <svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M12 11v10"/></svg><span data-i18n="nav.stock">Stok Durumu</span>
           <i class="nav-badge" id="badge-stock" hidden></i>
@@ -343,6 +350,8 @@
       <section class="view" id="view-gym"><div class="stack" id="gym-body"></div></section>
       <section class="view" id="view-networth"><div class="stack" id="networth-body"></div></section>
       <section class="view" id="view-travel"><div class="stack" id="travel-body"></div></section>
+      <section class="view" id="view-level"><div class="stack" id="level-body"></div></section>
+      <section class="view" id="view-guide"><div class="stack" id="guide-body"></div></section>
 
       <!-- ===================== SETTINGS ===================== -->
       <section class="view" id="view-settings">

@@ -937,3 +937,23 @@ body.no-anim *, body.no-anim *::before, body.no-anim *::after { animation: none 
 .tv-up-go { color: var(--muted); text-align: right; }
 .tv-up-go b.mono { color: #e5ecef; }
 @media (max-width: 900px) { .tv-up-row { grid-template-columns: 22px 80px 1fr; } .tv-up-profit, .tv-up-go { grid-column: 3; align-items: flex-start; text-align: left; } }
+
+/* ---------- Seviye 15 altı: Levelling Targets + Başlangıç Rehberi ---------- */
+.lv-lead { margin: 0 0 12px; font-size: 13px; line-height: 1.55; }
+.lv-tips, .gd-list { margin: 12px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 7px; font-size: 13px; line-height: 1.55; color: #c9d3d7; }
+.lv-tips li::marker, .gd-list li::marker { color: var(--muted); }
+.lv-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+#lv-progress b { color: var(--tq); }
+.tbl tr.lv-best td { background: var(--tq-soft); }
+.tbl tr.lv-best td:first-child { box-shadow: inset 3px 0 0 var(--tq); }
+.tbl tr.lv-dim td { opacity: 0.55; }
+.tbl tr.lv-dim td:last-child { opacity: 1; }
+.lv-source { margin: 12px 0 0; font-size: 12px; }
+.lv-source a { color: var(--tq); }
+.gd-progress { margin: 0 0 14px; height: 8px; }
+.gd-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.gd-steps li { display: flex; align-items: center; gap: 10px; padding: 9px 2px; border-bottom: 1px solid rgba(255, 255, 255, 0.04); font-size: 13px; line-height: 1.5; }
+.gd-steps li:last-child { border-bottom: 0; }
+.gd-steps li > div { flex: 1; min-width: 0; }
+.gd-steps li.done > div { color: var(--muted); }
+.gd-steps li .btn { flex-shrink: 0; }

@@ -16,7 +16,7 @@ const crypto = require('crypto');
 
 const APP = path.resolve(__dirname, '..');
 const OUT = path.resolve(APP, '..', '..', '..', 'updates');
-const SKIP = new Set(['data', 'node_modules', 'dist', '.git']);
+const SKIP = new Set(['data', 'node_modules', 'dist', '.git', '.fallow']);
 
 function listFiles(dir, base = '') {
   const out = [];
