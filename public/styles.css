@@ -858,3 +858,7 @@ body.auth-open { overflow: hidden; }
 .ic-hit:hover { fill: rgba(255, 255, 255, 0.035); }
 #delivery-card .card-head { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
 @media (max-width: 900px) { .ic-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Sidebar: faction etiketi + iş satırı */
+.me-ftag { font-weight: 600; color: var(--gold-2); letter-spacing: .4px; }
+.me-meta small.me-job { color: var(--muted-2); }

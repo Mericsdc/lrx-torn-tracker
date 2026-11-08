@@ -324,8 +324,13 @@ function renderOverview() {
   $('#me-chip').dataset.openUrl = `https://www.torn.com/profiles.php?XID=${p.id}`;
   $('#me-chip').dataset.tabLabel = `${decode(p.name)} [${p.id}]`;
   $('#me-chip').title = tr('Profilimi sekmede aç', 'Open my profile in tab');
+  const fac = p.faction || {};
+  const ftag = fac.faction_tag && fac.faction_tag !== 'None' ? fac.faction_tag : '';
   $('#me-chip').innerHTML = `<div class="avatar" style="background-image:url('${esc(p.image || '')}')"></div>
-    <div class="me-meta"><strong>${esc(p.name)} <span class="muted">[${p.id}]</span></strong><small>Lv ${p.level} · ${esc(p.faction?.faction_tag || '')} ${esc(p.job?.company_name || '')}</small></div>`;
+    <div class="me-meta"><strong>${esc(p.name)} <span class="muted">[${p.id}]</span></strong>
+      <small>Lv ${p.level}${ftag ? ` · <b class="me-ftag" title="Faction: ${esc(decode(fac.faction_name || ftag))}${fac.position ? ` · ${esc(fac.position)}` : ''}">${esc(ftag)}</b>` : ''}</small>
+      <small class="me-job" title="${tr('İş', 'Job')}: ${esc(jobLabel(p.job))}">💼 ${esc(jobLabel(p.job))}</small></div>`;
+  syncCompanyMode();
 
   // status chip
   const si = statusInfo(p.status);
@@ -446,14 +451,55 @@ function tick() {
 /* =========================================================
    COMPANY (stock / report / employees / income)
    ========================================================= */
+/* Şirket sekmeleri yalnızca şirket direktörleri için.
+   Profildeki iş pozisyonu Director değilse ya da şirket API'si yetki hatası verirse gizlenir. */
+const COMPANY_VIEWS = ['stock', 'report', 'employees', 'income'];
+const NOT_DIRECTOR_CODES = [6, 7, 16]; // Incorrect ID · ID-entity relation · access level
+state.companyMode = (() => { try { return localStorage.getItem('tt.cache.companyMode') !== 'off'; } catch { return true; } })();
+
+function jobLabel(j) {
+  if (!j) return '—';
+  if (Number(j.company_id) > 0) return [j.position, j.company_name].filter((x) => x && x !== 'None').map(decode).join(' · ');
+  if (j.job && j.job !== 'None') return [j.job, j.position !== j.job ? j.position : null].filter((x) => x && x !== 'None').map(decode).join(' · ');
+  return tr('İşsiz', 'No job');
+}
+function directorKnown() {
+  const j = state.overview?.player?.job;
+  if (!j) return null;
+  return j.position === 'Director' && Number(j.company_id) > 0;
+}
+function applyCompanyMode(on) {
+  state.companyMode = on;
+  try { localStorage.setItem('tt.cache.companyMode', on ? 'on' : 'off'); } catch {}
+  for (const v of COMPANY_VIEWS) { const b = $(`.nav-item[data-view="${v}"]`); if (b) b.hidden = !on; }
+  const ov = $('#ov-company'); if (ov) ov.hidden = !on;
+  if (!on) {
+    setAlert('company', null);
+    state.company = null;
+    try { localStorage.removeItem('tt.cache.company'); } catch {}
+    if (COMPANY_VIEWS.includes(state.view)) { showView('overview'); try { history.replaceState(null, '', '#overview'); } catch {} }
+  }
+}
+function syncCompanyMode() {
+  const j = state.overview?.player?.job;
+  const coBtn = $('.ws-quick-btn[data-open-url="https://www.torn.com/companies.php"]');
+  if (coBtn && j) coBtn.hidden = !(Number(j.company_id) > 0);
+  const d = directorKnown();
+  if (d === false && state.companyMode) applyCompanyMode(false);
+  else if (d === true && !state.companyMode) { applyCompanyMode(true); loadCompany(true); }
+}
+
 async function loadCompany(force = false) {
+  if (directorKnown() === false) { if (state.companyMode) applyCompanyMode(false); return; }
   try {
     const c = await api('/api/company' + (force ? '?force=1' : ''));
     state.company = c;
     try { localStorage.setItem('tt.cache.company', JSON.stringify(c)); } catch {}
     setAlert('company', null);
+    if (!state.companyMode) applyCompanyMode(true);
     renderCompany();
   } catch (e) {
+    if (NOT_DIRECTOR_CODES.includes(Number(e.code))) { applyCompanyMode(false); return; }
     if (!state.company) {
       setAlert('company', `<b>${tr('Şirket verisi alınamadı:', 'Failed to load company data:')}</b>&nbsp;${esc(e.message)} <span class="muted">${tr('(Stok ve detaylar için şirket direktörü olmalısın.)', '(You must be a company director for stock & details.)')}</span>`, 'warn');
     }
@@ -1968,6 +2014,7 @@ function startApp(b, fresh = false) {
 
   const initial = (location.hash || '').slice(1);
   if (VIEW_META[initial]) showView(initial);
+  applyCompanyMode(state.companyMode);
   tick();
   setInterval(tick, 1000);
 
