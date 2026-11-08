@@ -582,7 +582,6 @@ function renderTravel() {
 function renderTravelResults() {
   const d = travelState.data, box = $('#tv-results');
   if (!d || !box) return;
-  const t = travelState;
   const now = nowTct() / 1000;
   const rows = travelRows();
   const best = [];

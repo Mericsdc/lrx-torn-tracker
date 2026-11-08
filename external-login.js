@@ -161,4 +161,4 @@ async function externalGoogleLogin({ profileDir, targetSession, onStatus, log = 
   return active;
 }
 
-module.exports = { externalGoogleLogin, findBrowser };
+module.exports = { externalGoogleLogin };

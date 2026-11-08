@@ -478,7 +478,6 @@ function recordCompany(c) {
   }
   history.days.sort((a, b) => a.date.localeCompare(b.date));
 
-  const last = history.days[history.days.length - 1];
   const entry = {
     sig,
     capturedAt: now,

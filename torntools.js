@@ -167,4 +167,4 @@ async function ensureTornTools({ baseDir, log = () => {}, force = false }) {
   }
 }
 
-module.exports = { ensureTornTools, EXT_ID, parseCrx, idFromKey, unzip };
+module.exports = { ensureTornTools, unzip };
