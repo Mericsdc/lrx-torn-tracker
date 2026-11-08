@@ -20,9 +20,7 @@
   <!-- LRX Login / Splash -->
   <section class="auth" id="auth-screen" hidden>
     <div class="auth-glow" aria-hidden="true"></div>
-    <svg class="auth-skyline" viewBox="0 0 1440 260" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
-      <path d="M0 260V196h38v-30h26v30h22v-58h34v58h18v-90h12v-16h10v16h14v90h20v-44h30v44h16v-120h40v120h22v-70h28v70h18v-36h24v36h20v-98h12v-24h8v24h14v98h22v-60h34v60h16v-142h20v-20h6v20h20v142h24v-76h30v76h18v-46h22v46h20v-112h36v112h20v-54h28v54h22v-88h14v-14h8v14h14v88h18v-40h26v40h22v-128h40v128h18v-62h30v62h20v-34h24v34h22v-96h12v-22h10v22h12v96h20v-56h32v56h18v-110h38v110h22v-48h26v48h18v-74h30v74h24v-30h28v30h20v-84h14v-18h8v18h14v84h22v-50h32v50h18v-36h40v-26h22v62h30V260z"/>
-    </svg>
+    <canvas class="auth-waves" id="auth-waves" aria-hidden="true"></canvas>
     <div class="auth-card" id="auth-card">
       <div class="auth-logo-wrap">
         <img src="/logo.png" class="auth-logo" alt="LRX Torn Tracker" />
@@ -447,6 +445,7 @@
   </div>
 
   <div class="toast" id="toast"></div>
+  <script src="/shape-waves.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

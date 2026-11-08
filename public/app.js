@@ -1694,9 +1694,14 @@ document.addEventListener('input', (e) => {
 const prefersReducedMotion = () => Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 const NEW_KEY_URL = 'https://www.torn.com/preferences.php#tab=api?step=addNewKey&title=LRX%20Torn%20Tracker&type=3';
 
+let authWaves = null;
 function showAuth(mode = 'login') {
   const scr = $('#auth-screen');
   scr.hidden = false;
+  try {
+    if (!authWaves && window.LRXShapeWaves) authWaves = window.LRXShapeWaves.create($('#auth-waves'));
+    authWaves?.start();
+  } catch (e) { console.warn('ShapeWaves', e); }
   scr.classList.remove('leaving', 'splash', 'login');
   scr.classList.add(mode);
   document.body.classList.add('auth-open');
@@ -1710,7 +1715,7 @@ function hideAuth(delay = 0) {
     scr.classList.add('leaving');
     document.body.classList.remove('auth-open');
     document.body.classList.add('app-enter');
-    setTimeout(() => { scr.hidden = true; scr.classList.remove('leaving'); resolve(); }, prefersReducedMotion() ? 0 : 650);
+    setTimeout(() => { scr.hidden = true; scr.classList.remove('leaving'); authWaves?.stop(); resolve(); }, prefersReducedMotion() ? 0 : 650);
     setTimeout(() => document.body.classList.remove('app-enter'), 1600);
   }, delay));
 }

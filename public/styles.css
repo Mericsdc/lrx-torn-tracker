@@ -833,3 +833,10 @@ body.auth-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
 }
+
+/* ShapeWaves town background (login / splash) */
+.auth { background: radial-gradient(900px 520px at 50% 38%, rgba(201, 169, 106, 0.06), transparent 60%), #000; }
+.auth-waves { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+.auth-glow { opacity: .55; z-index: 0; }
+.auth-card { z-index: 1; }
+.auth.splash .auth-card { background: radial-gradient(closest-side, rgba(0, 0, 0, 0.75), transparent); }
