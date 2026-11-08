@@ -413,7 +413,17 @@ function main() {
     tornSession.setUserAgent(exactChromeUA);
   }
 
+  function featureEnabled(key) {
+    try { return JSON.parse(fs.readFileSync(path.join(persistentDataDir, 'config.json'), 'utf8')).features?.[key] !== false; } catch { return true; }
+  }
+
   async function setupTornTools(tornSession) {
+    if (!featureEnabled('app.torntools')) {
+      Object.assign(tornTools, { status: 'disabled', error: null });
+      log('TornTools ayarlardan kapalı, yüklenmedi.');
+      sendToRenderer('torntools-status', { ...tornTools });
+      return;
+    }
     try {
       const info = await ensureTornTools({ baseDir: persistentDataDir, log });
       const loader = tornSession.extensions && typeof tornSession.extensions.loadExtension === 'function'

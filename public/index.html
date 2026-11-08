@@ -105,6 +105,18 @@
         <button class="nav-item" data-view="war">
           <svg viewBox="0 0 24 24"><path d="M14.5 4.5l5 5L9 20l-5 0 0-5zM12 7l5 5M4 4l4 4"/></svg><span data-i18n="nav.war">Savaş Hedefleri</span>
         </button>
+        <button class="nav-item" data-view="job">
+          <svg viewBox="0 0 24 24"><path d="M4 8h16v11H4zM9 8V5h6v3M4 13h16"/></svg><span data-i18n="nav.job">İş Asistanı</span>
+        </button>
+        <button class="nav-item" data-view="gym">
+          <svg viewBox="0 0 24 24"><path d="M3 10v4M6 7v10M18 7v10M21 10v4M6 12h12"/></svg><span data-i18n="nav.gym">Gym &amp; Statlar</span>
+        </button>
+        <button class="nav-item" data-view="networth">
+          <svg viewBox="0 0 24 24"><path d="M12 3v18M17 7.5c0-1.9-2.2-3-5-3s-5 1.1-5 3 2.2 2.7 5 3.2 5 1.4 5 3.3-2.2 3.3-5 3.3-5-1.2-5-3"/></svg><span data-i18n="nav.networth">Networth</span>
+        </button>
+        <button class="nav-item" data-view="travel">
+          <svg viewBox="0 0 24 24"><path d="M2 16l20-7-4-2-6 2-6-4-2 1 4 5-4 1-2-1-1 1 3 3z"/></svg><span data-i18n="nav.travel">Seyahat Kârı</span>
+        </button>
         <button class="nav-item" data-view="settings">
           <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg><span data-i18n="nav.settings">Ayarlar</span>
         </button>
@@ -322,6 +334,12 @@
         </article>
       </section>
 
+      <!-- ===================== EXTRA FEATURES ===================== -->
+      <section class="view" id="view-job"><div class="stack" id="job-body"></div></section>
+      <section class="view" id="view-gym"><div class="stack" id="gym-body"></div></section>
+      <section class="view" id="view-networth"><div class="stack" id="networth-body"></div></section>
+      <section class="view" id="view-travel"><div class="stack" id="travel-body"></div></section>
+
       <!-- ===================== SETTINGS ===================== -->
       <section class="view" id="view-settings">
         <div class="grid two">
@@ -447,5 +465,6 @@
   <div class="toast" id="toast"></div>
   <script src="/shape-waves.js"></script>
   <script src="/app.js"></script>
+  <script src="/features.js"></script>
 </body>
 </html>

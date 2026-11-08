@@ -25,7 +25,7 @@ if (!fs.existsSync(DATA)) fs.mkdirSync(DATA, { recursive: true });
 /* Config & history                                                    */
 /* ------------------------------------------------------------------ */
 const DEFAULT_UPDATE_URL = (() => { try { return require('./package.json').updateUrl || ''; } catch { return ''; } })();
-const DEFAULT_CONFIG = { apiKey: process.env.TORN_API_KEY || '', ffscouterKey: '', coverDays: 3, pollMinutes: 15, deliveryHours: 6, deliveryMode: 'hours', updateUrl: '' };
+const DEFAULT_CONFIG = { apiKey: process.env.TORN_API_KEY || '', ffscouterKey: '', coverDays: 3, pollMinutes: 15, deliveryHours: 6, deliveryMode: 'hours', updateUrl: '', features: {} };
 
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
@@ -158,7 +158,7 @@ async function getEducationNames() {
 }
 
 async function getOverview(force = false) {
-  const q = 'user/?selections=profile,cooldowns,education,battlestats,bars,icons,personalstats,timestamp';
+  const q = 'user/?selections=profile,cooldowns,education,battlestats,bars,icons,personalstats,travel,timestamp';
   if (force) cache.delete('torn:' + q);
   const [u, eduNames] = await Promise.all([
     torn(q, 25_000),
@@ -211,11 +211,88 @@ async function getOverview(force = false) {
     travel: u.status?.state === 'Traveling' || u.status?.state === 'Abroad'
       ? { description: u.status.description, icon: iconList.find((t) => /^travel/i.test(t)) || null }
       : null,
+    trip: u.travel ? { destination: u.travel.destination, method: u.travel.method, timeLeft: u.travel.time_left || 0, arrival: u.travel.timestamp || 0 } : null,
   };
+  recordStats(today, bs, u.personalstats || {});
   history.lastOverview = result;
   history.lastOverviewAt = Date.now();
   saveHistory();
   return result;
+}
+
+/* ------------------------------------------------------------------ */
+/* Gym & stat / networth günlük kayıtları                              */
+/* ------------------------------------------------------------------ */
+function pruneDaily(obj, keep = 180) {
+  const keys = Object.keys(obj).sort();
+  while (keys.length > keep) delete obj[keys.shift()];
+}
+function recordStats(day, bs, ps) {
+  history.stats ||= {};
+  const s = bs.stats;
+  history.stats[day] = {
+    str: s.strength.base, def: s.defense.base, spd: s.speed.base, dex: s.dexterity.base, total: bs.totals.base,
+    xantaken: ps.xantaken ?? null, refills: ps.refills ?? null, edrinks: ps.energydrinkused ?? null,
+    enhancers: ps.statenhancersused ?? null, at: Date.now(),
+  };
+  pruneDaily(history.stats);
+}
+const dailyList = (obj) => Object.keys(obj || {}).sort().map((date) => ({ date, ...obj[date] }));
+
+async function getNetworth(force = false) {
+  const q = 'user/?selections=networth';
+  if (force) cache.delete('torn:' + q);
+  const u = await torn(q, 5 * 60_000);
+  const n = u.networth || {};
+  const day = tctDate((n.timestamp || Date.now() / 1000) * 1000);
+  history.networth ||= {};
+  const { parsetime, timestamp, ...parts } = n;
+  history.networth[day] = { ...parts, at: Date.now() };
+  pruneDaily(history.networth, 365);
+  saveHistory();
+  return { current: parts, timestamp: n.timestamp || Math.floor(Date.now() / 1000), history: dailyList(history.networth) };
+}
+
+/* İş asistanı: çalışma statları + şirket türlerinin pozisyon gereksinimleri */
+async function getJobInfo() {
+  const [u, t] = await Promise.all([
+    torn('user/?selections=workstats,jobpoints,profile', 60_000),
+    torn('torn/?selections=companies', 24 * 3600_000),
+  ]);
+  const types = {};
+  for (const [id, c] of Object.entries(t.companies || {})) {
+    types[id] = { name: c.name, cost: c.cost, positions: c.positions || {} };
+  }
+  return {
+    workstats: { man: u.manual_labor || 0, int: u.intelligence || 0, end: u.endurance || 0 },
+    jobpoints: u.jobpoints || {}, job: u.job || null, types,
+  };
+}
+
+/* Seyahat kârı: YATA yurt dışı stokları + Torn market değeri */
+const COUNTRIES = {
+  mex: ['Mexico', 26], cay: ['Cayman Islands', 35], can: ['Canada', 41], haw: ['Hawaii', 134], uni: ['United Kingdom', 159],
+  arg: ['Argentina', 167], swi: ['Switzerland', 175], jap: ['Japan', 225], chi: ['China', 242], uae: ['UAE', 271], sou: ['South Africa', 297],
+};
+async function getTravelProfit() {
+  const [yata, items, me] = await Promise.all([
+    cached('yata:travel', 120_000, async () => {
+      const r = await fetch('https://yata.yt/api/v1/travel/export/', { headers: { 'User-Agent': 'LRX-Torn-Tracker' } });
+      if (!r.ok) throw new ApiError(`YATA HTTP ${r.status}`, 'YATA');
+      return r.json();
+    }),
+    torn('torn/?selections=items', 3600_000),
+    torn('user/?selections=travel', 30_000).catch(() => ({})),
+  ]);
+  const market = items.items || {};
+  const countries = Object.entries(yata.stocks || {}).map(([code, c]) => ({
+    code, name: COUNTRIES[code]?.[0] || code, minutes: COUNTRIES[code]?.[1] || null, update: c.update,
+    items: (c.stocks || []).map((s) => {
+      const mv = Number(market[s.id]?.market_value) || 0;
+      return { id: s.id, name: s.name, type: market[s.id]?.type || '', cost: s.cost, qty: s.quantity, market: mv, profit: mv ? mv - s.cost : null };
+    }),
+  }));
+  return { countries, method: me.travel?.method || null, fetchedAt: Date.now(), yataAt: yata.timestamp || null };
 }
 
 function pruneUserHistory() {
@@ -644,6 +721,7 @@ function schedulePoll() {
   pollTimer = setInterval(() => {
     fetchCompany(true).catch((e) => console.warn('[poll] company:', e.message));
     getOverview().catch(() => {});
+    if (config.features?.networth !== false) getNetworth().catch(() => {});
   }, mins * 60_000);
 }
 
@@ -675,8 +753,22 @@ async function handleApi(req, res, url) {
         coverDays: config.coverDays, pollMinutes: config.pollMinutes,
         deliveryHours: config.deliveryHours || 6, deliveryMode: config.deliveryMode || 'hours',
         updateUrl: config.updateUrl || DEFAULT_UPDATE_URL,
+        features: config.features || {},
       });
     }
+    if (p === '/api/features' && req.method === 'POST') {
+      const b = await readBody(req);
+      config.features ||= {};
+      for (const [k, v] of Object.entries(b.features || {})) {
+        if (/^[a-zA-Z0-9_.-]{1,40}$/.test(k) && typeof v === 'boolean') config.features[k] = v;
+      }
+      saveConfig();
+      return send(res, 200, { ok: true, features: config.features });
+    }
+    if (p === '/api/stats') return send(res, 200, { history: dailyList(history.stats), battle: history.lastOverview?.battle || null });
+    if (p === '/api/networth') return send(res, 200, await getNetworth(url.searchParams.get('force') === '1'));
+    if (p === '/api/job') return send(res, 200, await getJobInfo());
+    if (p === '/api/travel') return send(res, 200, await getTravelProfit());
     if (p === '/api/config' && req.method === 'POST') {
       const b = await readBody(req);
       if (typeof b.apiKey === 'string' && b.apiKey.trim()) { config.apiKey = b.apiKey.trim(); cache.clear(); }
@@ -753,6 +845,7 @@ async function handleApi(req, res, url) {
           pollMinutes: config.pollMinutes,
           deliveryHours: config.deliveryHours || 6,
           deliveryMode: config.deliveryMode || 'hours',
+          features: config.features || {},
         },
         overview: history.lastOverview || null,
         overviewAt: history.lastOverviewAt || 0,

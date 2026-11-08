@@ -277,6 +277,7 @@ function showView(v) {
   location.hash = v;
   if (v === 'war') { if (!state.wars) loadWars(); if (state.factionId && !state.targets) loadTargets(); }
   if (v === 'settings') loadConfig();
+  window.onViewShown?.(v);
 }
 $('#nav').addEventListener('click', (e) => { const b = e.target.closest('.nav-item'); if (b) showView(b.dataset.view); });
 $('#lang-toggle').addEventListener('click', (e) => {
@@ -289,6 +290,7 @@ $('#lang-toggle').addEventListener('click', (e) => {
   if (state.wars) renderWarChips();
   if (state.targets) renderTargets();
   if (state.config) loadConfig();
+  window.onLangChanged?.();
   tick();
 });
 
@@ -471,8 +473,9 @@ function directorKnown() {
 function applyCompanyMode(on) {
   state.companyMode = on;
   try { localStorage.setItem('tt.cache.companyMode', on ? 'on' : 'off'); } catch {}
-  for (const v of COMPANY_VIEWS) { const b = $(`.nav-item[data-view="${v}"]`); if (b) b.hidden = !on; }
-  const ov = $('#ov-company'); if (ov) ov.hidden = !on;
+  const vis = on && (typeof feat !== 'function' || feat('page.company'));
+  for (const v of COMPANY_VIEWS) { const b = $(`.nav-item[data-view="${v}"]`); if (b) b.hidden = !vis; }
+  const ov = $('#ov-company'); if (ov) ov.hidden = !vis;
   if (!on) {
     setAlert('company', null);
     state.company = null;
@@ -1237,7 +1240,7 @@ async function startEstimate() {
    ========================================================= */
 async function loadConfig() {
   try {
-    const c = await api('/api/config'); state.config = c;
+    const c = await api('/api/config'); state.config = c; window.applyFeatures?.();
     $('#s-key-current').textContent = c.hasKey ? `${tr('Kayıtlı', 'Saved')}: ${c.apiKeyMasked}` : tr('Key kayıtlı değil', 'No key saved');
     $('#s-ff-current').textContent = c.ffscouterKeyMasked ? `${tr('Kayıtlı', 'Saved')}: ${c.ffscouterKeyMasked}` : tr('Torn key kullanılıyor', 'Using Torn key');
     $('#s-cover').value = c.coverDays; $('#s-poll').value = c.pollMinutes;
@@ -1748,6 +1751,7 @@ function renderUpdateBtn() {
         : tr('En güncel sürüm — tekrar kontrol için tıkla', 'Up to date — click to check again');
 }
 async function checkUpdate(manual) {
+  if (!manual && state.config?.features?.['app.updates'] === false) return;
   if (!window.electronAPI?.updateCheck) { const b = $('#update-btn'); if (b) b.hidden = true; return; }
   state.update = await window.electronAPI.updateCheck().catch((e) => ({ error: e.message }));
   renderUpdateBtn();
@@ -1768,7 +1772,7 @@ $('#update-btn')?.addEventListener('click', async () => {
   if (!r.ok) { toast(tr('Güncelleme başarısız: ', 'Update failed: ') + r.error); renderUpdateBtn(); }
 });
 window.electronAPI?.onUpdateProgress?.((p) => { $('#update-label').textContent = p.message; });
-checkUpdate(false);
+setTimeout(() => checkUpdate(false), 2500); // config yüklensin (app.updates ayarı)
 setInterval(() => checkUpdate(false), 6 * 3600_000);
 
 /* ---------- TornTools (Chrome eklentisi) ---------- */
@@ -1863,7 +1867,7 @@ document.addEventListener('input', (e) => {
 /* =========================================================
    LRX LOGIN / SPLASH
    ========================================================= */
-const prefersReducedMotion = () => Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+const prefersReducedMotion = () => document.body.classList.contains('no-anim') || Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 const NEW_KEY_URL = 'https://www.torn.com/preferences.php#tab=api?step=addNewKey&title=LRX%20Torn%20Tracker&type=3';
 
 let authWaves = null;
@@ -2020,7 +2024,7 @@ function startApp(b, fresh = false) {
 
   // 2. Local disk bootstrap
   if (b) {
-    if (b.config) state.config = b.config;
+    if (b.config) { state.config = b.config; window.applyFeatures?.(); }
     if (b.overview && (!state.overview || (b.overviewAt && b.overviewAt > state.overviewAt))) {
       state.overview = b.overview;
       state.overviewAt = b.overviewAt || Date.now();
@@ -2052,7 +2056,8 @@ function startApp(b, fresh = false) {
   }
   let splashSeen = false;
   try { splashSeen = !!sessionStorage.getItem('tt.splashShown'); sessionStorage.setItem('tt.splashShown', '1'); } catch {}
-  if (!prefersReducedMotion() && !splashSeen) {
+  document.body.classList.toggle('no-anim', b?.config?.features?.['app.animations'] === false);
+  if (!prefersReducedMotion() && !splashSeen && b?.config?.features?.['app.splash'] !== false) {
     showAuth('splash');
     startApp(b);
     hideAuth(1400);
