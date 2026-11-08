@@ -34,4 +34,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onTabUpdated: (callback) => {
     ipcRenderer.on('tab-updated', (_event, data) => callback(data));
   },
+  onTornData: (callback) => {
+    ipcRenderer.on('torn-data', (_event, data) => callback(data));
+  },
 });

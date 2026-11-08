@@ -39,6 +39,7 @@ function writeJson(file, obj) {
 let config = { ...DEFAULT_CONFIG, ...readJson(CONFIG_FILE, {}) };
 let history = readJson(HISTORY_FILE, { days: [], addiction: {}, user: {}, stockOrders: {} });
 history.days ||= []; history.addiction ||= {}; history.user ||= {}; history.stockOrders ||= {};
+history.stockDeliveries ||= { at: 0, items: [] };
 
 const saveConfig = () => writeJson(CONFIG_FILE, config);
 const saveHistory = () => writeJson(HISTORY_FILE, history);
@@ -524,6 +525,11 @@ function buildCompanyReport(c) {
   const now = Date.now();
   const nextResetMs = next18TctMs(now);
   const recent = history.days.slice(-7);
+  // Ölçülmüş gerçek teslim süresi varsa tahminlerde onu kullan
+  const estHours = history.learnedDeliveryHours || deliveryHours;
+  const shipments = (history.stockDeliveries?.items || [])
+    .filter((x) => x.deliverAt > now - 120_000)
+    .sort((a, b) => a.deliverAt - b.deliverAt);
 
   let products = Object.entries(stock).map(([name, s]) => {
     const hist = recent.map((x) => x.stock?.[name]?.sold_amount).filter((n) => typeof n === 'number' && n > 0);
@@ -542,28 +548,34 @@ function buildCompanyReport(c) {
     else if (daysLeftWithOrder != null && daysLeftWithOrder < coverDays) status = 'low';
     else if (daysLeftWithOrder != null && daysLeftWithOrder > coverDays * 2.5) status = 'over';
 
-    // Sipariş teslim süresi hesabı
+    // Sipariş teslim süresi: önce Torn'un kendi "Delivered in" sayacı (stok sayfasından okunur),
+    // yoksa sipariş zamanından tahmin. Tahmin, uygulama siparişi verildiği an görmediyse güvenilmezdir.
     const ord = history.stockOrders[name];
     let orderDelivery = null;
     if (s.on_order > 0) {
-      const orderedAt = ord?.orderedAt || now;
-      const totalMs = deliveryHours * 3600_000;
-      const byHoursEta = orderedAt + totalMs;
-      const etaMs = deliveryMode === '18tct' ? nextResetMs : (byHoursEta > now ? byHoursEta : nextResetMs);
-      const modeUsed = deliveryMode === '18tct' || byHoursEta <= now ? '18tct' : 'hours';
-      const cycleTotalMs = modeUsed === '18tct' ? 24 * 3600_000 : totalMs;
-      const safeUntilDelivery = hoursLeft == null ? true : (hoursLeft * 3600_000) > (etaMs - now);
-      orderDelivery = {
-        amount: s.on_order,
-        orderedAt,
-        exact: !!ord?.exact,
-        etaMs,
-        nextResetMs,
-        cycleTotalMs,
-        mode: modeUsed,
-        deliveryHours,
-        safeUntilDelivery,
-      };
+      const ships = shipments.filter((x) => x.name === name);
+      const safe = (etaMs) => (hoursLeft == null ? true : hoursLeft * 3600_000 > etaMs - now);
+      if (ships.length) {
+        const etaMs = ships[0].deliverAt;
+        const startMs = Math.min(ord?.orderedAt || history.stockDeliveries.at, history.stockDeliveries.at);
+        orderDelivery = {
+          amount: s.on_order, shipments: ships.length, orderedAt: ord?.orderedAt || null, exact: true,
+          source: 'torn', seenAt: history.stockDeliveries.at, etaMs, nextResetMs,
+          cycleTotalMs: Math.max(etaMs - startMs, 3600_000), mode: 'torn', deliveryHours: estHours,
+          safeUntilDelivery: safe(etaMs),
+        };
+      } else {
+        const orderedAt = ord?.orderedAt || now;
+        const totalMs = estHours * 3600_000;
+        const byHoursEta = orderedAt + totalMs;
+        const etaMs = deliveryMode === '18tct' ? nextResetMs : (byHoursEta > now ? byHoursEta : nextResetMs);
+        const modeUsed = deliveryMode === '18tct' || byHoursEta <= now ? '18tct' : 'hours';
+        orderDelivery = {
+          amount: s.on_order, orderedAt, exact: !!ord?.exact, source: 'estimate', etaMs, nextResetMs,
+          cycleTotalMs: modeUsed === '18tct' ? 24 * 3600_000 : totalMs, mode: modeUsed, deliveryHours: estHours,
+          learned: !!history.learnedDeliveryHours, safeUntilDelivery: safe(etaMs),
+        };
+      }
     }
 
     return {
@@ -632,6 +644,8 @@ function buildCompanyReport(c) {
     coverDays,
     deliveryHours,
     deliveryMode,
+    estDeliveryHours: estHours,
+    deliveriesSeenAt: history.stockDeliveries?.at || 0,
     company: {
       id: p.ID, name: p.name, type: p.company_type, rating: p.rating, daysOld: p.days_old,
       hired: p.employees_hired, capacity: p.employees_capacity,
@@ -902,7 +916,7 @@ async function handleApi(req, res, url) {
       // Farklı bir oyuncuya geçildiyse önceki oyuncunun verilerini karıştırma
       const prevPlayer = history.lastOverview?.player?.id;
       if (prevPlayer && prevPlayer !== user.player_id) {
-        history = { days: [], addiction: {}, user: {}, stockOrders: {}, eduNames: history.eduNames };
+        history = { days: [], addiction: {}, user: {}, stockOrders: {}, stockDeliveries: { at: 0, items: [] }, eduNames: history.eduNames };
         saveHistory();
       }
       config.apiKey = key;
@@ -1033,8 +1047,60 @@ function startServer(preferredPort = PORT) {
   });
 }
 
+/* Torn şirket stok sayfasındaki "Current Shipments" sayaçları — Electron, Torn sekmesinden okuyup buraya verir. */
+function stockProductNames() {
+  const fromReport = (history.lastCompanyReport?.products || []).map((x) => x.name);
+  if (fromReport.length) return fromReport;
+  return Object.keys(history.days[history.days.length - 1]?.stock || {});
+}
+
+function ingestStockDeliveries(rows, at = Date.now()) {
+  const names = new Set(stockProductNames());
+  const items = [];
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const name = String(r?.name || '');
+    const secs = Number(r?.secs);
+    if (!names.has(name) || !Number.isFinite(secs) || secs < 0 || secs > 7 * 86400) continue;
+    items.push({ name, amount: Math.max(0, Number(r.amount) || 0), deliverAt: at + secs * 1000 });
+  }
+  history.stockDeliveries = { at, items };
+  // Siparişin verildiği anı gördüğümüz ürünlerden gerçek kargo süresini öğren (tahminler için)
+  const measured = items
+    .map((it) => ({ it, ord: history.stockOrders[it.name] }))
+    .filter(({ it, ord }) => ord?.exact && ord.orderedAt && ord.amount === it.amount)
+    .map(({ it, ord }) => (it.deliverAt - ord.orderedAt) / 3600_000)
+    .filter((h) => h >= 1 && h <= 72)
+    .sort((a, b) => a - b);
+  if (measured.length) history.learnedDeliveryHours = Math.round(measured[Math.floor(measured.length / 2)] * 4) / 4;
+  if (history.lastCompanyReport) history.lastCompanyReport.deliveriesSeenAt = at;
+  saveHistory();
+  return items.length;
+}
+
+/* Savaş sayfası yardımcısı: kendi faction'ın + savaştığın faction'ların üye durumları.
+   Dönüş: { oyuncuId: { s: 'Okay'|'Hospital'|..., u: bitiş (unix sn), d: açıklama } } */
+async function warMemberStatuses(pageFactionIds = []) {
+  if (!config.apiKey) return {};
+  const ids = new Set(pageFactionIds.map(Number).filter((n) => n > 0));
+  try {
+    const w = await getMyWars();
+    if (w.faction?.id) ids.add(w.faction.id);
+    for (const x of w.wars) if (x.type === 'Ranked War') ids.add(x.factionId);
+  } catch {}
+  const out = {};
+  await Promise.all([...ids].slice(0, 4).map(async (fid) => {
+    try {
+      const f = await torn(`faction/${fid}?selections=basic`, 20_000);
+      for (const [id, m] of Object.entries(f.members || {})) {
+        out[id] = { s: m.status?.state || '', u: Number(m.status?.until) || 0, d: m.status?.description || '' };
+      }
+    } catch {}
+  }));
+  return out;
+}
+
 if (require.main === module) {
   startServer(PORT);
 }
 
-module.exports = { startServer, server };
+module.exports = { startServer, server, stockProductNames, ingestStockDeliveries, warMemberStatuses };

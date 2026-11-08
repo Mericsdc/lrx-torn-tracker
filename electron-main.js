@@ -53,7 +53,7 @@ function main() {
   }
   process.env.TORN_DATA_DIR = persistentDataDir;
 
-  const { startServer } = require('./server');
+  const { startServer, stockProductNames, ingestStockDeliveries, warMemberStatuses } = require('./server');
   const { ensureTornTools } = require('./torntools');
   const { externalGoogleLogin } = require('./external-login');
   const updater = require('./updater');
@@ -118,9 +118,101 @@ function main() {
     } catch {}
   }
 
+  /* Torn'un React sayfaları (Crimes 2.0 hub'ı vb.) oyuncu kimliğini `uid` çerezinden okuyup
+     crimesHubApi.php'ye userID olarak gönderir. Eski oturum aktarımından/girişlerden kalan yinelenen
+     ya da yanlış `uid` çerezi bu isteği reddettirir → "Invalid hub status batch response".
+     Sayfanın kendi bildirdiği gerçek kimlikle (script[uid]) karşılaştırıp çerezi onarıyoruz. */
+  const UID_CHECK_JS = `(() => {
+    const real = document.querySelector('script[uid][name]')?.getAttribute('uid') || null;
+    const uids = document.cookie.split(/;\\s*/).filter((c) => c.startsWith('uid=')).map((c) => decodeURIComponent(c.slice(4)));
+    return { real, uids };
+  })()`;
+
+  async function repairUidCookie(id) {
+    const t = tabs.get(id);
+    if (!t) return;
+    const wc = t.view.webContents;
+    if (wc.isDestroyed() || !isTornUrl(wc.getURL())) return;
+    try {
+      const r = await wc.executeJavaScript(UID_CHECK_JS, true);
+      if (!r || !/^\d+$/.test(String(r.real || ''))) return; // giriş yapılmamış
+      if (r.uids.length === 1 && r.uids[0] === r.real) return; // sağlıklı
+      const ses = wc.session;
+      const stale = (await ses.cookies.get({ name: 'uid' })).filter((c) => /(^|\.)torn\.com$/i.test(c.domain));
+      for (const c of stale) {
+        try { await ses.cookies.remove(`https://${c.domain.replace(/^\./, '')}${c.path || '/'}`, 'uid'); } catch {}
+      }
+      await ses.cookies.set({
+        url: 'https://www.torn.com', domain: '.torn.com', path: '/', name: 'uid', value: r.real,
+        secure: true, sameSite: 'lax', expirationDate: Math.floor(Date.now() / 1000) + 365 * 86400,
+      });
+      try { await ses.cookies.flushStore(); } catch {}
+      log('uid çerezi onarıldı:', `${r.uids.length} çerez → 1`);
+      // Hata veren sayfa çerezi yüklenirken okuduğu için bir kez yenile
+      if (!t.uidRepaired) { t.uidRepaired = true; wc.reload(); }
+    } catch {}
+  }
+
   function sendToRenderer(channel, payload) {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
   }
+
+  /* ---- LRX Torn yardımcıları: Torn sekmelerine enjekte edilen betikler (torn-helpers/) ---- */
+  const helperCache = new Map();
+  const helperSrc = (name) => {
+    if (!helperCache.has(name)) helperCache.set(name, fs.readFileSync(path.join(__dirname, 'torn-helpers', `${name}.js`), 'utf8'));
+    return helperCache.get(name);
+  };
+  const TORN_HELPERS = [
+    { name: 'fast-slots', feature: 'torn.fastSlots', match: /^https:\/\/www\.torn\.com\/page\.php\?(.*&)?sid=slots(&|#|$)/i },
+    { name: 'war-helper', feature: 'torn.warHelper', match: /^https:\/\/www\.torn\.com\/factions\.php/i, after: (id) => warTick(id) },
+    { name: 'company-stock', feature: 'torn.stockSync', match: /^https:\/\/www\.torn\.com\/companies\.php/i, run: syncStockDeliveries },
+  ];
+
+  async function injectTornHelpers(id) {
+    const t = tabs.get(id);
+    if (!t) return;
+    const wc = t.view.webContents;
+    if (wc.isDestroyed()) return;
+    const url = wc.getURL();
+    for (const h of TORN_HELPERS) {
+      if (!h.match.test(url) || !featureEnabled(h.feature)) continue;
+      try {
+        if (h.run) await h.run(wc);
+        else await wc.executeJavaScript(helperSrc(h.name), true);
+        if (h.after) h.after(id);
+      } catch (e) { log(`helper ${h.name}:`, e.message); }
+    }
+  }
+
+  // Şirket stok sayfası: Torn'un "Delivered in" sayaçlarını oku → teslim süresi tahmini yerine gerçek süre
+  async function syncStockDeliveries(wc) {
+    const names = stockProductNames();
+    if (!names.length) return;
+    const rows = await wc.executeJavaScript(`${helperSrc('company-stock')}(${JSON.stringify(names)})`, true);
+    if (!Array.isArray(rows)) return;
+    const count = ingestStockDeliveries(rows, Date.now());
+    sendToRenderer('torn-data', { type: 'stock-deliveries', count });
+  }
+
+  // Savaş sayfası: üye durumlarını (hastane bitişleri) API'den alıp sayfadaki yardımcıya ver
+  async function warTick(id) {
+    const t = tabs.get(id);
+    if (!t || t.warBusy) return;
+    const wc = t.view.webContents;
+    if (wc.isDestroyed() || !/^https:\/\/www\.torn\.com\/factions\.php/i.test(wc.getURL())) return;
+    t.warBusy = true;
+    try {
+      const info = await wc.executeJavaScript('window.__lrxWar ? window.__lrxWar.scan() : null', true);
+      if (!info?.active) return;
+      const statuses = await warMemberStatuses(info.factionIds || []);
+      if (!wc.isDestroyed()) await wc.executeJavaScript(`window.__lrxWar && window.__lrxWar.update(${JSON.stringify(statuses)})`, true);
+    } catch {} finally { t.warBusy = false; }
+  }
+  setInterval(() => {
+    if (!featureEnabled('torn.warHelper')) return;
+    for (const id of tabs.keys()) warTick(id);
+  }, 20_000);
 
   // Torn olmayan pop-up'lar (Google ile giriş vb.) ayrı küçük pencerede açılır.
   // Aynı oturumu (partition) paylaşırlar; böylece Google girişi Torn sekmesine geri döner.
@@ -217,10 +309,19 @@ function main() {
     guardGoogleNavigation(wc);
 
     wc.on('did-start-loading', () => sendTabUpdate(id));
-    wc.on('did-stop-loading', () => { sendTabUpdate(id); checkTornLogin(id); });
+    wc.on('did-stop-loading', () => { sendTabUpdate(id); checkTornLogin(id); repairUidCookie(id); injectTornHelpers(id); });
+    // F12 / Ctrl+Shift+I → Torn sekmesinin geliştirici araçları (sorun teşhisi için)
+    wc.on('before-input-event', (e, input) => {
+      if (input.type !== 'keyDown') return;
+      const key = String(input.key || '').toLowerCase();
+      if (key === 'f12' || ((input.control || input.meta) && input.shift && key === 'i')) {
+        e.preventDefault();
+        if (wc.isDevToolsOpened()) wc.closeDevTools(); else wc.openDevTools({ mode: 'detach' });
+      }
+    });
     wc.on('page-title-updated', () => sendTabUpdate(id));
     wc.on('did-navigate', () => sendTabUpdate(id));
-    wc.on('did-navigate-in-page', () => sendTabUpdate(id));
+    wc.on('did-navigate-in-page', (_e, _url, isMainFrame) => { sendTabUpdate(id); if (isMainFrame) injectTornHelpers(id); });
 
     wc.loadURL(url).catch((e) => log('loadURL err:', e.message));
     return { id, url };

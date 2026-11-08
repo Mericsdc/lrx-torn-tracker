@@ -580,12 +580,20 @@ function renderOverviewCompany(c) {
 /* ---------- Stock ---------- */
 function renderStock(c) {
   const s = c.storage;
-  const onOrderProds = c.products.filter((p) => p.on_order > 0 && p.orderDelivery);
+  const onOrderProds = c.products.filter((p) => p.on_order > 0 && p.orderDelivery)
+    .sort((a, b) => a.orderDelivery.etaMs - b.orderDelivery.etaMs);
   const firstEta = onOrderProds[0]?.orderDelivery;
+  const estH = c.estDeliveryHours || c.deliveryHours || 6;
+  const etaHint = (od) => (od.source === 'torn' ? tr('Torn sayacı ✓', 'Torn timer ✓')
+    : od.mode === '18tct' ? tr('tahmini · 18:00 TCT', 'estimate · 18:00 TCT')
+      : `${tr('tahmini', 'estimate')} · ${od.deliveryHours}${tr('sa kargo', 'h transit')}`);
+  const hasEstimates = onOrderProds.some((p) => p.orderDelivery.source !== 'torn');
+  const canSync = !!window.electronAPI?.tabCreate;
+  const seenAt = c.deliveriesSeenAt ? new Date(c.deliveriesSeenAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : null;
   $('#stock-kpis').innerHTML = [
     kpi(tr('Stoktaki ürün', 'In stock'), n0(c.totals.inStock), `${c.products.length} ${tr('çeşit', 'products')}`),
-    kpi(tr('Siparişte (Yolda)', 'On order (Transit)'), n0(c.totals.onOrder), firstEta ? `${tr('Teslim', 'ETA')}: ~${new Date(firstEta.etaMs).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}` : tr('aktif sipariş yok', 'no active orders')),
-    kpi(tr('Sipariş teslim süresi', 'Order delivery ETA'), firstEta ? `<span data-eta="${firstEta.etaMs}">${clock((firstEta.etaMs - Date.now()) / 1000)}</span>` : '—', firstEta ? (firstEta.mode === '18tct' ? tr('18:00 TCT yenilenmesi', '18:00 TCT reset') : `${c.deliveryHours || 6} ${tr('saatlik teslimat', 'hour delivery')}`) : tr('Sipariş yok', 'No orders'), 'tq'),
+    kpi(tr('Siparişte (Yolda)', 'On order (Transit)'), n0(c.totals.onOrder), firstEta ? `${tr('Teslim', 'ETA')}: ${firstEta.source === 'torn' ? '' : '~'}${new Date(firstEta.etaMs).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}` : tr('aktif sipariş yok', 'no active orders')),
+    kpi(tr('İlk teslimat', 'First delivery'), firstEta ? `<span data-eta="${firstEta.etaMs}">${clock((firstEta.etaMs - Date.now()) / 1000)}</span>` : '—', firstEta ? etaHint(firstEta) : tr('Sipariş yok', 'No orders'), 'tq'),
     kpi(tr('Depo doluluğu', 'Storage used'), s.space ? pct(s.used / s.space) : '—', s.space ? `${n0(s.free)} ${tr('boş alan', 'free space')}` : ''),
     kpi(tr('Şirket fonu', 'Company funds'), cmoney(c.company.funds), `${tr('Reklam', 'Ads')} ${cmoney(c.company.ads)}/${tr('gün', 'day')}`),
   ].join('');
@@ -596,10 +604,14 @@ function renderStock(c) {
       <div>
         <h3>🚚 ${tr('Sipariş Zamanı', 'Order Timing')}</h3>
         <span class="muted">${onOrderProds.length ? tr(`${onOrderProds.length} üründe toplam ${n0(c.totals.onOrder)} adet sipariş yolda · Şirket gün sonu: 18:00 TCT (<span class="mono" data-eta="${c.nextResetMs}">—</span> kaldı)`, `${n0(c.totals.onOrder)} units on order across ${onOrderProds.length} products · Company reset: 18:00 TCT (<span class="mono" data-eta="${c.nextResetMs}">—</span> left)`) : tr('Şu an yolda olan sipariş bulunmuyor.', 'No stock orders currently in transit.')}</span>
+        ${onOrderProds.length ? `<div class="sub-text" style="margin-top:4px">${hasEstimates
+          ? `⚠ ${tr('Süreler tahmini. Kesin süre için Torn\'da şirket stok sayfasını aç; LRX "Delivered in" sayaçlarını otomatik okur.', 'Times are estimates. Open the company stock page in Torn; LRX reads the "Delivered in" timers automatically.')}`
+          : `✓ ${tr(`Süreler Torn'un kendi sayacından${seenAt ? ` (okundu ${seenAt})` : ''}`, `Times from Torn's own timers${seenAt ? ` (read ${seenAt})` : ''}`)}`}</div>` : ''}
       </div>
       <div class="delivery-controls">
-        <span class="sub-text">${tr('Sipariş zamanı senkronize et:', 'Sync order time:')}</span>
-        <button class="btn sm ${c.deliveryMode !== '18tct' ? 'primary' : ''}" data-order-sync="0">${tr(`Şimdi verdim (${c.deliveryHours || 6}sa)`, `Just ordered (${c.deliveryHours || 6}h)`)}</button>
+        ${canSync ? `<button class="btn sm ${hasEstimates ? 'primary' : ''}" data-stock-torn-sync>🔄 ${tr('Torn\'dan kesin süreyi al', 'Get exact times from Torn')}</button>` : ''}
+        <span class="sub-text">${tr('Elle senkronize et:', 'Manual sync:')}</span>
+        <button class="btn sm ${!canSync && c.deliveryMode !== '18tct' ? 'primary' : ''}" data-order-sync="0">${tr(`Şimdi verdim (${estH}sa)`, `Just ordered (${estH}h)`)}</button>
         <button class="btn sm" data-order-sync="1">${tr('1sa önce', '1h ago')}</button>
         <button class="btn sm" data-order-sync="2">${tr('2sa önce', '2h ago')}</button>
         <button class="btn sm" data-order-sync="3">${tr('3sa önce', '3h ago')}</button>
@@ -636,7 +648,7 @@ function renderStock(c) {
       <div class="product-delivery">
         ${od ? `<div class="pd-row"><span>🚚 ${tr('Teslimata kalan', 'Delivery ETA')} <span class="chip tq mono">+${n0(p.on_order)}</span></span><strong class="mono tq-text" data-eta="${od.etaMs}">${clock((od.etaMs - Date.now()) / 1000)}</strong></div>
           <div class="bar" style="height:4px;margin-top:6px"><i data-eta-bar="${od.etaMs}" data-eta-total="${od.cycleTotalMs}" style="width:50%;background:var(--tq)"></i></div>
-          <div class="pd-row" style="margin-top:7px"><span class="sub-text">${tr('Varış', 'Arrives')} <b class="mono">${new Date(od.etaMs).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</b> · ${od.mode === '18tct' ? '18:00 TCT' : od.deliveryHours + tr('sa kargo', 'h transit')}</span><span class="chip ${od.safeUntilDelivery ? 'green' : 'danger'}">${od.safeUntilDelivery ? tr('Yeterli ✓', 'Safe ✓') : tr('Önce biter ⚠', 'Runs out ⚠')}</span></div>` : `<div class="pd-row"><span class="muted">${tr('Yolda sipariş yok', 'No order in transit')}</span><span class="muted">—</span></div>`}
+          <div class="pd-row" style="margin-top:7px"><span class="sub-text">${tr('Varış', 'Arrives')} <b class="mono">${od.source === 'torn' ? '' : '~'}${new Date(od.etaMs).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</b> · ${etaHint(od)}</span><span class="chip ${od.safeUntilDelivery ? 'green' : 'danger'}">${od.safeUntilDelivery ? tr('Yeterli ✓', 'Safe ✓') : tr('Önce biter ⚠', 'Runs out ⚠')}</span></div>` : `<div class="pd-row"><span class="muted">${tr('Yolda sipariş yok', 'No order in transit')}</span><span class="muted">—</span></div>`}
       </div>
       <div class="product-foot"><span class="muted">${tr('Önerilen sipariş', 'Suggested order')}</span>${p.need ? `<strong class="tq-text mono">${n0(p.need)} ${tr('adet', 'units')} · ${cmoney(p.orderCost)}</strong>` : `<span class="chip green">${tr('Gerek yok', 'None needed')}</span>`}</div>
     </article>`;
@@ -1289,7 +1301,13 @@ document.addEventListener('click', async (e) => {
     const hoursAgo = Number(syncBtn.dataset.orderSync) || 0;
     const c = await api('/api/stock-order', { method: 'POST', body: JSON.stringify({ hoursAgo, deliveryMode: 'hours' }) });
     state.company = c; renderCompany();
-    toast(hoursAgo === 0 ? tr('Sipariş sayacı başlatıldı (6 saat)', 'Order timer started (6 hours)') : tr(`Sipariş zamanı ${hoursAgo} saat öncesi olarak ayarlandı`, `Order time set to ${hoursAgo}h ago`));
+    const h = c.estDeliveryHours || c.deliveryHours || 6;
+    toast(hoursAgo === 0 ? tr(`Sipariş sayacı başlatıldı (${h} saat, tahmini)`, `Order timer started (${h} hours, estimate)`) : tr(`Sipariş zamanı ${hoursAgo} saat öncesi olarak ayarlandı`, `Order time set to ${hoursAgo}h ago`));
+    return;
+  }
+  if (e.target.closest('[data-stock-torn-sync]')) {
+    openInTab('https://www.torn.com/companies.php#/option=stock', { activate: true, reuse: true });
+    toast(tr('Torn stok sayfası açıldı · teslim süreleri otomatik okunacak', 'Torn stock page opened · delivery times will be read automatically'));
     return;
   }
   const modeBtn = e.target.closest('[data-order-mode]');
@@ -1831,6 +1849,16 @@ setInterval(() => {
 if (window.electronAPI?.onOpenTab) {
   window.electronAPI.onOpenTab((url) => {
     openInTab(url, { activate: true });
+  });
+}
+// Torn sekmesinden gelen veriler (ör. şirket stok sayfasındaki gerçek teslim sayaçları)
+if (window.electronAPI?.onTornData) {
+  window.electronAPI.onTornData((data) => {
+    if (data?.type !== 'stock-deliveries') return;
+    loadCompany(false).catch(() => {});
+    toast(data.count
+      ? tr(`Torn'dan ${data.count} sevkiyatın teslim süresi alındı ✓`, `Got delivery times for ${data.count} shipments from Torn ✓`)
+      : tr('Torn stok sayfasında yolda sevkiyat yok', 'No shipments in transit on the Torn stock page'));
   });
 }
 if (window.electronAPI?.onTabUpdated) {

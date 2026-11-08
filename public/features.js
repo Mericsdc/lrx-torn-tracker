@@ -27,6 +27,10 @@ const FEATURE_DEFS = [
   { group: 'notify', key: 'notify.restock', def: true, tr: ['Takip ettiğin ürün (★): kalkış zamanı ve restock', ''], en: ['Watched item (★): departure time and restock', ''] },
   { group: 'notify', key: 'notify.targets', def: true, tr: ['Açık sekmedeki oyuncu hastaneden çıktı', ''], en: ['Player in an open tab left hospital', ''] },
 
+  { group: 'torn', key: 'torn.warHelper', def: true, tr: ['Savaş: Attack & hastane sayacı', 'Ranked war sayfasında rakibin yanında Attack, iki tarafta hastane geri sayımı'], en: ['War: Attack & hospital timers', 'Attack button next to enemies and hospital countdowns on the ranked war page'] },
+  { group: 'torn', key: 'torn.fastSlots', def: true, tr: ['Hızlı Slot', 'Kumarhane slotunda animasyonsuz spin · her tıklama tek spin'], en: ['Fast Slots', 'Casino slots without the reel animation · one spin per click'] },
+  { group: 'torn', key: 'torn.stockSync', def: true, tr: ['Stok teslim süresini Torn\'dan oku', 'Şirket stok sayfasındaki "Delivered in" sayaçları'], en: ['Read stock delivery from Torn', '"Delivered in" timers on the company stock page'] },
+
   { group: 'app', key: 'app.animations', def: true, tr: ['Animasyonlar', 'Geçişler, sayaç animasyonları, kart efektleri'], en: ['Animations', 'Transitions, counters, card effects'] },
   { group: 'app', key: 'app.splash', def: true, tr: ['Açılış ekranı', 'Uygulama açılırken LRX logosu'], en: ['Splash screen', 'LRX logo on startup'] },
   { group: 'app', key: 'app.torntools', def: true, tr: ['TornTools', 'Yerleşik Torn sekmelerinde TornTools eklentisi (yeniden başlatınca)'], en: ['TornTools', 'TornTools extension in Torn tabs (after restart)'] },
@@ -133,6 +137,9 @@ function renderFeatureSettings() {
         ${group('notify').map((f) => row(f, !f.master && !notifyOn)).join('')}
         <div class="feat-foot"><button class="btn sm ghost" id="notify-test" ${notifyOn ? '' : 'disabled'}>🔔 ${tr('Test bildirimi', 'Test notification')}</button>
         ${perm === 'denied' ? `<small class="neg">${tr('Bildirim izni engellenmiş', 'Notification permission blocked')}</small>` : ''}</div>
+      </section>
+      <section><h4>${tr('Torn sekmeleri', 'Torn tabs')}</h4>${group('torn').map((f) => row(f)).join('')}
+        <div class="feat-foot"><small class="muted">${tr('Değişiklik, Torn sayfası yeniden yüklenince geçerli olur · F12: geliştirici araçları', 'Takes effect when the Torn page reloads · F12: developer tools')}</small></div>
       </section>
       <section><h4>${tr('Uygulama', 'App')}</h4>${group('app').map((f) => row(f)).join('')}</section>
     </div>`;
