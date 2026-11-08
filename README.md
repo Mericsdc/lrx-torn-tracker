@@ -17,7 +17,7 @@
 
 ## Setup (users)
 
-1. Download `LRX-Torn-Tracker-win32-x64-<version>.zip` from [Releases](https://github.com/ati-space/lrx-torn-tracker/releases/latest).
+1. Download `LRX-Torn-Tracker-win32-x64-<version>.zip` from [Releases](https://github.com/Mericsdc/lrx-torn-tracker/releases/latest).
 2. Extract it to any folder and run `TornTracker.exe`.
 3. On the login screen, enter your own **Limited Access** Torn API key.
    - To create a key: Torn → Preferences → API Keys → Add new key → choose **Limited Access**.

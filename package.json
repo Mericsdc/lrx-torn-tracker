@@ -17,9 +17,9 @@
     "@electron/packager": "^19.1.2",
     "electron": "^41.2.0"
   },
-  "updateUrl": "https://github.com/ati-space/lrx-torn-tracker/releases/latest/download/latest.json",
+  "updateUrl": "https://github.com/Mericsdc/lrx-torn-tracker/releases/latest/download/latest.json",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ati-space/lrx-torn-tracker.git"
+    "url": "https://github.com/Mericsdc/lrx-torn-tracker.git"
   }
 }
