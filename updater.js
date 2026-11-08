@@ -37,7 +37,9 @@ async function fetchManifest(manifestUrl) {
   if (!res.ok) throw new Error(`Güncelleme bilgisi alınamadı (HTTP ${res.status})`);
   const m = await res.json();
   if (!m.version || !m.url || !/^[a-f0-9]{64}$/i.test(m.sha256 || '')) throw new Error('Güncelleme manifesti eksik/hatalı (version, url, sha256 gerekli).');
-  m.url = new URL(m.url, res.url || manifestUrl).toString();
+  // Göreli paket adı, yönlendirme sonrası adrese (res.url) değil, ayarlardaki manifest adresine göre çözülür:
+  // GitHub manifesti imzalı bir CDN adresine yönlendirir, oraya göre çözülen adres HTTP 618 verir.
+  m.url = new URL(m.url, manifestUrl).toString();
   if (!/^https:\/\//i.test(m.url)) throw new Error('Güncelleme paketi https olmalı.');
   return m;
 }

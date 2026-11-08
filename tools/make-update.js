@@ -62,9 +62,12 @@ const zip = makeZip(files);
 fs.mkdirSync(OUT, { recursive: true });
 const zipName = `torntracker-app-${pkg.version}.zip`;
 fs.writeFileSync(path.join(OUT, zipName), zip);
+// GitHub Release'te manifest, imzalı ve süreli bir indirme adresine yönlenir; göreli paket adı oraya
+// göre çözülürse imzasız adres oluşur (HTTP 618 jwt-not-provided). Bu yüzden tam adres yazıyoruz.
+const gh = String(pkg.updateUrl || '').match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/releases\//i);
 const manifest = {
   version: pkg.version,
-  url: zipName,
+  url: gh ? `https://github.com/${gh[1]}/${gh[2]}/releases/download/v${pkg.version}/${zipName}` : zipName,
   sha256: crypto.createHash('sha256').update(zip).digest('hex'),
   notes: process.argv.slice(2).join(' ') || '',
   publishedAt: new Date().toISOString(),
