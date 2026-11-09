@@ -70,9 +70,37 @@ const I18N = {
   'set.saveBtn': ['Kaydet', 'Save'],
   'auth.login': ['Giriş Yap', 'Sign In'],
   'auth.getKey': ['Limited API key oluştur →', 'Create a Limited API key →'],
-  'auth.privacy': ["Key yalnızca bu bilgisayarda saklanır ve sadece api.torn.com'a gönderilir.", 'Your key is stored only on this computer and sent only to api.torn.com.'],
+  'auth.privacy': ["Key yalnızca bu bilgisayarda saklanır ve api.torn.com'a gönderilir. Ayrı bir FFScouter key girmezsen Savaş Hedefleri için ffscouter.com'a da gönderilir.", 'Your key is stored only on this computer and sent to api.torn.com. Unless you enter a separate FFScouter key, it is also sent to ffscouter.com for War Targets.'],
+  // Torn API kullanım koşulları (ToS) tablosu — key'in girildiği ekranda gösterilmesi gerekir
+  'tos.title': ['API kullanım koşulları (Torn ToS)', 'API terms of use (Torn ToS)'],
+  'tos.storage': ['Veri saklama', 'Data storage'],
+  'tos.storageV': ['Yalnızca bu bilgisayarda, uygulamanın data klasöründe. Uygulamanın sunucusu yoktur.', "Only on this computer, in the app's data folder. The app has no server."],
+  'tos.sharing': ['Veri paylaşımı', 'Data sharing'],
+  'tos.sharingV': ["Kimseyle paylaşılmaz. Yalnızca Savaş Hedefleri için oyuncu ID'leri ffscouter.com'a gönderilir.", 'Not shared with anyone. Only player IDs are sent to ffscouter.com for War Targets.'],
+  'tos.purpose': ['Kullanım amacı', 'Purpose of use'],
+  'tos.purposeV': ['Kişisel takip: şirket, stok, istatistik, suç ve bildirimler.', 'Personal tracking: company, stock, stats, crimes and notifications.'],
+  'tos.keyStorage': ['Key saklama ve paylaşım', 'Key storage & sharing'],
+  'tos.keyStorageV': ["Bu bilgisayarda config.json içinde. api.torn.com'a, ayrı FFScouter key yoksa ffscouter.com'a gönderilir. Başka yere gönderilmez.", 'In config.json on this computer. Sent to api.torn.com, and to ffscouter.com if no separate FFScouter key is set. Sent nowhere else.'],
+  'tos.access': ['Key erişim seviyesi', 'Key access level'],
+  'tos.accessV': ['Limited Access. Log okuyan özellikler için isteğe bağlı ayrı bir "log" key.', 'Limited Access. Optional separate "log" key for log-based features.'],
   'set.logout': ['Çıkış Yap', 'Log Out'],
-  'set.updateLabel': ['Güncelleme adresi (latest.json)', 'Update URL (latest.json)'],
+  'set.tab.account': ['Hesap', 'Account'],
+  'set.tab.general': ['Genel', 'General'],
+  'set.tab.pages': ['Sayfalar', 'Pages'],
+  'set.tab.notify': ['Bildirimler', 'Notifications'],
+  'set.tab.torn': ['Torn yardımcıları', 'Torn helpers'],
+  'set.tab.events': ['Etkinlikler', 'Events'],
+  'set.keysTitle': ['API anahtarları', 'API keys'],
+  'set.logKeyLabel': ['Log key (isteğe bağlı)', 'Log key (optional)'],
+  'set.logKeyCreate': ["Torn'da log key oluştur ↗", 'Create log key in Torn ↗'],
+  'set.logKeyRemove': ["Log key'i sil", 'Remove log key'],
+  'set.trackTitle': ['Takip', 'Tracking'],
+  'set.updateTitle': ['Güncelleme', 'Updates'],
+  'set.updateCheck': ['Şimdi kontrol et', 'Check now'],
+  'set.appTitle': ['Uygulama', 'App'],
+  'set.pagesHint': ['Kapattığın sayfa menüden kalkar; alt seçenekler sayfadaki kartları açıp kapatır', 'Turned-off pages leave the menu; sub-options toggle cards on that page'],
+  'set.notifyHint': ['Masaüstü bildirimleri', 'Desktop notifications'],
+  'set.tornHint': ['Torn sekmelerinde çalışır · değişiklik sayfa yenilenince geçerli olur', 'Runs in Torn tabs · changes apply when the page reloads'],
   'set.ffStatusTitle': ['FFScouter Durumu', 'FFScouter Status'],
   'set.checkBtn': ['Kontrol et', 'Check'],
 };
@@ -356,6 +384,7 @@ function renderOverview() {
   chips.push(`<span class="chip ${o.cooldowns.booster ? 'warn' : ''}">Booster CD: <span data-cd="booster">${o.cooldowns.booster ? human(o.cooldowns.booster) : tr('yok', 'none')}</span></span>`);
   chips.push(`<span class="chip ${o.cooldowns.medical ? 'warn' : ''}">Medical CD: <span data-cd="medical">${o.cooldowns.medical ? human(o.cooldowns.medical) : tr('yok', 'none')}</span></span>`);
   if (o.bars.chain?.current) chips.push(`<span class="chip orange">Chain: ${o.bars.chain.current}</span>`);
+  if (o.bank) chips.push(`<span class="chip ${o.bank.timeLeft > 0 ? '' : 'green'}">🏦 ${tr('Banka', 'Bank')}: ${cmoney(o.bank.amount)} · ${o.bank.timeLeft > 0 ? `${human(o.bank.timeLeft)} ${tr('kaldı', 'left')}` : tr('bitti, çekilebilir', 'done, withdraw it')}</span>`);
   $('#mini-row').innerHTML = chips.join('');
 
   // battle stats
@@ -1261,23 +1290,57 @@ async function loadConfig() {
     $('#s-key-current').textContent = c.hasKey ? `${tr('Kayıtlı', 'Saved')}: ${c.apiKeyMasked}` : tr('Key kayıtlı değil', 'No key saved');
     $('#s-ff-current').textContent = c.ffscouterKeyMasked ? `${tr('Kayıtlı', 'Saved')}: ${c.ffscouterKeyMasked}` : tr('Torn key kullanılıyor', 'Using Torn key');
     $('#s-cover').value = c.coverDays; $('#s-poll').value = c.pollMinutes;
-    $('#s-update').value = c.updateUrl || '';
-    $('#s-update-current').textContent = c.updateUrl ? tr('Uygulama açılışta ve 6 saatte bir kontrol eder', 'Checked on startup and every 6 hours') : tr('Ayarlı değil — güncelleme butonu çalışmaz', 'Not set — update button disabled');
+    $('#s-log-current').textContent = c.logKeyMasked
+      ? `${tr('Kayıtlı', 'Saved')}: ${c.logKeyMasked}`
+      : tr('Yok · yalnızca "log" izinli özel key; alış fiyatlarını ve bust zamanlarını okumak için. Bu bilgisayarda saklanır, yalnızca api.torn.com\'a gider.', 'None · a custom key with only "log" access, used to read purchase prices and bust times. Stored on this computer, sent only to api.torn.com.');
+    $('#s-log-remove').hidden = !c.logKeyMasked;
+    renderUpdateInfo();
     return c;
   } catch { return null; }
 }
+// Güncelleme adresi sabit (resmi GitHub sürümü); burada yalnızca bilgi gösterilir
+function renderUpdateInfo() {
+  const el = $('#set-update-info'); if (!el) return;
+  const c = state.config || {}; const u = state.update || {};
+  const repo = (String(c.updateUrl || '').match(/github\.com\/([^/]+\/[^/]+)/) || [])[1];
+  const status = u.available ? `<span class="chip tq">v${esc(u.latest)} ${tr('hazır', 'ready')}</span>`
+    : u.error ? `<span class="chip warn">${tr('kontrol edilemedi', 'check failed')}</span>`
+    : u.current ? `<span class="chip green">${tr('güncel', 'up to date')}</span>` : '—';
+  el.innerHTML = `
+    <div><span>${tr('Sürüm', 'Version')}</span><span class="mono">v${esc(u.current || c.version || '—')}</span></div>
+    <div><span>${tr('Durum', 'Status')}</span><span>${status}</span></div>
+    <div><span>${tr('Kaynak', 'Source')}</span><span class="mono">${repo ? `GitHub · ${esc(repo)}` : '—'}</span></div>
+    <div><span>${tr('Kontrol', 'Checks')}</span><span>${feat('app.updates') ? tr('Açılışta ve 6 saatte bir', 'On startup and every 6 hours') : tr('Otomatik kontrol kapalı', 'Automatic check off')}</span></div>
+    <small class="muted">${tr('Güncellemeler yalnızca resmi sürüm adresinden gelir; bu adres değiştirilemez.', 'Updates come only from the official release address; it cannot be changed.')}</small>`;
+}
+async function postConfig(body, okText) {
+  try {
+    await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
+    toast(okText || tr('Ayarlar kaydedildi', 'Settings saved'));
+    await loadConfig();
+    return true;
+  } catch (err) { toast(err.message); return false; }
+}
 $('#settings-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const body = { coverDays: Number($('#s-cover').value), pollMinutes: Number($('#s-poll').value) };
+  const body = {};
   if ($('#s-key').value.trim()) body.apiKey = $('#s-key').value.trim();
   if ($('#s-ff').value.trim()) body.ffscouterKey = $('#s-ff').value.trim();
-  const upd = $('#s-update').value.trim();
-  if (upd && !/^https:\/\//i.test(upd)) return toast(tr('Güncelleme adresi https:// ile başlamalı', 'Update URL must start with https://'));
-  body.updateUrl = upd;
-  await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
-  $('#s-key').value = ''; $('#s-ff').value = '';
-  toast(tr('Ayarlar kaydedildi', 'Settings saved')); loadConfig(); refreshAll(true); checkUpdate(false);
+  const lk = $('#s-log').value.trim();
+  if (lk) {
+    if (!/^[A-Za-z0-9]{16}$/.test(lk)) return toast(tr('Log key 16 karakterlik harf/rakam olmalı.', 'The log key must be 16 letters/digits.'));
+    body.logKey = lk;
+  }
+  if (!Object.keys(body).length) return toast(tr('Değişiklik yok', 'Nothing changed'));
+  if (await postConfig(body)) { $('#s-key').value = ''; $('#s-ff').value = ''; $('#s-log').value = ''; refreshAll(true); }
 });
+$('#general-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (await postConfig({ coverDays: Number($('#s-cover').value), pollMinutes: Number($('#s-poll').value) })) refreshAll(true);
+});
+$('#s-log-remove').addEventListener('click', () => postConfig({ logKey: '' }, tr('Log key silindi', 'Log key removed')));
+$('#s-log-create').addEventListener('click', () => openInTab('https://www.torn.com/preferences.php#tab=api?step=addNewKey&title=LRX%20Log&user=log,personalstats', { activate: true }));
+$('#set-update-check').addEventListener('click', async () => { await checkUpdate(true); renderUpdateInfo(); });
 $('#ff-check').addEventListener('click', async () => {
   $('#ff-status').textContent = tr('Kontrol ediliyor…', 'Checking…');
   try {
@@ -1787,9 +1850,10 @@ async function checkUpdate(manual, force = false) {
   if (!window.electronAPI?.updateCheck) { const b = $('#update-btn'); if (b) b.hidden = true; return; }
   state.update = await window.electronAPI.updateCheck().catch((e) => ({ error: e.message }));
   renderUpdateBtn();
+  renderUpdateInfo();
   if (manual) {
     const u = state.update;
-    if (u.configured === false) { toast(tr('Önce Ayarlar → Güncelleme adresi gir', 'Set the update URL in Settings first')); showView('settings'); }
+    if (u.configured === false) toast(tr('Bu kurulumda güncelleme adresi yok', 'This build has no update address'));
     else if (u.error) toast(tr('Güncelleme kontrolü başarısız: ', 'Update check failed: ') + u.error);
     else if (!u.available) toast(tr(`En güncel sürümdesin (v${u.current})`, `You are up to date (v${u.current})`));
   }

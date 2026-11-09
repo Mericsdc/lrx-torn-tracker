@@ -40,7 +40,17 @@
         </form>
         <div class="auth-help">
           <a href="#" id="auth-get-key" data-i18n="auth.getKey">Limited API key oluştur →</a>
-          <small data-i18n="auth.privacy">Key yalnızca bu bilgisayarda saklanır ve sadece api.torn.com'a gönderilir.</small>
+          <small data-i18n="auth.privacy">Key yalnızca bu bilgisayarda saklanır ve api.torn.com'a gönderilir. Ayrı bir FFScouter key girmezsen Savaş Hedefleri için ffscouter.com'a da gönderilir.</small>
+          <details class="auth-tos">
+            <summary data-i18n="tos.title">API kullanım koşulları (Torn ToS)</summary>
+            <table>
+              <tr><th data-i18n="tos.storage">Veri saklama</th><td data-i18n="tos.storageV">Yalnızca bu bilgisayarda, uygulamanın data klasöründe. Uygulamanın sunucusu yoktur.</td></tr>
+              <tr><th data-i18n="tos.sharing">Veri paylaşımı</th><td data-i18n="tos.sharingV">Kimseyle paylaşılmaz. Yalnızca Savaş Hedefleri için oyuncu ID'leri ffscouter.com'a gönderilir.</td></tr>
+              <tr><th data-i18n="tos.purpose">Kullanım amacı</th><td data-i18n="tos.purposeV">Kişisel takip: şirket, stok, istatistik, suç ve bildirimler.</td></tr>
+              <tr><th data-i18n="tos.keyStorage">Key saklama ve paylaşım</th><td data-i18n="tos.keyStorageV">Bu bilgisayarda config.json içinde. api.torn.com'a, ayrı FFScouter key yoksa ffscouter.com'a gönderilir. Başka yere gönderilmez.</td></tr>
+              <tr><th data-i18n="tos.access">Key erişim seviyesi</th><td data-i18n="tos.accessV">Limited Access. Log okuyan özellikler için isteğe bağlı ayrı bir "log" key.</td></tr>
+            </table>
+          </details>
         </div>
       </div>
       <div class="auth-welcome" id="auth-welcome"></div>
@@ -116,6 +126,9 @@
         <button class="nav-item" data-view="war">
           <svg viewBox="0 0 24 24"><path d="M14.5 4.5l5 5L9 20l-5 0 0-5zM12 7l5 5M4 4l4 4"/></svg><span data-i18n="nav.war">Savaş Hedefleri</span>
         </button>
+        <button class="nav-item" data-view="faction">
+          <svg viewBox="0 0 24 24"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg><span data-i18n="nav.faction">Faction</span>
+        </button>
         <button class="nav-item" data-view="job">
           <svg viewBox="0 0 24 24"><path d="M4 8h16v11H4zM9 8V5h6v3M4 13h16"/></svg><span data-i18n="nav.job">İş Asistanı</span>
         </button>
@@ -127,6 +140,15 @@
         </button>
         <button class="nav-item" data-view="travel">
           <svg viewBox="0 0 24 24"><path d="M2 16l20-7-4-2-6 2-6-4-2 1 4 5-4 1-2-1-1 1 3 3z"/></svg><span data-i18n="nav.travel">Seyahat Kârı</span>
+        </button>
+        <button class="nav-item" data-view="crimes">
+          <svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg><span data-i18n="nav.crimes">Suç Merkezi</span>
+        </button>
+        <button class="nav-item" data-view="awards">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="M8.5 13.5L7 21l5-3 5 3-1.5-7.5"/></svg><span data-i18n="nav.awards">Merit Takibi</span>
+        </button>
+        <button class="nav-item" data-view="tools">
+          <svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg><span data-i18n="nav.tools">Araçlar</span>
         </button>
         <button class="nav-item" data-view="settings">
           <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg><span data-i18n="nav.settings">Ayarlar</span>
@@ -352,44 +374,97 @@
       <section class="view" id="view-travel"><div class="stack" id="travel-body"></div></section>
       <section class="view" id="view-level"><div class="stack" id="level-body"></div></section>
       <section class="view" id="view-guide"><div class="stack" id="guide-body"></div></section>
+      <section class="view" id="view-crimes"><div class="stack" id="crimes-body"></div></section>
+      <section class="view" id="view-awards"><div class="stack" id="awards-body"></div></section>
+      <section class="view" id="view-tools"><div class="stack" id="tools-body"></div></section>
+      <section class="view" id="view-faction"><div class="stack" id="faction-body"></div></section>
 
       <!-- ===================== SETTINGS ===================== -->
       <section class="view" id="view-settings">
-        <div class="grid two">
-          <article class="glass card">
-            <div class="card-head"><h3 data-i18n="set.title">API Ayarları</h3></div>
-            <form class="form" id="settings-form">
-              <label><span data-i18n="set.apiKeyLabel">Torn API Key (Limited)</span>
-                <input class="input mono" id="s-key" placeholder="Değiştirmek için yeni key gir" autocomplete="off" />
-                <small class="muted" id="s-key-current">—</small>
-              </label>
-              <label><span data-i18n="set.ffKeyLabel">FFScouter Key (boşsa Torn key kullanılır)</span>
-                <input class="input mono" id="s-ff" placeholder="Opsiyonel" autocomplete="off" />
-                <small class="muted" id="s-ff-current">—</small>
-              </label>
-              <div class="row">
-                <label><span data-i18n="set.coverLabel">Hedef stok (gün)</span>
-                  <input class="input mono" id="s-cover" type="number" min="1" max="14" />
+        <nav class="set-tabs" id="set-tabs" role="tablist">
+          <button class="set-tab active" type="button" role="tab" data-set-tab="account">👤 <span data-i18n="set.tab.account">Hesap</span></button>
+          <button class="set-tab" type="button" role="tab" data-set-tab="general">⚙️ <span data-i18n="set.tab.general">Genel</span></button>
+          <button class="set-tab" type="button" role="tab" data-set-tab="pages">🗂️ <span data-i18n="set.tab.pages">Sayfalar</span></button>
+          <button class="set-tab" type="button" role="tab" data-set-tab="notify">🔔 <span data-i18n="set.tab.notify">Bildirimler</span></button>
+          <button class="set-tab" type="button" role="tab" data-set-tab="torn">🧩 <span data-i18n="set.tab.torn">Torn yardımcıları</span></button>
+          <button class="set-tab" type="button" role="tab" data-set-tab="events">🎉 <span data-i18n="set.tab.events">Etkinlikler</span></button>
+        </nav>
+
+        <!-- Hesap: anahtarlar, FFScouter, çıkış -->
+        <div class="set-panel active" data-set-panel="account">
+          <div class="grid two">
+            <article class="glass card">
+              <div class="card-head"><h3 data-i18n="set.keysTitle">API anahtarları</h3></div>
+              <form class="form" id="settings-form">
+                <label><span data-i18n="set.apiKeyLabel">Torn API Key (Limited)</span>
+                  <input class="input mono" id="s-key" placeholder="Değiştirmek için yeni key gir" autocomplete="off" />
+                  <small class="muted" id="s-key-current">—</small>
                 </label>
-                <label><span data-i18n="set.pollLabel">Arka plan kayıt (dk)</span>
-                  <input class="input mono" id="s-poll" type="number" min="5" max="120" />
+                <label><span data-i18n="set.ffKeyLabel">FFScouter Key (boşsa Torn key kullanılır)</span>
+                  <input class="input mono" id="s-ff" placeholder="Opsiyonel" autocomplete="off" />
+                  <small class="muted" id="s-ff-current">—</small>
                 </label>
-              </div>
-              <label><span data-i18n="set.updateLabel">Güncelleme adresi (latest.json)</span>
-                <input class="input mono" id="s-update" placeholder="https://github.com/kullanici/repo/releases/latest/download/latest.json" autocomplete="off" />
-                <small class="muted" id="s-update-current">—</small>
-              </label>
-              <div class="settings-actions">
-                <button class="btn primary" type="submit" data-i18n="set.saveBtn">Kaydet</button>
+                <label><span data-i18n="set.logKeyLabel">Log key (isteğe bağlı)</span>
+                  <input class="input mono" id="s-log" maxlength="16" placeholder="Opsiyonel" autocomplete="off" />
+                  <small class="muted" id="s-log-current">—</small>
+                </label>
+                <div class="settings-actions">
+                  <button class="btn primary" type="submit" data-i18n="set.saveBtn">Kaydet</button>
+                  <button class="btn ghost sm" type="button" id="s-log-create" data-i18n="set.logKeyCreate">Torn'da log key oluştur ↗</button>
+                  <button class="btn ghost sm danger" type="button" id="s-log-remove" hidden data-i18n="set.logKeyRemove">Log key'i sil</button>
+                </div>
+              </form>
+            </article>
+            <article class="glass card">
+              <div class="card-head"><h3 data-i18n="set.ffStatusTitle">FFScouter Durumu</h3><button class="btn ghost sm" id="ff-check" data-i18n="set.checkBtn">Kontrol et</button></div>
+              <div id="ff-status" class="muted">—</div>
+              <div class="info-list" id="set-info-list"></div>
+              <div class="settings-actions set-logout">
                 <button class="btn ghost danger" type="button" id="logout-btn" data-i18n="set.logout">Çıkış Yap</button>
               </div>
-            </form>
-          </article>
-          <article class="glass card">
-            <div class="card-head"><h3 data-i18n="set.ffStatusTitle">FFScouter Durumu</h3><button class="btn ghost sm" id="ff-check" data-i18n="set.checkBtn">Kontrol et</button></div>
-            <div id="ff-status" class="muted">—</div>
-            <div class="info-list" id="set-info-list"></div>
-          </article>
+            </article>
+          </div>
+        </div>
+
+        <!-- Genel: takip ayarları, güncelleme, uygulama -->
+        <div class="set-panel" data-set-panel="general">
+          <div class="grid two">
+            <article class="glass card">
+              <div class="card-head"><h3 data-i18n="set.trackTitle">Takip</h3></div>
+              <form class="form" id="general-form">
+                <div class="row">
+                  <label><span data-i18n="set.coverLabel">Hedef stok (gün)</span>
+                    <input class="input mono" id="s-cover" type="number" min="1" max="14" />
+                  </label>
+                  <label><span data-i18n="set.pollLabel">Arka plan kayıt (dk)</span>
+                    <input class="input mono" id="s-poll" type="number" min="5" max="120" />
+                  </label>
+                </div>
+                <div class="settings-actions"><button class="btn primary" type="submit" data-i18n="set.saveBtn">Kaydet</button></div>
+              </form>
+            </article>
+            <article class="glass card">
+              <div class="card-head"><h3 data-i18n="set.updateTitle">Güncelleme</h3><button class="btn ghost sm" id="set-update-check" type="button" data-i18n="set.updateCheck">Şimdi kontrol et</button></div>
+              <div class="info-list" id="set-update-info"></div>
+            </article>
+          </div>
+          <article class="glass card"><div class="card-head"><h3 data-i18n="set.appTitle">Uygulama</h3></div><div class="feat-list" id="set-feat-app"></div></article>
+        </div>
+
+        <div class="set-panel" data-set-panel="pages">
+          <article class="glass card"><div class="card-head wrap"><h3 data-i18n="set.tab.pages">Sayfalar</h3><span class="muted" data-i18n="set.pagesHint">Kapattığın sayfa menüden kalkar; alt seçenekler sayfadaki kartları açıp kapatır</span></div>
+            <div class="feat-cols" id="set-feat-pages"></div></article>
+        </div>
+        <div class="set-panel" data-set-panel="notify">
+          <article class="glass card"><div class="card-head wrap"><h3 data-i18n="set.tab.notify">Bildirimler</h3><span class="muted" data-i18n="set.notifyHint">Masaüstü bildirimleri</span></div>
+            <div class="feat-list" id="set-feat-notify"></div></article>
+        </div>
+        <div class="set-panel" data-set-panel="torn">
+          <article class="glass card"><div class="card-head wrap"><h3 data-i18n="set.tab.torn">Torn yardımcıları</h3><span class="muted" data-i18n="set.tornHint">Torn sekmelerinde çalışır · değişiklik sayfa yenilenince geçerli olur</span></div>
+            <div class="feat-cols" id="set-feat-torn"></div></article>
+        </div>
+        <div class="set-panel" data-set-panel="events">
+          <div class="stack" id="set-events"></div>
         </div>
       </section>
     </main>
@@ -479,5 +554,9 @@
   <script src="/shape-waves.js"></script>
   <script src="/app.js"></script>
   <script src="/features.js"></script>
+  <script src="/extras.js"></script>
+  <script src="/tools.js"></script>
+  <script src="/events.js"></script>
+  <script src="/faction.js"></script>
 </body>
 </html>

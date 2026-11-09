@@ -11,6 +11,12 @@
 - **Overview**: Xanax/drug cooldown, education, end-of-day timers, bars, and battle stats with and without Xanax.
 - **Company**: stock levels with a target cover (days), daily report, employee addiction alerts, and an income statement.
 - **War targets**: FFScouter estimates, a hospital-release countdown next to each name, and a **Fair Fight payout** ranking (`expected points = win chance × FF`). The best Ideal, Easy and Risky targets are highlighted.
+- **Faction**: your own Organized Crime status (role, item, planning). The leader, the co-leader and positions with the **Organised Crimes** permission also see members outside an OC, delayed OCs with missing items, and weekly top-10 tables (activity, gym energy, Xanax, crimes, blood bags, OCs).
+- **Crime Hub**: shoplifting security alerts, money per nerve for every crime (Emforus sheet), burglary targets and a jail bust tracker.
+- **Merit Tracker**: missing honors and medals with your progress, closest first.
+- **Tools and events**: the Torn calendar with your personal start times, yearly event guides (Easter Egg Hunt, Trick or Treat, Christmas Town) and a purchase price guard.
+- **Torn page helpers** (they only add colors and labels to the page you are viewing and never click anything): crime XP and $/N badges, crime buttons colored from worst to best, burglary notes, jail bust difficulty, poker odds, a below-cost listing warning and event helpers.
+- **Settings**: every page, notification and helper can be turned on or off.
 - **Built-in Torn browser**: tabs you can drag to reorder, a context bar (Profile / Attack), and Google sign-in through your own Chrome or Edge.
 - **TornTools**: the Chrome Web Store extension is downloaded and loaded inside the app.
 - **Updates**: the update button downloads the newest GitHub release, checks its SHA-256 and installs it.

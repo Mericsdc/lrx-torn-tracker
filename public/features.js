@@ -13,6 +13,17 @@ const FEATURE_DEFS = [
   { group: 'pages', key: 'page.networth', def: true, tr: ['Networth', 'Servet dökümü ve günlük değişim'], en: ['Networth', 'Wealth breakdown and daily change'] },
   { group: 'pages', key: 'page.travel', def: true, tr: ['Seyahat Kârı', 'Kâr, stok ve restock zamanları (YATA + Prometheus)'], en: ['Travel Profit', 'Profit, stock and restock times (YATA + Prometheus)'] },
   { group: 'pages', key: 'page.war', def: true, tr: ['Savaş Hedefleri', 'Fair Fight hedef önerileri'], en: ['War Targets', 'Fair Fight target suggestions'] },
+  { group: 'pages', key: 'page.crimes', def: true, tr: ['Suç Merkezi', 'Shoplifting güvenliği (API) ve nerve başına kazanç'], en: ['Crime Hub', 'Shoplifting security (API) and money per nerve'] },
+  { group: 'pages', parent: 'page.crimes', key: 'crimes.shoplift', def: true, tr: ["Shoplifting güvenliği", "Mağaza güvenlik durumu ve ★ alarmı"], en: ["Shoplifting security", "Store security status and ★ alarm"] },
+  { group: 'pages', parent: 'page.crimes', key: 'crimes.value', def: true, tr: ["Nerve başına kazanç tablosu", "Bütün suçların $/N değerleri (Emforus tablosu)"], en: ["Money per nerve table", "$/N for every crime (Emforus sheet)"] },
+  { group: 'pages', parent: 'page.crimes', key: 'crimes.burglary', def: true, tr: ["Burglary hedefleri", "34 hedefin keşif sayısı, nerve ve $/N tablosu"], en: ["Burglary targets", "Casings, nerve and $/N for all 34 targets"] },
+  { group: 'pages', parent: 'page.crimes', key: 'crimes.jail', def: true, tr: ["Jail bust takibi", "Son 24 / 72 saatteki bustlar ve tahmini ceza puanı"], en: ["Jail bust tracker", "Busts in the last 24 / 72 hours and estimated penalty score"] },
+  { group: 'pages', key: 'page.faction', def: true, tr: ['Faction', "Kendi OC durumun · OC'ye girmeyenler, geciken OC'ler ve haftalık üye raporu (yalnızca lider, eş lider ve Organised Crimes yetkili pozisyonlar)"], en: ['Faction', 'Your OC status · members outside OCs, delayed OCs and the weekly member report (leader, co-leader and positions with Organised Crimes only)'] },
+  { group: 'pages', key: 'page.awards', def: true, tr: ['Merit Takibi', 'Eksik honor / medal\'lar ve ilerlemen'], en: ['Merit Tracker', 'Missing honors / medals and your progress'] },
+  { group: 'pages', key: 'page.tools', def: true, tr: ['Araçlar', 'Alış fiyatı koruması, etkinlik takvimi ve rehberi'], en: ['Tools', 'Purchase price protection, event calendar and guide'] },
+  { group: 'pages', parent: 'page.tools', key: 'tools.events', def: true, tr: ["Etkinlik takvimi", "Yaklaşan Torn etkinlikleri ve geri sayım"], en: ["Event calendar", "Upcoming Torn events with countdowns"] },
+  { group: 'pages', parent: 'page.tools', key: 'tools.purchases', def: true, tr: ["Alış fiyatı kayıtları", "Alış fiyatlarını kaydet ve listele (Torn'daki uyarı için gerekir)"], en: ["Purchase price records", "Record and list purchase prices (needed for the warning in Torn)"] },
+  { group: 'pages', parent: 'page.tools', key: 'tools.helpers', def: true, tr: ["Torn yardımcıları listesi", "Torn sayfa yardımcılarının ne yaptığı ve durumu"], en: ["Torn helpers list", "What each Torn page helper does and whether it is on"] },
   { group: 'pages', key: 'page.levelling', def: true, tr: ['Seviye 15 altı', "Baldr's Levelling Targets ve Başlangıç Rehberi · yalnızca seviye 15'in altındayken görünür"], en: ['Under level 15', "Baldr's Levelling Targets and Beginner Guide · shown only below level 15"] },
   { group: 'pages', key: 'page.company', def: true, tr: ['Şirket sayfaları', 'Stok, rapor, çalışanlar, gelir (yalnızca direktör)'], en: ['Company pages', 'Stock, report, employees, income (directors only)'] },
 
@@ -25,12 +36,29 @@ const FEATURE_DEFS = [
   { group: 'notify', key: 'notify.education', def: true, tr: ['Eğitim bitti', ''], en: ['Education finished', ''] },
   { group: 'notify', key: 'notify.travel', def: true, tr: ['Uçak indi', ''], en: ['Plane landed', ''] },
   { group: 'notify', key: 'notify.hospital', def: true, tr: ['Hastaneden çıktın', ''], en: ['You left hospital', ''] },
+  { group: 'notify', key: 'notify.bank', def: true, tr: ['Banka yatırımın bitti', ''], en: ['Bank investment finished', ''] },
+  { group: 'notify', key: 'notify.oc', def: true, tr: ["OC: eşyan eksik, planlama bitti ya da OC'n bitti", ''], en: ['OC: your item is missing, planning finished or your OC ended', ''] },
+  { group: 'notify', key: 'notify.factionOc', def: true, tr: ["Faction OC: geciken ya da eşyası eksik OC (lider ve yetkililer)", ''], en: ['Faction OC: delayed or missing-item OCs (leader and authorized)', ''] },
   { group: 'notify', key: 'notify.restock', def: true, tr: ['Takip ettiğin ürün (★): kalkış zamanı ve restock', ''], en: ['Watched item (★): departure time and restock', ''] },
+  { group: 'notify', key: 'notify.shoplift', def: true, tr: ['Shoplifting: takip ettiğin (★) mağazada bütün güvenlik kapandı', ''], en: ['Shoplifting: all security down at a watched (★) store', ''] },
+  { group: 'notify', key: 'notify.events', def: true, tr: ['Etkinlik başladı (Easter, Trick or Treat, Christmas Town)', ''], en: ['Event started (Easter, Trick or Treat, Christmas Town)', ''] },
   { group: 'notify', key: 'notify.targets', def: true, tr: ['Açık sekmedeki oyuncu hastaneden çıktı', ''], en: ['Player in an open tab left hospital', ''] },
 
   { group: 'torn', key: 'torn.warHelper', def: true, tr: ['Savaş: Attack & hastane sayacı', 'Ranked war sayfasında rakibin yanında Attack, iki tarafta hastane geri sayımı'], en: ['War: Attack & hospital timers', 'Attack button next to enemies and hospital countdowns on the ranked war page'] },
+  { group: 'torn', key: 'torn.crimeHelper', def: true, tr: ['Yankesicilik: XP ve renkler', "Her hedefin yanında Crime XP çarpanı (%100–350) · skill'ine göre en iyi hedef koyu yeşil, riskli olanlar kırmızı"], en: ['Pickpocketing: XP and colors', 'Crime XP multiplier next to each mark (100–350%) · best mark for your skill in dark green, risky ones in red'] },
+  { group: 'torn', key: 'torn.crimeValue', def: true, tr: ['Suçlar: nerve başına kazanç', "Suç merkezinde ve seçeneklerde $/N rozeti (Emforus tablosu) · Disposal'da en iyi yöntem yeşil"], en: ['Crimes: money per nerve', '$/N badges on the crime hub and options (Emforus sheet) · best Disposal method in green'] },
+  { group: 'torn', key: 'torn.crimeRank', def: true, tr: ['Suçlar: düğme renkleri', "Her seçeneğin sağındaki düğmenin (Search, Shoplift, Disposal yöntemleri…) etrafı $/N sırasına göre: kırmızı en kötü → sarı → yeşil en iyi"], en: ['Crimes: button colors', 'The button on the right of each option (Search, Shoplift, Disposal methods…) is outlined by $/N rank: red worst → yellow → green best'] },
+  { group: 'torn', key: 'torn.burglaryHelper', def: true, tr: ['Burglary yardımcısı', 'Her hedefte önerilen keşif (case) sayısı, $/N ve güvenlik notu · satırlar gizlenmez'], en: ['Burglary helper', 'Recommended casings, $/N and safety note for each target · rows are never hidden'] },
+  { group: 'torn', key: 'torn.jailHelper', def: true, tr: ['Jail: bust zorluğu', 'Her mahkûmun yanında zorluk puanı (seviye × (saat+3)) ve renk · onay atlatma yok'], en: ['Jail: bust difficulty', 'Difficulty score (level × (hours+3)) and color next to each inmate · no confirm skipping'] },
+  { group: 'torn', key: 'torn.sellGuard', def: true, tr: ['Alış fiyatı koruması', 'Item Market / bazaar ilanında alış fiyatının altına girersen kırmızı uyarı'], en: ['Purchase price guard', 'Red warning on Item Market / bazaar listings priced below what you paid'] },
+  { group: 'torn', key: 'torn.pokerHelper', def: true, tr: ['Poker oranları', "Hold'em masasında elin adı ve kazanma yüzdesi · tavsiye vermez, oynamaz"], en: ['Poker odds', "Hand name and win chance at the Hold'em table · no advice, never plays"] },
   { group: 'torn', key: 'torn.fastSlots', def: true, tr: ['Hızlı Slot', 'Kumarhane slotunda animasyonsuz spin · her tıklama tek spin'], en: ['Fast Slots', 'Casino slots without the reel animation · one spin per click'] },
   { group: 'torn', key: 'torn.stockSync', def: true, tr: ['Stok teslim süresini Torn\'dan oku', 'Şirket stok sayfasındaki "Delivered in" sayaçları'], en: ['Read stock delivery from Torn', '"Delivered in" timers on the company stock page'] },
+
+  { group: 'events', event: 'easter', key: 'torn.eggFinder', def: true, tr: ['Yumurta bulucu', 'Baktığın sayfada yumurta varsa ortada büyütüp kırmızı çerçeveyle gösterir · tıklamaz'], en: ['Egg finder', 'If the page you are viewing has an egg, shows it enlarged in the middle with a red border · never clicks'] },
+  { group: 'events', event: 'halloween', key: 'torn.halloweenHelper', def: true, tr: ['Şeker dükkânı işareti', "Sweet Shop'ta şeker toplamak için gereken Halloween Basket'i işaretler · satın almaz"], en: ['Sweet Shop marker', 'Marks the Halloween Basket you need for treats in the Sweet Shop · never buys'] },
+  { group: 'events', event: 'christmas', key: 'torn.ctHelper', def: true, tr: ['Christmas Town yardımcısı', 'Hediye, sandık ve anahtarları işaretler, yakındakileri listeler · kombinasyon sandığı çözücü'], en: ['Christmas Town helper', 'Highlights gifts, chests and keys, lists nearby ones · combination chest solver'] },
+  { group: 'events', key: 'event.guide', def: true, tr: ['Etkinlik rehberi', "Etkinlik günlerinde Genel Bakış'ta kısa uyarı, Araçlar'da ne alman / ne yapman gerektiği"], en: ['Event guide', 'On event days: a short notice on Overview and what to buy / do on Tools'] },
 
   { group: 'app', key: 'app.animations', def: true, tr: ['Animasyonlar', 'Geçişler, sayaç animasyonları, kart efektleri'], en: ['Animations', 'Transitions, counters, card effects'] },
   { group: 'app', key: 'app.splash', def: true, tr: ['Açılış ekranı', 'Uygulama açılırken LRX logosu'], en: ['Splash screen', 'LRX logo on startup'] },
@@ -39,7 +67,7 @@ const FEATURE_DEFS = [
   { group: 'app', key: 'app.updates', def: true, tr: ['Otomatik güncelleme kontrolü', 'Açılışta ve 6 saatte bir'], en: ['Automatic update check', 'On startup and every 6 hours'] },
 ];
 const FEATURE_DEF_MAP = Object.fromEntries(FEATURE_DEFS.map((f) => [f.key, f]));
-const EXTRA_VIEWS = { job: 'page.job', gym: 'page.gym', networth: 'page.networth', travel: 'page.travel', war: 'page.war', level: 'page.levelling', guide: 'page.levelling' };
+const EXTRA_VIEWS = { job: 'page.job', gym: 'page.gym', networth: 'page.networth', travel: 'page.travel', war: 'page.war', level: 'page.levelling', guide: 'page.levelling', crimes: 'page.crimes', awards: 'page.awards', tools: 'page.tools', faction: 'page.faction' };
 const LEVELLING_VIEWS = ['level', 'guide'];
 
 function feat(key) {
@@ -67,6 +95,8 @@ const underLevel15 = () => myLevel() > 0 && myLevel() < 15;
 function viewHidden(v) {
   if (v === 'job' && hasJob()) return true;
   if (LEVELLING_VIEWS.includes(v) && !underLevel15()) return true;
+  // Faction sayfası yalnızca bir faction'dayken
+  if (v === 'faction' && state.overview?.player?.faction && !Number(state.overview.player.faction.faction_id)) return true;
   if (EXTRA_VIEWS[v] && !feat(EXTRA_VIEWS[v])) return true;
   return COMPANY_VIEWS.includes(v) && !(feat('page.company') && state.companyMode !== false);
 }
@@ -79,12 +109,14 @@ function applyNavVisibility() {
   if (viewHidden(state.view)) showView('overview');
   else if (state.view === 'guide') renderGuide(); // her overview yenilemesinde kişisel adımlar güncellensin
 }
+const FEATURE_HOOKS = []; // ek sayfalar: özellik açılıp kapanınca yeniden çiz
 function applyFeatures() {
   applyNavVisibility();
   document.body.classList.toggle('no-anim', !feat('app.animations'));
   const tt = $('#tt-open-btn'); if (tt) tt.hidden = !feat('app.torntools');
   const ub = $('#update-btn'); if (ub) ub.hidden = !feat('app.updates');
   renderFeatureSettings();
+  for (const fn of FEATURE_HOOKS) { try { fn(); } catch (e) { console.warn('[features]', e); } }
 }
 
 /* ---------- i18n + görünüm başlıkları ---------- */
@@ -105,17 +137,29 @@ Object.assign(VIEW_META, {
   guide: { tr: ['Başlangıç Rehberi', 'İş, eğitim, gym ve alışveriş: seviye 15 öncesi yol haritası'], en: ['Beginner Guide', 'Job, education, gym and shopping: a roadmap to level 15'] },
 });
 
-/* ---------- Ayarlar → Özellikler kartı ---------- */
-function ensureFeatureCard() {
-  let card = $('#features-card');
-  if (card) return card;
+/* ---------- Ayarlar: sekmeler ve özellik anahtarları ---------- */
+const L10 = (f) => f[state.lang === 'en' ? 'en' : 'tr'];
+function featRow(f, disabled = false) {
+  return `<label class="feat-row ${f.master ? 'master' : ''} ${f.parent ? 'sub' : ''} ${disabled ? 'disabled' : ''}">
+      <span class="feat-text"><b>${esc(L10(f)[0])}</b>${L10(f)[1] ? `<small>${esc(L10(f)[1])}</small>` : ''}</span>
+      <span class="switch"><input type="checkbox" data-feature="${f.key}" ${feat(f.key) ? 'checked' : ''} ${disabled ? 'disabled' : ''}><i></i></span>
+    </label>`;
+}
+const SET_TABS = ['account', 'general', 'pages', 'notify', 'torn', 'events'];
+function showSettingsTab(t) {
+  if (!SET_TABS.includes(t)) t = 'account';
+  for (const b of document.querySelectorAll('.set-tab')) { const on = b.dataset.setTab === t; b.classList.toggle('active', on); b.setAttribute('aria-selected', on); }
+  for (const p of document.querySelectorAll('.set-panel')) p.classList.toggle('active', p.dataset.setPanel === t);
+  try { localStorage.setItem('lrx.setTab', t); } catch {}
+  if (t === 'events') window.loadEventSettings?.();
+}
+window.showSettingsTab = showSettingsTab;
+let settingsBound = false;
+function bindSettings() {
   const host = $('#view-settings');
-  if (!host) return null;
-  card = document.createElement('article');
-  card.className = 'glass card';
-  card.id = 'features-card';
-  host.appendChild(card);
-  card.addEventListener('change', (e) => {
+  if (!host || settingsBound) return;
+  settingsBound = true;
+  host.addEventListener('change', (e) => {
     const inp = e.target.closest('input[data-feature]');
     if (!inp) return;
     const key = inp.dataset.feature;
@@ -123,38 +167,34 @@ function ensureFeatureCard() {
     setFeature(key, inp.checked);
     if (key === 'app.torntools') toast(tr('TornTools değişikliği uygulama yeniden başlatılınca geçerli olur', 'TornTools change applies after restarting the app'));
   });
-  card.addEventListener('click', (e) => {
+  host.addEventListener('click', (e) => {
+    const tab = e.target.closest('[data-set-tab]');
+    if (tab) { showSettingsTab(tab.dataset.setTab); return; }
     if (e.target.closest('#notify-test')) {
       notify('test', tr('LRX Torn Tracker', 'LRX Torn Tracker'), tr('Bildirimler çalışıyor ✓', 'Notifications are working ✓'));
     }
   });
-  return card;
+  let saved = 'account';
+  try { saved = localStorage.getItem('lrx.setTab') || 'account'; } catch {}
+  showSettingsTab(saved);
 }
 function renderFeatureSettings() {
-  const card = ensureFeatureCard();
-  if (!card) return;
-  const L = (f) => f[state.lang === 'en' ? 'en' : 'tr'];
-  const row = (f, disabled = false) => `<label class="feat-row ${f.master ? 'master' : ''} ${disabled ? 'disabled' : ''}">
-      <span class="feat-text"><b>${esc(L(f)[0])}</b>${L(f)[1] ? `<small>${esc(L(f)[1])}</small>` : ''}</span>
-      <span class="switch"><input type="checkbox" data-feature="${f.key}" ${feat(f.key) ? 'checked' : ''} ${disabled ? 'disabled' : ''}><i></i></span>
-    </label>`;
+  if (!$('#set-feat-pages')) return;
+  bindSettings();
   const group = (g) => FEATURE_DEFS.filter((f) => f.group === g);
+  // Sayfalar: her sayfa alt seçenekleriyle bir blokta
+  $('#set-feat-pages').innerHTML = group('pages').filter((f) => !f.parent).map((p) => `<div class="feat-block">${featRow(p)}${
+    FEATURE_DEFS.filter((c) => c.parent === p.key).map((c) => featRow(c, !feat(p.key))).join('')}</div>`).join('');
   const notifyOn = feat('notify');
   const perm = 'Notification' in window ? Notification.permission : 'unsupported';
-  card.innerHTML = `
-    <div class="card-head"><h3>${tr('Özellikler', 'Features')}</h3><span class="muted">${tr('Açtığın / kapattığın ayarlar bu bilgisayarda saklanır', 'Settings are stored on this computer')}</span></div>
-    <div class="feat-grid">
-      <section><h4>${tr('Sayfalar', 'Pages')}</h4>${group('pages').map((f) => row(f)).join('')}</section>
-      <section><h4>${tr('Bildirimler', 'Notifications')}</h4>
-        ${group('notify').map((f) => row(f, !f.master && !notifyOn)).join('')}
-        <div class="feat-foot"><button class="btn sm ghost" id="notify-test" ${notifyOn ? '' : 'disabled'}>🔔 ${tr('Test bildirimi', 'Test notification')}</button>
-        ${perm === 'denied' ? `<small class="neg">${tr('Bildirim izni engellenmiş', 'Notification permission blocked')}</small>` : ''}</div>
-      </section>
-      <section><h4>${tr('Torn sekmeleri', 'Torn tabs')}</h4>${group('torn').map((f) => row(f)).join('')}
-        <div class="feat-foot"><small class="muted">${tr('Değişiklik, Torn sayfası yeniden yüklenince geçerli olur · F12: geliştirici araçları', 'Takes effect when the Torn page reloads · F12: developer tools')}</small></div>
-      </section>
-      <section><h4>${tr('Uygulama', 'App')}</h4>${group('app').map((f) => row(f)).join('')}</section>
-    </div>`;
+  $('#set-feat-notify').innerHTML = group('notify').map((f) => featRow(f, !f.master && !notifyOn)).join('')
+    + `<div class="feat-foot"><button class="btn sm ghost" id="notify-test" type="button" ${notifyOn ? '' : 'disabled'}>🔔 ${tr('Test bildirimi', 'Test notification')}</button>
+      ${perm === 'denied' ? `<small class="neg">${tr('Bildirim izni engellenmiş', 'Notification permission blocked')}</small>` : ''}</div>`;
+  $('#set-feat-torn').innerHTML = group('torn').map((f) => `<div class="feat-block">${featRow(f)}</div>`).join('')
+    + `<div class="feat-foot feat-span"><small class="muted">${tr("Etkinlik yardımcıları (yumurta bulucu, Christmas Town, Trick or Treat) Etkinlikler sekmesinde · F12: geliştirici araçları", 'Event helpers (egg finder, Christmas Town, Trick or Treat) are on the Events tab · F12: developer tools')}</small></div>`;
+  $('#set-feat-app').innerHTML = group('app').map((f) => featRow(f)).join('');
+  window.renderEventSettings?.();
+  window.renderUpdateInfo?.();
 }
 
 /* ---------- Masaüstü bildirimleri ---------- */
@@ -198,6 +238,7 @@ function notifyEvents() {
     if (o.trip?.timeLeft > 0) ev.push({ type: 'notify.travel', at: base + o.trip.timeLeft * 1000, title: '✈ ' + tr('Uçak indi', 'Landed'), body: tr(`${o.trip.destination} vardın`, `Arrived in ${o.trip.destination}`) });
     const st = o.player?.status;
     if (st?.state === 'Hospital' && st.until) ev.push({ type: 'notify.hospital', at: st.until * 1000 - state.skew, title: '🏥 ' + tr('Hastaneden çıktın', 'Out of hospital'), body: tr('Artık müsaitsin', 'You are okay now') });
+    if (o.bank?.timeLeft > 0) ev.push({ type: 'notify.bank', at: base + o.bank.timeLeft * 1000, title: '🏦 ' + tr('Banka yatırımın bitti', 'Bank investment finished'), body: tr(`${cmoney(o.bank.amount)} ve faizi çekilebilir`, `${cmoney(o.bank.amount)} plus interest can be withdrawn`), url: 'https://www.torn.com/bank.php' });
   }
   // Açık sekmelerdeki oyuncular
   const seen = new Set();

@@ -55,7 +55,7 @@ function main() {
   }
   process.env.TORN_DATA_DIR = persistentDataDir;
 
-  const { startServer, stockProductNames, ingestStockDeliveries, warMemberStatuses, flushData, myPlayerId } = require('./server');
+  const { startServer, stockProductNames, ingestStockDeliveries, warMemberStatuses, flushData, myPlayerId, getCrimeValue, crimeValueForPage, purchaseCostsForPage, seasonalActive, halloweenForPage } = require('./server');
   app.on('will-quit', () => { try { flushData(); } catch {} });
   const { ensureTornTools } = require('./torntools');
   const { externalGoogleLogin } = require('./external-login');
@@ -269,10 +269,33 @@ function main() {
     if (!helperCache.has(name)) helperCache.set(name, fs.readFileSync(path.join(__dirname, 'torn-helpers', `${name}.js`), 'utf8'));
     return helperCache.get(name);
   };
+  // Torn kuralı: sayfadan okunan veri yalnızca oyuncunun o an baktığı (odaktaki) sekmeden alınabilir.
+  // Sayfayı okuyup uygulamaya veri gönderen yardımcılar (needsFocus) arka plan sekmesinde çalışmaz;
+  // sekmeye geçilince ya da pencere odağa gelince çalışır. Yalnızca sayfayı boyayanlar her zaman yüklenir.
+  const tabViewed = (id) => id === activeTabId && !!mainWindow && !mainWindow.isDestroyed()
+    && mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused();
   const TORN_HELPERS = [
     { name: 'fast-slots', feature: 'torn.fastSlots', match: /^https:\/\/www\.torn\.com\/page\.php\?(.*&)?sid=slots(&|#|$)/i },
     { name: 'war-helper', feature: 'torn.warHelper', match: /^https:\/\/www\.torn\.com\/factions\.php/i, after: (id) => warTick(id) },
-    { name: 'company-stock', feature: 'torn.stockSync', match: /^https:\/\/www\.torn\.com\/companies\.php/i, run: syncStockDeliveries },
+    { name: 'company-stock', feature: 'torn.stockSync', needsFocus: true, match: /^https:\/\/www\.torn\.com\/companies\.php/i, run: syncStockDeliveries },
+    // Suçlar: XP renkleri + $/N rozetleri + burglary notları (her biri ayrı ayardan açılıp kapanır)
+    { name: 'crime-helper', feature: ['torn.crimeHelper', 'torn.crimeValue', 'torn.crimeRank', 'torn.burglaryHelper'], match: /^https:\/\/www\.torn\.com\/page\.php\?(.*&)?sid=crimes(&|#|$)/i,
+      prelude: () => {
+        getCrimeValue().catch(() => {}); // tablo bayatsa arka planda yenile (Google Sheets, Torn isteği değil)
+        const opts = { xp: featureEnabled('torn.crimeHelper'), value: featureEnabled('torn.crimeValue'), rank: featureEnabled('torn.crimeRank'), burglary: featureEnabled('torn.burglaryHelper') };
+        return `window.__lrxCrimeOpts=${JSON.stringify(opts)};window.__lrxCV=${JSON.stringify(crimeValueForPage())};`;
+      } },
+    { name: 'jail-helper', feature: 'torn.jailHelper', match: /^https:\/\/www\.torn\.com\/jailview\.php/i },
+    { name: 'sell-guard', feature: 'torn.sellGuard', match: /^https:\/\/www\.torn\.com\/(page\.php\?(.*&)?sid=ItemMarket|bazaar\.php)/i,
+      prelude: () => `window.__lrxCosts=${JSON.stringify(purchaseCostsForPage())};` },
+    { name: 'poker-helper', feature: 'torn.pokerHelper', match: /^https:\/\/www\.torn\.com\/page\.php\?(.*&)?sid=holdem/i },
+    // Etkinlik yardımcıları (event): yalnızca oyuncunun etkinlik penceresinde çalışır. Tarihler her yıl
+    // Torn takviminden (API) gelir; kişisel başlangıç saati (user/calendar) dahil.
+    { name: 'ct-helper', feature: 'torn.ctHelper', event: 'christmas', match: /^https:\/\/www\.torn\.com\/christmas_town\.php/i },
+    { name: 'halloween-helper', feature: 'torn.halloweenHelper', event: 'halloween', match: /^https:\/\/www\.torn\.com\/shops\.php\?(.*&)?step=candy/i,
+      prelude: () => `window.__lrxHalloween=${JSON.stringify(halloweenForPage())};` },
+    // Yumurta yalnızca bakılan sekmede gösterilir (arka plan sekmesinden uyarı vermek kural dışı)
+    { name: 'egg-finder', feature: 'torn.eggFinder', event: 'easter', needsFocus: true, match: /^https:\/\/www\.torn\.com\//i },
   ];
 
   async function injectTornHelpers(id) {
@@ -282,10 +305,11 @@ function main() {
     if (wc.isDestroyed()) return;
     const url = wc.getURL();
     for (const h of TORN_HELPERS) {
-      if (!h.match.test(url) || !featureEnabled(h.feature)) continue;
+      if (!h.match.test(url) || ![].concat(h.feature).some(featureEnabled) || (h.needsFocus && !tabViewed(id))) continue;
+      if (h.event && !seasonalActive(h.event)) continue; // etkinlik günü değil
       try {
         if (h.run) await h.run(wc);
-        else await wc.executeJavaScript(helperSrc(h.name), true);
+        else await wc.executeJavaScript((h.prelude ? h.prelude() : '') + helperSrc(h.name), true);
         if (h.after) h.after(id);
       } catch (e) { log(`helper ${h.name}:`, e.message); }
     }
@@ -304,7 +328,7 @@ function main() {
   // Savaş sayfası: üye durumlarını (hastane bitişleri) API'den alıp sayfadaki yardımcıya ver
   async function warTick(id) {
     const t = tabs.get(id);
-    if (!t || t.warBusy) return;
+    if (!t || t.warBusy || !tabViewed(id)) return; // sayfadaki faction ID'leri yalnızca bakılan sekmeden okunur
     const wc = t.view.webContents;
     if (wc.isDestroyed() || !/^https:\/\/www\.torn\.com\/factions\.php/i.test(wc.getURL())) return;
     t.warBusy = true;
@@ -317,7 +341,7 @@ function main() {
   }
   setInterval(() => {
     if (!featureEnabled('torn.warHelper')) return;
-    for (const id of tabs.keys()) warTick(id);
+    if (tabs.has(activeTabId)) warTick(activeTabId);
   }, 20_000);
 
   // Torn olmayan pop-up'lar (Google ile giriş vb.) ayrı küçük pencerede açılır.
@@ -484,6 +508,7 @@ function main() {
   ipcMain.handle('tab-activate', async (_event, tabId) => {
     markActive(tabId);
     layoutViews();
+    if (tabs.has(activeTabId)) injectTornHelpers(activeTabId); // odak gerektiren yardımcılar şimdi çalışsın
     if (activeTabId !== 'tracker' && tabs.has(activeTabId)) {
       sendTabUpdate(activeTabId);
       tabs.get(activeTabId).view.webContents.focus();
@@ -606,9 +631,8 @@ function main() {
   ipcMain.handle('external-login', async () => { startExternalLogin(); });
 
   // ---- Güncelleme ----
-  const updateUrl = () => {
-    try { return JSON.parse(fs.readFileSync(path.join(persistentDataDir, 'config.json'), 'utf8')).updateUrl || DEFAULT_UPDATE_URL; } catch { return DEFAULT_UPDATE_URL; }
-  };
+  // Güncelleme adresi sabit: package.json'daki resmi GitHub sürüm adresi (ayarlardan değiştirilemez)
+  const updateUrl = () => DEFAULT_UPDATE_URL;
   // Çalışan sürüm = açılışta yüklenen kod. Diskteki package.json daha yeniyse (güncelleme kuruldu
   // ya da dosyalar uygulama açıkken değişti) yeniden başlatmak gerekir; bunu ayrıca bildiriyoruz.
   const runningVersion = updater.currentVersion();
@@ -763,6 +787,7 @@ function main() {
       });
 
       mainWindow.on('resize', layoutViews);
+      mainWindow.on('focus', () => { if (tabs.has(activeTabId)) injectTornHelpers(activeTabId); });
       mainWindow.on('maximize', layoutViews);
       mainWindow.on('unmaximize', layoutViews);
 

@@ -24,8 +24,10 @@ if (!fs.existsSync(DATA)) fs.mkdirSync(DATA, { recursive: true });
 /* ------------------------------------------------------------------ */
 /* Config & history                                                    */
 /* ------------------------------------------------------------------ */
-const DEFAULT_UPDATE_URL = (() => { try { return require('./package.json').updateUrl || ''; } catch { return ''; } })();
-const DEFAULT_CONFIG = { apiKey: process.env.TORN_API_KEY || '', ffscouterKey: '', coverDays: 3, pollMinutes: 15, deliveryHours: 6, deliveryMode: 'hours', updateUrl: '', features: {} };
+const PKG = (() => { try { return require('./package.json'); } catch { return {}; } })();
+const DEFAULT_UPDATE_URL = PKG.updateUrl || ''; // sabit: resmi GitHub sürüm adresi
+const APP_VERSION = PKG.version || '';
+const DEFAULT_CONFIG = { apiKey: process.env.TORN_API_KEY || '', ffscouterKey: '', coverDays: 3, pollMinutes: 15, deliveryHours: 6, deliveryMode: 'hours', features: {} };
 
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
@@ -37,6 +39,7 @@ function writeJson(file, obj, pretty = false) {
 }
 
 let config = { ...DEFAULT_CONFIG, ...readJson(CONFIG_FILE, {}) };
+delete config.updateUrl; // eski sürümlerde ayarlanabiliyordu; artık hep sabit adres kullanılır
 let history = readJson(HISTORY_FILE, { days: [], addiction: {}, user: {}, stockOrders: {} });
 history.days ||= []; history.addiction ||= {}; history.user ||= {}; history.stockOrders ||= {};
 history.stockDeliveries ||= { at: 0, items: [] };
@@ -166,7 +169,7 @@ async function getEducationNames() {
 }
 
 async function getOverview(force = false) {
-  const q = 'user/?selections=profile,cooldowns,education,battlestats,bars,icons,personalstats,travel,timestamp';
+  const q = 'user/?selections=profile,cooldowns,education,battlestats,bars,icons,personalstats,travel,money,timestamp';
   if (force) cache.delete('torn:' + q);
   const [u, eduNames] = await Promise.all([
     torn(q, 25_000),
@@ -220,6 +223,8 @@ async function getOverview(force = false) {
       ? { description: u.status.description, icon: iconList.find((t) => /^travel/i.test(t)) || null }
       : null,
     trip: u.travel ? { destination: u.travel.destination, method: u.travel.method, timeLeft: u.travel.time_left || 0, arrival: u.travel.timestamp || 0 } : null,
+    // Şehir bankası yatırımı: tutar ve bitişe kalan süre (sn)
+    bank: u.city_bank && Number(u.city_bank.amount) > 0 ? { amount: Number(u.city_bank.amount), timeLeft: Number(u.city_bank.time_left) || 0 } : null,
   };
   recordStats(today, bs, u.personalstats || {});
   history.lastOverview = result;
@@ -901,6 +906,784 @@ async function getLevelling(listName) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Suç Merkezi: shoplifting güvenliği (yalnızca Torn API)              */
+/* ------------------------------------------------------------------ */
+const SHOPLIFT_STORES = {
+  sallys_sweet_shop: "Sally's Sweet Shop", Bits_n_bobs: "Bits 'n' Bobs", tc_clothing: 'TC Clothing', super_store: 'Super Store',
+  pharmacy: 'Pharmacy', cyber_force: 'Cyber Force', jewelry_store: 'Jewelry Store', big_als: "Big Al's Gun Shop",
+};
+async function getShoplifting() {
+  const j = await torn('torn/?selections=shoplifting', 50_000);
+  const stores = Object.entries(j.shoplifting || {}).map(([key, list]) => {
+    const security = (Array.isArray(list) ? list : []).map((s) => ({ title: String(s.title || ''), down: !!s.disabled }));
+    return { key, name: SHOPLIFT_STORES[key] || key.replace(/_/g, ' '), security, allDown: security.length > 0 && security.every((s) => s.down) };
+  });
+  return { stores, at: Date.now() };
+}
+
+/* ------------------------------------------------------------------ */
+/* Merit takibi: eksik honor + medal, kişisel istatistikle ilerleme    */
+/* ------------------------------------------------------------------ */
+const WORD_NUM = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, fifteen: 15, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90, hundred: 100 };
+const wordsToNum = (s) => {
+  let n = 0;
+  for (const w of String(s).toLowerCase().split(/[\s-]+/)) { if (w === 'hundred') n = (n || 1) * 100; else if (WORD_NUM[w]) n += WORD_NUM[w]; else return 0; }
+  return n;
+};
+const snake = (s) => String(s).toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+const FINISH = { 'smgs': 'sub_machine_guns', 'clubbing weapons': 'clubbing', 'fists or kick': 'hand_to_hand', 'heavy artillery': 'heavy_artillery', 'machine guns': 'machine_guns', 'mechanical weapons': 'mechanical', 'piercing weapons': 'piercing', 'pistols': 'pistols', 'rifles': 'rifles', 'shotguns': 'shotguns', 'slashing weapons': 'slashing', 'temporary weapons': 'temporary' };
+const AWN = '([\\d,]+)';
+// [açıklama kalıbı, (eşleşme, istatistik okuyucu) => şu anki değer]  — hedef, kalıptaki ilk sayıdır
+const AWARD_RULES = [
+  [`^Achieve ${AWN} critical hits`, (m, g) => g('attacking.hits.critical')],
+  [`^Deal ${AWN} critical hits`, (m, g) => g('attacking.hits.critical')],
+  [`^Achieve ${AWN} hits$`, (m, g) => g('attacking.hits.success')],
+  [`^Achieve ${AWN} one hit kills`, (m, g) => g('attacking.hits.one_hit_kills')],
+  [`^(?:Achieve a best kill streak of|Acquire a kill streak of) ${AWN}`, (m, g) => g('attacking.killstreak.best')],
+  [`^Assist in ${AWN} attacks`, (m, g) => g('attacking.attacks.assist')],
+  [`^Collect ${AWN} bounties`, (m, g) => g('bounties.collected.amount')],
+  [`^Earn \\$${AWN} from bounty hunting`, (m, g) => g('bounties.collected.value')],
+  [`^Deal over ${AWN} total damage`, (m, g) => g('attacking.damage.total')],
+  [`^Deal at least ${AWN} damage in a single hit`, (m, g) => g('attacking.damage.best')],
+  [`^Fire ${AWN} rounds`, (m, g) => g('attacking.ammunition.total')],
+  [`^Make \\$${AWN} from a single mugging`, (m, g) => g('attacking.networth.largest_mug')],
+  [`^Make ${AWN} stealthed attacks`, (m, g) => g('attacking.attacks.stealth')],
+  [`^Stalemate ${AWN} times`, (m, g) => g('attacking.attacks.stalemate') + g('attacking.defends.stalemate')],
+  [`^(?:Win ${AWN} defends|Successfully defend against ${AWN} attacks)`, (m, g) => g('attacking.defends.won')],
+  [`^Win ${AWN} unarmored fights`, (m, g) => g('attacking.unarmored_wins')],
+  [`^Win ${AWN} attacks`, (m, g) => g('attacking.attacks.won')],
+  [`^Earn ${AWN} respect for your faction`, (m, g) => g('attacking.faction.respect')],
+  [`^Have ${AWN} enemies escape from you`, (m, g) => g('attacking.escapes.foes')],
+  [`^Successfully escape from ${AWN} foes`, (m, g) => g('attacking.escapes.player')],
+  [`^Achieve ${AWN} skill in hunting`, (m, g) => g('travel.hunting.skill')],
+  [`^Achieve ${AWN} hours of activity`, (m, g) => Math.floor(g('other.activity.time') / 3600)],
+  [`^Be online every day for ${AWN} days`, (m, g) => g('other.activity.streak.best')],
+  [`^Be a donator for ${AWN} days`, (m, g) => g('other.donator_days')],
+  [`^Achieve a skill level of ${AWN} in (.+)$`, (m, g) => g(`crimes.skills.${snake(m[2])}`)],
+  [`^Commit ${AWN} criminal offenses`, (m, g) => g('crimes.offenses.total')],
+  [`^Commit a total of ${AWN} criminal offenses`, (m, g) => g('crimes.offenses.total')],
+  [`^Commit ${AWN} (.+?) offenses`, (m, g) => g(`crimes.offenses.${snake(m[2]).replace(/^illicit_service$/, 'illicit_services')}`)],
+  [`^Participate in ${AWN} organized crimes`, (m, g) => g('crimes.offenses.organized_crimes')],
+  [`^Use ${AWN} (Cannabis|Ecstasy|Ketamine|LSD|Opium|PCP|Shrooms|Speed|Vicodin|Xanax)$`, (m, g) => g(`drugs.${m[2].toLowerCase()}`)],
+  [`^Attain ${AWN} endurance`, (m, g) => g('jobs.stats.endurance')],
+  [`^Attain ${AWN} intelligence`, (m, g) => g('jobs.stats.intelligence')],
+  [`^Attain ${AWN} manual labor`, (m, g) => g('jobs.stats.manual')],
+  [`^Achieve ${AWN} in any working stat`, (m, g) => Math.max(g('jobs.stats.endurance'), g('jobs.stats.intelligence'), g('jobs.stats.manual'))],
+  [`^Complete ${AWN} education courses`, (m, g, x) => x.eduDone],
+  [`^Attain ${AWN} total stats`, (m, g) => g('battle_stats.total')],
+  [`^Gain ${AWN} (defense|dexterity|speed|strength)`, (m, g) => g(`battle_stats.${m[2]}`)],
+  [`^Fill ${AWN} empty blood bags`, (m, g) => g('hospital.blood_withdrawn')],
+  [`^Go to hospital ${AWN} times`, (m, g) => g('hospital.times_hospitalized')],
+  [`^Revive ${AWN} people$`, (m, g) => g('hospital.reviving.revives')],
+  [`^Use ${AWN} medical items`, (m, g) => g('hospital.medical_items_used')],
+  [`^Drink ${AWN} bottles of alcohol`, (m, g) => g('items.used.alcohol')],
+  [`^Drink ${AWN} cans of energy drink`, (m, g) => g('items.used.energy_drinks')],
+  [`^Eat ${AWN} bags of candy`, (m, g) => g('items.used.candy')],
+  [`^Find ${AWN} items in the city`, (m, g) => g('items.found.city')],
+  [`^Find ${AWN} items in the dump`, (m, g) => g('items.found.dump')],
+  [`^Have ${AWN} customers buy from your bazaar`, (m, g) => g('trading.bazaar.customers')],
+  [`^Read ${AWN} books`, (m, g) => g('items.used.books')],
+  [`^Trash ${AWN} items`, (m, g) => g('items.trashed')],
+  [`^Win ${AWN} auctions`, (m, g) => g('trading.items.auctions.won')],
+  [`^Bust ${AWN} people`, (m, g) => g('jail.busts.success')],
+  [`^Go to jail ${AWN} times`, (m, g) => g('jail.times_jailed')],
+  [`^Make ${AWN} bails`, (m, g) => g('jail.bails.amount')],
+  [`^Reach level ${AWN}$`, (m, g, x) => x.level],
+  [`^Achieve ${AWN} total awards`, (m, g) => g('other.awards')],
+  [`^Code ${AWN} viruses`, (m, g) => g('items.viruses_coded')],
+  [`^Earn ${AWN} racing points`, (m, g) => g('racing.points')],
+  [`^Reach a racing skill of ${AWN}`, (m, g) => g('racing.skill')],
+  [`^Win ${AWN} races$`, (m, g) => g('racing.races.won')],
+  [`^Refill your energy bar ${AWN} times`, (m, g) => g('other.refills.energy')],
+  [`^Refill your nerve bar ${AWN} times`, (m, g) => g('other.refills.nerve')],
+  [`^Refill your casino tokens ${AWN} times`, (m, g) => g('other.refills.token')],
+  [`^Sell ${AWN} points on the market`, (m, g) => g('trading.points.sold')],
+  [`^Use ${AWN} job points`, (m, g) => g('jobs.job_points_used')],
+  [`^Complete ${AWN} contracts`, (m, g) => g('missions.contracts.total')],
+  [`^Earn ${AWN} mission credits`, (m, g) => g('missions.credits')],
+  [`^Achieve \\$${AWN} in total losses in the stock market`, (m, g) => g('investments.stocks.losses')],
+  [`^Achieve \\$${AWN} in total profits in the stock market`, (m, g) => g('investments.stocks.profits')],
+  [`^Receive ${AWN} stock payouts`, (m, g) => g('investments.stocks.payouts')],
+  [`^Defeat ${AWN} people while abroad`, (m, g) => g('travel.attacks_won')],
+  [`^Import ${AWN} items from abroad`, (m, g) => g('travel.items_bought')],
+  [`^Spend ${AWN} days in the air`, (m, g) => Math.floor(g('travel.time_spent') / 86400)],
+  [`^Travel (?:abroad )?${AWN} times`, (m, g) => g('travel.total')],
+  [`^Travel to (?:the )?(.+) ${AWN} times`, (m, g) => g(`travel.${snake(m[1])}`), 2],
+  [`^Achieve ${AWN} finishing hits with (.+)$`, (m, g) => g(`finishing_hits.${FINISH[m[2].toLowerCase()] || snake(m[2])}`)],
+  [`^Achieve ${AWN} finishing hits in every category`, (m, g) => Math.min(...Object.values(FINISH).map((k) => g(`finishing_hits.${k}`)))],
+  [`^Use ${AWN} (Hollow Point|Incendiary|Piercing|Tracer) rounds`, (m, g) => g(`attacking.ammunition.${snake(m[2])}`)],
+  [`^Use ${AWN} rounds of special ammunition`, (m, g) => g('attacking.ammunition.special')],
+  [`^Have a recorded networth value of \\$${AWN}`, (m, g) => g('networth.total')],
+].map(([re, cur]) => ({ re: new RegExp(re, 'i'), cur }));
+
+const AWARD_RANKS = ['Beginner', 'Inexperienced', 'Rookie', 'Novice', 'Below Average', 'Average', 'Reasonable', 'Above Average', 'Competent', 'Highly Competent', 'Veteran', 'Distinguished', 'Highly Distinguished', 'Professional', 'Star', 'Master', 'Outstanding', 'Celebrity', 'Supreme', 'Idolized', 'Champion', 'Heroic', 'Legendary', 'Elite', 'Invincible'];
+function awardProgress(desc, g, extra) {
+  const d = String(desc);
+  let m = d.match(/^Reach level ([A-Za-z -]+)$/i);
+  if (m && wordsToNum(m[1])) return { goal: wordsToNum(m[1]), cur: extra.level };
+  m = d.match(/^Live in Torn for ([a-z ]+) years?$/i);
+  if (m && wordsToNum(m[1])) return { goal: wordsToNum(m[1]) * 365, cur: extra.ageDays, unit: 'days' };
+  m = d.match(/^Stay married (?:to a single person )?for ([\d,]+) days/i);
+  if (m) return { goal: Number(m[1].replace(/,/g, '')), cur: extra.marriedDays };
+  m = d.match(/^Serve ([\d,]+) days in a single faction/i);
+  if (m) return { goal: Number(m[1].replace(/,/g, '')), cur: extra.factionDays };
+  m = d.match(/^Reach the rank of (.+)$/i);
+  if (m) {
+    const goal = AWARD_RANKS.findIndex((r) => r.toLowerCase() === m[1].trim().toLowerCase());
+    const cur = AWARD_RANKS.reduce((best, r, i) => (extra.rank.toLowerCase().startsWith(r.toLowerCase()) ? i : best), -1);
+    if (goal >= 0 && cur >= 0) return { goal: goal + 1, cur: cur + 1, unit: 'rank' };
+  }
+  for (const r of AWARD_RULES) {
+    m = d.match(r.re);
+    if (!m) continue;
+    const goal = Number(String(m.slice(1).find((x) => x && /^[\d,]+$/.test(x)) || '').replace(/,/g, ''));
+    const cur = Number(r.cur(m, g, extra));
+    if (goal > 0 && Number.isFinite(cur)) return { goal, cur };
+  }
+  return null;
+}
+
+async function getAwards() {
+  const [th, tm, uh, um, ps, pr] = await Promise.all([
+    torn('v2/torn/honors', 6 * 3600_000), torn('v2/torn/medals', 6 * 3600_000),
+    torn('v2/user/honors', 5 * 60_000), torn('v2/user/medals', 5 * 60_000), torn('v2/user/personalstats?cat=all', 5 * 60_000),
+    torn('user/?selections=profile', 5 * 60_000),
+  ]);
+  const stats = ps.personalstats || {};
+  const g = (p) => Number(p.split('.').reduce((o, k) => (o == null ? undefined : o[k]), stats)) || 0;
+  const ov = history.lastOverview;
+  const extra = {
+    level: Number(pr.level) || Number(ov?.player?.level) || 0,
+    ageDays: Number(pr.age) || 0,
+    marriedDays: Number(pr.married?.duration) || 0,
+    factionDays: Number(pr.faction?.days_in_faction) || 0,
+    rank: String(pr.rank || ''),
+    eduDone: Array.isArray(ov?.education?.completed) ? ov.education.completed.length : Number(ov?.education?.completed) || 0,
+  };
+  const ownH = new Set((uh.honors || []).map((h) => h.id)), ownM = new Set((um.medals || []).map((h) => h.id));
+  const list = [];
+  const add = (a, kind, owned) => {
+    if (a.type?.title === 'default' || a.crimes_version === 'v1') return; // varsayılan barlar ve artık alınamayan Crimes 1.0 ödülleri
+    const p = owned ? null : awardProgress(a.description, g, extra);
+    list.push({
+      id: a.id, kind, name: a.name, description: a.description, type: a.type?.title || '', rarity: a.rarity || '',
+      circulation: Number(a.circulation) || 0, owned,
+      goal: p?.goal ?? null, cur: p ? Math.min(p.cur, p.goal) : null, pct: p ? Math.min(1, p.cur / p.goal) : null,
+    });
+  };
+  for (const a of th.honors || []) add(a, 'honor', ownH.has(a.id));
+  for (const a of tm.medals || []) add(a, 'medal', ownM.has(a.id));
+  return {
+    awards: list,
+    totals: { honors: [ownH.size, (th.honors || []).length], medals: [ownM.size, (tm.medals || []).length], awards: g('other.awards') },
+    at: Date.now(),
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Suç kârlılığı: Emforus'un Crime Profitability Index tablosu         */
+/* ------------------------------------------------------------------ */
+// Topluluk tablosu (Google Sheets); Torn'a istek değildir ve hiçbir kullanıcı verisi gönderilmez.
+// Günde bir kez çekilir; çekilemezse son kayıtlı kopya, o da yoksa paketteki örnek kullanılır.
+const CV_URL = 'https://docs.google.com/spreadsheets/d/13wUFhhssuPdAONI_OmRJi6l_Bs7KRZXDgVFCn7uJJNQ/gviz/tq?tqx=out:csv&gid=';
+const CV_TABS = { all: '560321570', burglary: '706159343', cracking: '1626436424' };
+const CV_FILE = path.join(DATA, 'crime-value.json');
+const CV_SNAPSHOT = path.join(ROOT, 'assets', 'crime-value.json');
+const CV_TTL = 24 * 3600_000;
+
+function parseCsv(text) {
+  const rows = []; let row = []; let cur = ''; let q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"' && text[i + 1] === '"') { cur += '"'; i++; }
+      else if (c === '"') q = false;
+      else cur += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { row.push(cur); cur = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(cur); rows.push(row); row = []; cur = '';
+    } else cur += c;
+  }
+  if (cur || row.length) { row.push(cur); rows.push(row); }
+  return rows;
+}
+const cvNum = (s) => {
+  const t = String(s ?? '').replace(/[$,%\s]/g, '');
+  if (!t || t === '-') return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+};
+
+function buildCrimeValue(allCsv, burgCsv, crackCsv) {
+  const byCrime = new Map();
+  for (const r of parseCsv(allCsv).slice(1)) {
+    const [crime, target, v] = r.map((x) => (x || '').trim());
+    if (!crime || !target) continue;
+    if (!byCrime.has(crime)) byCrime.set(crime, []);
+    byCrime.get(crime).push({ target, value: cvNum(v) });
+  }
+  const crimes = [...byCrime].map(([crime, options]) => {
+    const vals = options.filter((o) => o.value != null);
+    const best = vals.sort((a, b) => b.value - a.value)[0];
+    return { crime, best: best?.target || null, value: best?.value ?? null, options };
+  });
+  const bh = parseCsv(burgCsv);
+  const head = (bh[0] || []).map((h) => h.trim().toLowerCase());
+  const col = (re) => head.findIndex((h) => re.test(h));
+  const ci = {
+    target: col(/^target$/), district: col(/^district$/), incidence: col(/incidence/), cases: col(/casing/),
+    item: col(/item drop value/), moneyRate: col(/money droprate/), money: col(/average money/), nerve: col(/nerve cost/),
+    value: col(/^estimated \$\/n$/), focused: col(/focused/),
+  };
+  const burglary = bh.slice(1).map((r) => {
+    const g = (k) => (ci[k] >= 0 ? r[ci[k]] : '');
+    return {
+      target: (g('target') || '').trim(), district: (g('district') || '').trim(),
+      incidence: cvNum(g('incidence')), cases: cvNum(g('cases')), item: cvNum(g('item')), moneyRate: cvNum(g('moneyRate')),
+      money: cvNum(g('money')), nerve: cvNum(g('nerve')), value: cvNum(g('value')), focused: cvNum(g('focused')),
+    };
+  }).filter((b) => b.target && b.value != null);
+  const cracking = parseCsv(crackCsv).slice(1).map((r) => ({
+    type: (r[0] || '').trim(), service: (r[1] || '').trim(), v6: cvNum(r[6]), v7: cvNum(r[7]),
+  })).filter((c) => c.type && c.service && (c.v6 != null || c.v7 != null));
+  if (!crimes.length) throw new Error('tablo boş geldi');
+  // Burglary için "All" sekmesi yalnızca focused/ortalama değerleri verir; normal keşifteki en iyi hedefi öne al
+  const bc = crimes.find((c) => c.crime.toLowerCase() === 'burglary');
+  const topB = [...burglary].sort((a, b) => b.value - a.value)[0];
+  if (bc && topB && topB.value > (bc.value || 0)) { bc.best = topB.target; bc.value = topB.value; }
+  return { fetchedAt: Date.now(), source: 'Emforus · Crime Profitability Index', crimes, burglary, cracking };
+}
+
+let cvMem = null;
+let cvBusy = null;
+async function getCrimeValue(force = false) {
+  if (!cvMem) cvMem = readJson(CV_FILE, null);
+  if (!force && cvMem && Date.now() - cvMem.fetchedAt < CV_TTL) return cvMem;
+  if (cvBusy) return cvBusy;
+  cvBusy = (async () => {
+    try {
+      const get = async (gid) => {
+        const r = await fetch(CV_URL + gid, { signal: AbortSignal.timeout(20_000), headers: { 'User-Agent': 'TornTracker/1.0' } });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.text();
+      };
+      const [a, b, c] = await Promise.all([get(CV_TABS.all), get(CV_TABS.burglary), get(CV_TABS.cracking)]);
+      cvMem = buildCrimeValue(a, b, c);
+      try { writeJson(CV_FILE, cvMem); } catch {}
+    } catch (e) {
+      cvMem ||= readJson(CV_SNAPSHOT, null);
+      if (!cvMem) throw new ApiError(`Kârlılık tablosu alınamadı: ${e.message}`, 'CV_FETCH', 'sheet');
+      cvMem = { ...cvMem, stale: e.message };
+    } finally { cvBusy = null; }
+    return cvMem;
+  })();
+  return cvBusy;
+}
+// Torn sayfa yardımcısı için küçük özet (electron-main enjekte eder): suç -> { hedef(küçük harf) -> $/N }
+function crimeValueForPage() {
+  const cv = cvMem || readJson(CV_FILE, null) || readJson(CV_SNAPSHOT, null);
+  if (!cv) return null;
+  const crimes = {};
+  for (const c of cv.crimes) {
+    const m = {};
+    for (const o of c.options) if (o.value != null) m[o.target.toLowerCase()] = o.value;
+    crimes[c.crime.toLowerCase()] = { best: c.value, options: m };
+  }
+  const burglary = {};
+  for (const b of cv.burglary) burglary[b.target.toLowerCase()] = { d: b.district, c: b.cases, v: b.value, f: b.focused, n: b.nerve };
+  return { crimes, burglary };
+}
+
+/* ------------------------------------------------------------------ */
+/* Log erişimi (isteğe bağlı): bust zamanları ve alış fiyatları         */
+/* ------------------------------------------------------------------ */
+// Torn log'u yalnızca Full ya da "log" izni verilmiş özel (custom) key ile okunur. Limited key'de
+// bu özellikler personalstats farkı / elle girilen fiyatla çalışır. Log key yalnızca bu bilgisayarda saklanır.
+const LOG_BUY = { 1112: 'market', 1103: 'market', 1225: 'bazaar', 1220: 'bazaar', 4200: 'shop', 4201: 'abroad' };
+const LOG_BUST = 5360;
+function ensureLogHistory() {
+  history.busts ||= { last: null, events: [] };
+  history.purchases ||= {};
+  history.manualCosts ||= {};
+  history.logSeen ||= [];
+}
+let logStatus = { ok: null, error: null, at: 0 };
+
+async function tornLogRaw(pathq) {
+  const key = config.logKey || config.apiKey;
+  if (!key) throw new ApiError('API key ayarlanmamış.', 'NO_KEY');
+  await throttle();
+  const res = await fetch(`https://api.torn.com/${pathq}&key=${encodeURIComponent(key)}&comment=TornTracker`, { headers: { 'User-Agent': 'TornTracker/1.0' } });
+  const json = await res.json().catch(() => ({ error: { code: 0, error: `HTTP ${res.status}` } }));
+  if (json.error) throw new ApiError(`Torn API: ${json.error.error}`, json.error.code);
+  return json;
+}
+
+function ingestLogs(list) {
+  ensureLogHistory();
+  const seen = new Set(history.logSeen);
+  let changed = false;
+  for (const e of list) {
+    const id = String(e.id || '');
+    if (!id || seen.has(id)) continue;
+    seen.add(id); history.logSeen.push(id); changed = true;
+    const type = Number(e.details?.id);
+    const ts = Number(e.timestamp) * 1000;
+    const d = e.data || {};
+    if (type === LOG_BUST) { history.busts.events.push(ts); continue; }
+    const src = LOG_BUY[type];
+    if (!src) continue;
+    const add = (itemId, qty, each) => {
+      itemId = Number(itemId); qty = Number(qty) || 1; each = Number(each);
+      if (!itemId || !(each > 0)) return;
+      const arr = (history.purchases[itemId] ||= []);
+      arr.push({ ts, qty, each, src });
+      arr.sort((a, b) => b.ts - a.ts); arr.length = Math.min(arr.length, 20);
+    };
+    if (Array.isArray(d.items)) for (const it of d.items) add(it.id, it.qty, d.cost_each);
+    else add(d.item, d.quantity, d.cost_each);
+  }
+  if (history.logSeen.length > 3000) history.logSeen = history.logSeen.slice(-2000);
+  const cutoff = Date.now() - 7 * 86400_000;
+  history.busts.events = [...new Set(history.busts.events)].filter((t) => t > cutoff).sort((a, b) => a - b);
+  if (changed) saveHistory();
+}
+
+// Log'u en fazla dakikada bir oku (Torn log API'si zaten ~60 sn önbellekli)
+async function syncLogs(force = false) {
+  if (!force && Date.now() - logStatus.at < 60_000) return logStatus;
+  logStatus.at = Date.now();
+  try {
+    const ids = [LOG_BUST, ...Object.keys(LOG_BUY)].join(',');
+    const j = await tornLogRaw(`v2/user/log?log=${ids}&limit=100`);
+    ingestLogs(Array.isArray(j.log) ? j.log : Object.values(j.log || {}));
+    logStatus = { ok: true, error: null, at: logStatus.at };
+  } catch (e) {
+    logStatus = { ok: false, error: e.code === 16 ? 'ACCESS' : e.message, at: logStatus.at };
+  }
+  return logStatus;
+}
+
+/* Jail bust takibi --------------------------------------------------- */
+// Topluluk modeli (BUSTR / Bustr+): her başarılı bust 128 puan ekler, puan 128/(1+saat/10) ile azalır, 72 saatte düşer.
+// Torn resmî rakam yayımlamaz; yalnızca yol gösterici.
+const bustScore = (events, now = Date.now()) => events
+  .filter((t) => now - t < 72 * 3600_000)
+  .reduce((s, t) => s + 128 / (1 + (now - t) / 36e5 / 10), 0);
+
+async function getJail() {
+  ensureLogHistory();
+  const [ps, lg] = await Promise.all([
+    torn('v2/user/personalstats?cat=jail', 60_000).catch(() => null),
+    syncLogs(),
+  ]);
+  const j = ps?.personalstats?.jail || {};
+  const success = Number(j.busts?.success) || 0;
+  const b = history.busts;
+  // Log yoksa: başarılı bust sayısındaki artışı o anki zamana yaz (uygulama açıkken takip)
+  if (!lg.ok && ps && b.last != null && success > b.last) {
+    const add = Math.min(50, success - b.last);
+    for (let i = 0; i < add; i++) b.events.push(Date.now() - i * 1000);
+    b.events.sort((x, y) => x - y);
+    saveHistory();
+  }
+  if (ps && b.last !== success) { b.last = success; saveHistory(); }
+  const now = Date.now();
+  const in72 = b.events.filter((t) => now - t < 72 * 3600_000);
+  const score = bustScore(b.events, now);
+  // Puanın şu andan itibaren nasıl düşeceği (6 saatlik adımlarla, 72 saat)
+  const decay = [];
+  for (let h = 0; h <= 72; h += 6) decay.push({ h, score: Math.round(bustScore(b.events, now + h * 3600_000)) });
+  return {
+    source: lg.ok ? 'log' : 'stats', logError: lg.ok ? null : lg.error,
+    total: { success, fails: Number(j.busts?.fails) || 0, jailed: Number(j.times_jailed) || 0, bails: Number(j.bails?.amount) || 0 },
+    last24: in72.filter((t) => now - t < 24 * 3600_000).length, last72: in72.length,
+    score: Math.round(score), decay, lastBust: in72.length ? in72[in72.length - 1] : null, at: now,
+  };
+}
+
+/* Alış fiyatı koruması ----------------------------------------------- */
+function costOf(id) {
+  ensureLogHistory();
+  const m = history.manualCosts[id];
+  if (m && m.cost > 0) return { cost: m.cost, src: 'manual', at: m.at };
+  const buys = (history.purchases[id] || []).filter((x) => Date.now() - x.ts < 60 * 86400_000);
+  if (!buys.length) return null;
+  const qty = buys.reduce((s, x) => s + x.qty, 0);
+  const cost = Math.round(buys.reduce((s, x) => s + x.each * x.qty, 0) / qty);
+  return { cost, src: buys[0].src, at: buys[0].ts, last: buys[0].each, qty, n: buys.length };
+}
+async function getPurchases() {
+  ensureLogHistory();
+  const [lg, items] = await Promise.all([syncLogs(), torn('torn/?selections=items', 3600_000).catch(() => ({}))]);
+  const market = items.items || {};
+  const ids = new Set([...Object.keys(history.purchases), ...Object.keys(history.manualCosts)]);
+  const list = [...ids].map((id) => {
+    const c = costOf(id); if (!c) return null;
+    return { id: Number(id), name: market[id]?.name || `#${id}`, market: Number(market[id]?.market_value) || 0, ...c };
+  }).filter(Boolean).sort((a, b) => b.at - a.at);
+  return {
+    logAccess: !!lg.ok, logError: lg.ok ? null : lg.error, logKeyMasked: maskKey(config.logKey),
+    items: list,
+    catalog: Object.entries(market).filter(([, v]) => v.tradeable !== false).map(([id, v]) => [Number(id), v.name]).sort((a, b) => a[1].localeCompare(b[1])),
+    at: Date.now(),
+  };
+}
+// Torn sayfa yardımcısı için: eşya ID -> alış fiyatı
+function purchaseCostsForPage() {
+  ensureLogHistory();
+  const out = {};
+  const ids = new Set([...Object.keys(history.purchases), ...Object.keys(history.manualCosts)]);
+  for (const id of ids) { const c = costOf(id); if (c) out[id] = c.cost; }
+  return out;
+}
+
+/* Etkinlikler: Torn takvimi + Halloween sepeti ------------------------ */
+/* ---------- Etkinlikler: Torn takvimi (tarihler her yıl API'den gelir, sabit değil) ---------- */
+// Yıllık etkinlikler ve Torn sayfa yardımcıları: Easter → yumurta bulucu, Trick or Treat → şeker dükkânı,
+// Christmas Town → CT yardımcısı. Yardımcılar yalnızca oyuncunun kendi etkinlik penceresinde çalışır.
+// prep: etkinlikten önce hazırlık anı (takvim gününe göre sn). Trick or Treat sepetleri bir gün önce
+// 12:00 TCT'de Sweet Shop'ta satışa çıkar (IceBlueFire'ın Trick or Treat rehberi, SSS 2).
+const SEASONAL = [
+  { id: 'easter', re: /easter egg hunt/i },
+  { id: 'halloween', re: /trick or treat|halloween/i, prep: -12 * 3600 },
+  { id: 'christmas', re: /christmas town/i },
+];
+const EVENT_GRACE = 30 * 60; // sn: saat farkına karşı pencerenin iki ucuna küçük pay
+const CAL_TTL = 3 * 3600_000;
+const startOffset = (s) => { const m = /^(\d{1,2}):(\d{2})/.exec(String(s || '')); return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 : null; };
+const dayOf = (t) => Math.floor(t / 86400) * 86400;
+// Kişisel başlangıçlı çok günlü etkinlik: ilk gün + oyuncunun saati → son gün + oyuncunun saati
+// (Torn'daki "16:00 02/04 – 16:00 08/04" gösterimiyle aynı). Saat bilinmiyorsa olası en geniş aralık.
+function eventWindow(e, offset) {
+  if (e.fixed) return { start: e.start, end: e.end, exact: true };
+  if (offset == null) return { start: e.earliest ?? e.start, end: e.latest ?? e.end, exact: false };
+  if (dayOf(e.end) > dayOf(e.start)) return { start: dayOf(e.start) + offset, end: dayOf(e.end) + offset, exact: true };
+  return { start: e.start, end: e.end, exact: false }; // tek günlük kişisel etkinlik: takvim günü
+}
+let eventCalBusy = null;
+async function refreshEventCal(force = false) {
+  const cur = history.eventCal;
+  if (!config.apiKey) return cur || null;
+  if (!force && cur && Date.now() - cur.at < CAL_TTL) return cur;
+  if (eventCalBusy) return eventCalBusy;
+  eventCalBusy = (async () => {
+    const [cal, me] = await Promise.all([
+      torn('v2/torn/calendar', CAL_TTL),
+      torn('v2/user/calendar', 3600_000).catch(() => null),
+    ]);
+    const list = [...(cal.calendar?.events || []).map((e) => ({ ...e, kind: 'event' })), ...(cal.calendar?.competitions || []).map((e) => ({ ...e, kind: 'competition' }))]
+      .map((e) => ({ title: e.title, description: e.description, kind: e.kind, start: e.start, end: e.end, earliest: e.earliest_start ?? e.start, latest: e.latest_end ?? e.end, fixed: e.fixed_start_time !== false }));
+    history.eventCal = { at: Date.now(), startTime: me?.calendar?.start_time || cur?.startTime || null, list };
+    saveHistory();
+    return history.eventCal;
+  })().finally(() => { eventCalBusy = null; });
+  return eventCalBusy;
+}
+// Her yıllık etkinlik için şu anki ya da sıradaki pencere
+function seasonalList(now = Math.floor(Date.now() / 1000)) {
+  const cal = history.eventCal;
+  const offset = startOffset(cal?.startTime);
+  return SEASONAL.map(({ id, re, prep }) => {
+    const all = (cal?.list || []).filter((e) => re.test(e.title)).map((e) => ({ e, w: eventWindow(e, offset) })).sort((a, b) => a.w.start - b.w.start);
+    const cur = all.find(({ w }) => w.start - EVENT_GRACE <= now && w.end + EVENT_GRACE >= now);
+    const next = all.find(({ w }) => w.start > now);
+    const last = [...all].reverse().find(({ w }) => w.end < now);
+    const hit = cur || next || last;
+    const prepStart = prep != null && hit ? dayOf(hit.e.start) + prep : null;
+    const status = cur ? 'active' : next ? 'upcoming' : last ? 'past' : 'unknown';
+    return {
+      id, title: hit?.e.title || null, start: hit?.w.start ?? null, end: hit?.w.end ?? null, exact: hit?.w.exact ?? false,
+      status, prepStart, stage: status === 'active' ? 'live' : status === 'upcoming' && prepStart != null && now >= prepStart ? 'prep' : null,
+    };
+  });
+}
+// Torn sayfa yardımcıları: etkinlik penceresinde ve (varsa) hazırlık anından itibaren açık
+const seasonalActive = (id) => seasonalList().some((s) => s.id === id && (s.stage === 'live' || s.stage === 'prep'));
+
+let halloweenInfo = null; // Torn sayfa yardımcısı için son bilinen sepet durumu
+// v2/user/competition: Halloween → sepet + toplanan şeker, Easter → bulunan yumurta. Hata 33: aktif yarışma yok / katılmadın.
+async function getCompetition() {
+  try { return { ok: true, c: (await torn('v2/user/competition', 5 * 60_000))?.competition || null }; }
+  catch (e) { return { ok: e.code === 33, c: null }; }
+}
+async function getHalloween(live) {
+  const [h, th, comp] = await Promise.all([
+    torn('v2/user/halloween', 5 * 60_000).catch(() => null),
+    torn('v2/torn/halloween', 6 * 3600_000).catch(() => null),
+    getCompetition(),
+  ]);
+  const c = comp.c && /halloween/i.test(String(comp.c.name || '')) ? comp.c : null;
+  const own = new Set((h?.halloween?.basket_upgrades || []).map((u) => u.id));
+  halloweenInfo = {
+    basket: c?.basket?.name || null,
+    hasBasket: c ? !!c.basket : (live && comp.ok ? false : null), // null: bilinmiyor
+    treats: h?.halloween?.treats || (c ? { total: c.treats_collected, current: null } : null),
+    upgrades: (th?.halloween?.basket_upgrades || []).map((u) => ({ id: u.id, name: u.name, description: u.description, cost: u.cost, requirement: u.requirement, owned: own.has(u.id) })),
+    at: Date.now(),
+  };
+  return halloweenInfo;
+}
+const halloweenForPage = () => ({
+  hasBasket: halloweenInfo?.hasBasket ?? null, basket: halloweenInfo?.basket || null,
+  stage: seasonalList().find((x) => x.id === 'halloween')?.stage || null,
+});
+
+async function getEvents(force = false) {
+  const cal = await refreshEventCal(force).catch((e) => { if (history.eventCal) return history.eventCal; throw e; });
+  if (!cal) throw new Error('Torn takvimi okunamadı.');
+  const now = Math.floor(Date.now() / 1000);
+  const offset = startOffset(cal.startTime);
+  const events = cal.list
+    .map((e) => { const w = eventWindow(e, offset); return { title: e.title, description: e.description, kind: e.kind, start: w.start, end: w.end, exact: w.exact, fixed: e.fixed }; })
+    .filter((e) => e.end >= now - 86400)
+    .sort((a, b) => a.start - b.start);
+  const seasonal = seasonalList(now);
+  const hw = seasonal.find((s) => s.id === 'halloween');
+  // Halloween verisi yalnızca etkinlik penceresine 2 gün kala → bitişten 1 gün sonraya kadar çekilir
+  const halloween = hw?.start && hw.start - 2 * 86400 <= now && hw.end + 86400 >= now ? await getHalloween(hw.status === 'active') : null;
+  // Easter sırasında bulunan yumurta sayısı (yarışma verisi)
+  const easter = seasonal.some((s) => s.id === 'easter' && s.status === 'active')
+    ? await getCompetition().then(({ c }) => (c && /easter/i.test(String(c.name || '')) ? { score: c.score, total: c.total } : null))
+    : null;
+  return { events, active: events.filter((e) => e.start <= now && e.end >= now), startTime: cal.startTime, seasonal, halloween, easter, calAt: cal.at, at: Date.now() };
+}
+// Takvim 3 saatte bir tazelenir: Torn sayfa yardımcıları uygulama açıkken de doğru günde açılıp kapanır
+const pollEvents = () => { if (config.apiKey) refreshEventCal().catch((e) => console.warn('[poll] events:', e.message)); };
+setInterval(pollEvents, CAL_TTL).unref();
+setTimeout(pollEvents, 15000).unref();
+
+/* ------------------------------------------------------------------ */
+/* Faction: OC takibi ve haftalık üye raporu                            */
+/* ------------------------------------------------------------------ */
+// Faction bölümünü yalnızca lider, eş lider ve liderin "Organised Crimes" yetkisi verdiği pozisyondakiler görür.
+// İzni Torn'un kendisi verir: faction/positions ve faction/crimes "Faction API Access" ister; lider bunu oyunda
+// pozisyonlara dağıtır. Uygulama ayrıca bir yetki listesi tutmaz. Bütün veriler Torn API'den gelir.
+const FAC_NO_ACCESS = new Set([7, 16]); // 7: faction izni yok, 16: key seviyesi yetmiyor
+const OC_AWAY = new Set(['Traveling', 'Abroad', 'Hospital', 'Jail', 'Federal']);
+
+async function myIdNow() {
+  const id = Number(myPlayerId());
+  if (id) return id;
+  return Number((await torn('v2/user/basic', 3600_000)).profile?.id) || 0;
+}
+
+// Erişim 10 dakika saklanır (her sayfa açılışında Torn'a tekrar sorulmaz)
+const factionAccess = (force = false) => {
+  if (force) cache.delete('faction-access');
+  return cached('faction-access', 10 * 60_000, async () => {
+    const f = (await torn('v2/user/faction', 10 * 60_000)).faction;
+    if (!f) return { inFaction: false, allowed: false };
+    const [me, basic] = await Promise.all([myIdNow(), torn('v2/faction/basic', 3600_000).then((j) => j.basic)]);
+    const role = me && me === basic.leader_id ? 'leader' : me && me === basic.co_leader_id ? 'co-leader' : null;
+    const out = {
+      inFaction: true, faction: { id: f.id, name: f.name, tag: f.tag }, position: f.position, role,
+      allowed: !!role, apiAccess: role ? true : null, ocAbility: role ? true : null, members: basic.members,
+    };
+    if (!role) {
+      try {
+        const pos = await torn('v2/faction/positions', 3600_000);
+        const mine = (pos.positions || []).find((p) => p.name === f.position);
+        out.apiAccess = true;
+        out.ocAbility = !!mine?.abilities?.includes('Organised Crimes');
+        out.allowed = out.ocAbility;
+      } catch (e) {
+        if (!FAC_NO_ACCESS.has(Number(e.code))) throw e;
+        out.apiAccess = false;
+      }
+    }
+    return out;
+  });
+};
+
+const itemNames = async () => (await torn('torn/?selections=items', 3600_000).catch(() => ({}))).items || {};
+
+// Bir OC'nin slotlarını sadeleştir: kim, hangi rol, eşyası var mı, şu an uzakta mı
+function ocSummary(c, items, byId, now) {
+  const slots = (c.slots || []).map((s) => {
+    const m = s.user ? byId.get(s.user.id) : null;
+    const req = s.item_requirement;
+    return {
+      role: s.position_info?.label || s.position, userId: s.user?.id || null,
+      name: m?.name || (s.user ? `#${s.user.id}` : null), progress: s.user?.progress ?? null, cpr: s.checkpoint_pass_rate ?? null,
+      item: req ? { id: req.id, name: items[req.id]?.name || `#${req.id}`, ok: !!req.is_available, reusable: !!req.is_reusable } : null,
+      away: m && OC_AWAY.has(m.state) ? { state: m.state, until: m.until, desc: m.desc } : null,
+    };
+  });
+  const open = slots.filter((s) => !s.userId).length;
+  return {
+    id: c.id, name: c.name, difficulty: c.difficulty, status: c.status,
+    readyAt: c.ready_at || null, expiredAt: c.expired_at || null,
+    filled: slots.length - open, total: slots.length, open, slots,
+    missing: slots.filter((s) => s.userId && s.item && !s.item.ok).map((s) => ({ id: s.userId, name: s.name, role: s.role, item: s.item.name })),
+    away: slots.filter((s) => s.away).map((s) => ({ id: s.userId, name: s.name, role: s.role, ...s.away })),
+    delayed: c.status === 'Planning' && !!c.ready_at && c.ready_at <= now,
+  };
+}
+
+const memberRow = (m) => ({
+  id: m.id, name: m.name, level: m.level, position: m.position, days: m.days_in_faction, inOc: !!m.is_in_oc,
+  last: m.last_action?.timestamp || 0, lastRel: m.last_action?.relative || '', lastStatus: m.last_action?.status || '',
+  state: m.status?.state || '', until: m.status?.until || null, desc: m.status?.description || '',
+});
+
+// Herkes: kendi OC'si (yalnızca kendi bilgisi)
+async function getMyOcInfo() {
+  let oc;
+  try { oc = (await torn('v2/user/organizedcrime', 5 * 60_000)).organizedCrime; }
+  catch (e) { return { error: e.message }; }
+  if (!oc || oc.error) return { inOc: false };
+  const [me, items] = await Promise.all([myIdNow(), itemNames()]);
+  const s = ocSummary(oc, items, new Map(), Math.floor(Date.now() / 1000));
+  const mine = s.slots.find((x) => x.userId === me) || null;
+  return { inOc: true, crime: { id: s.id, name: s.name, difficulty: s.difficulty, status: s.status, readyAt: s.readyAt, expiredAt: s.expiredAt, filled: s.filled, total: s.total }, slot: mine && { role: mine.role, progress: mine.progress, cpr: mine.cpr, item: mine.item } };
+}
+
+// Yetkili: OC'ye girmeyenler ve sorunlu OC'ler
+async function getFactionOC(force = false) {
+  const access = await factionAccess(force);
+  if (!access.allowed) return { access };
+  const ttl = force ? 0 : 60_000;
+  const [mem, cr, items] = await Promise.all([
+    torn('v2/faction/members', ttl), torn('v2/faction/crimes?cat=available&limit=100', ttl), itemNames(),
+  ]);
+  const now = Math.floor(Date.now() / 1000);
+  const members = (mem.members || []).map(memberRow);
+  const byId = new Map(members.map((m) => [m.id, m]));
+  const rank = (c) => (c.delayed ? 0 : c.missing.length || c.away.length ? 1 : c.status === 'Planning' ? 2 : 3);
+  const crimes = (cr.crimes || []).map((c) => ocSummary(c, items, byId, now))
+    .sort((a, b) => rank(a) - rank(b) || (a.readyAt || a.expiredAt || 9e9) - (b.readyAt || b.expiredAt || 9e9));
+  return {
+    access, at: Date.now(),
+    totals: { members: members.length, inOc: members.filter((m) => m.inOc).length },
+    notInOc: members.filter((m) => !m.inOc).sort((a, b) => b.last - a.last),
+    crimes,
+  };
+}
+
+/* Haftalık rapor: üyelerin kişisel istatistik farkı (son 7 gün). Torn günlük kayıt tutar; her üye için
+   bugünün ve 7 gün önceki değer bir kez çekilip saklanır, sonraki günlerde yalnızca yeni gün çekilir. */
+const FAC_STATS = ['timeplayed', 'xantaken', 'criminaloffenses', 'bloodwithdrawn', 'organizedcrimes'];
+const facJob = { running: false, done: 0, total: 0, error: null, startedAt: 0, finishedAt: 0 };
+const facStore = () => { history.faction ||= { snaps: {}, gym: {} }; history.faction.snaps ||= {}; history.faction.gym ||= {}; return history.faction; };
+const utcDay = (ts) => new Date(ts * 1000).toISOString().slice(0, 10);
+const dayTs = (d) => Math.floor(Date.parse(`${d}T00:00:00Z`) / 1000);
+
+async function memberStats(id, ts) {
+  const q = `v2/user/${id}/personalstats?stat=${FAC_STATS.join(',')}${ts ? `&timestamp=${ts}` : ''}`;
+  let j;
+  try { j = await tornRaw(q); }
+  catch (e) {
+    if (Number(e.code) !== 5) throw e; // 5: çok fazla istek → bir dakika bekle, bir kez daha dene
+    await sleep(61_000); j = await tornRaw(q);
+  }
+  const out = {};
+  for (const s of j.personalstats || []) out[s.name] = s.value;
+  return out;
+}
+
+async function runFactionReport() {
+  if (facJob.running) return facJob;
+  const access = await factionAccess();
+  if (!access.allowed) throw new ApiError('Bu rapor faction liderine ve yetki verdiği pozisyonlara açık.', 'FAC_DENIED');
+  Object.assign(facJob, { running: true, done: 0, total: 0, error: null, startedAt: Date.now(), finishedAt: 0 });
+  (async () => {
+    const st = facStore();
+    try {
+      const mem = await torn('v2/faction/members', 60_000);
+      const ids = (mem.members || []).map((m) => m.id);
+      const now = Math.floor(Date.now() / 1000);
+      const today = utcDay(now);
+      const past = utcDay(now - 7 * 86400);
+      st.snaps[today] ||= {}; st.snaps[past] ||= {};
+      const todo = [];
+      for (const id of ids) {
+        if (!st.snaps[today][id]) todo.push([id, 0, today]);
+        if (!st.snaps[past][id]) todo.push([id, now - 7 * 86400, past]);
+      }
+      facJob.total = todo.length + 1;
+      for (const [id, ts, day] of todo) {
+        try { st.snaps[day][id] = await memberStats(id, ts); }
+        catch (e) { if (!FAC_NO_ACCESS.has(Number(e.code)) && Number(e.code) !== 6) throw e; } // 6: geçersiz ID → atla
+        facJob.done++;
+        if (facJob.done % 10 === 0) saveHistory();
+        await sleep(1500); // ~40 istek/dk: uygulamanın diğer istekleri ve TornTools için pay kalır (Torn sınırı 100/dk)
+      }
+      // Gym enerjisi: faction katkı listesi (toplam değer) — günlük kayıt, fark kayıtlar arasından hesaplanır
+      try {
+        const c = await tornRaw('v2/faction/contributors?stat=gymenergy&cat=current');
+        st.gym[today] = Object.fromEntries((c.contributors || []).map((x) => [x.id, x.value]));
+        st.gymError = null;
+      } catch (e) { st.gymError = e.message; }
+      facJob.done++;
+      // 40 günden eski kayıtları sil
+      const cut = utcDay(now - 40 * 86400);
+      for (const k of Object.keys(st.snaps)) if (k < cut) delete st.snaps[k];
+      for (const k of Object.keys(st.gym)) if (k < cut) delete st.gym[k];
+      st.builtAt = Date.now();
+    } catch (e) {
+      facJob.error = e.message;
+    } finally {
+      facJob.running = false; facJob.finishedAt = Date.now();
+      saveHistory();
+    }
+  })();
+  return facJob;
+}
+
+function topList(rows, key, n = 10, asc = false) {
+  return rows.filter((r) => r[key] != null && (asc || r[key] > 0))
+    .sort((a, b) => (asc ? a[key] - b[key] : b[key] - a[key])).slice(0, n)
+    .map((r) => ({ id: r.id, name: r.name, value: r[key] }));
+}
+
+async function getFactionReport(start = false) {
+  const access = await factionAccess();
+  if (!access.allowed) return { access };
+  const st = facStore();
+  const now = Math.floor(Date.now() / 1000);
+  const today = utcDay(now);
+  const mem = await torn('v2/faction/members', 60_000);
+  const members = (mem.members || []).map(memberRow);
+  const fresh = members.length && members.every((m) => st.snaps[today]?.[m.id]);
+  if ((start || !fresh) && !facJob.running && !(facJob.error && Date.now() - facJob.finishedAt < 5 * 60_000)) await runFactionReport();
+
+  // En yeni gün ile 7 gün öncesi
+  const days = Object.keys(st.snaps).filter((d) => Object.keys(st.snaps[d]).length).sort();
+  const to = days[days.length - 1] || null;
+  const from = to ? utcDay(dayTs(to) - 7 * 86400) : null;
+  const A = from && st.snaps[from], B = to && st.snaps[to];
+  const gymDays = Object.keys(st.gym).sort();
+  const gTo = gymDays[gymDays.length - 1] || null;
+  const gFrom = gTo ? (gymDays.filter((d) => d <= utcDay(dayTs(gTo) - 7 * 86400)).pop() || gymDays[0]) : null;
+  const G1 = gFrom && st.gym[gFrom], G2 = gTo && st.gym[gTo];
+  const diff = (a, b, k) => (a && b && a[k] != null && b[k] != null ? b[k] - a[k] : null);
+  const rows = members.map((m) => {
+    const a = A?.[m.id], b = B?.[m.id];
+    return {
+      id: m.id, name: m.name,
+      activity: diff(a, b, 'timeplayed'), xanax: diff(a, b, 'xantaken'), crimes: diff(a, b, 'criminaloffenses'),
+      blood: diff(a, b, 'bloodwithdrawn'), oc: diff(a, b, 'organizedcrimes'),
+      gym: gFrom && gFrom !== gTo && G1?.[m.id] != null && G2?.[m.id] != null ? G2[m.id] - G1[m.id] : null,
+    };
+  });
+  return {
+    access, at: Date.now(),
+    job: { ...facJob },
+    range: { from, to, complete: !!(A && B) },
+    gymRange: { from: gFrom !== gTo ? gFrom : null, to: gTo, days: gFrom && gTo ? Math.round((dayTs(gTo) - dayTs(gFrom)) / 86400) : 0, error: st.gymError || null },
+    members: members.length,
+    boards: {
+      activity: topList(rows, 'activity'), gym: topList(rows, 'gym'), xanax: topList(rows, 'xanax'),
+      crimes: topList(rows, 'crimes'), blood: topList(rows, 'blood'), oc: topList(rows, 'oc'),
+      idle: topList(rows, 'activity', 10, true),
+    },
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* Arka plan poller                                                    */
 /* ------------------------------------------------------------------ */
 let pollTimer = null;
@@ -942,10 +1725,10 @@ async function handleApi(req, res, url) {
   try {
     if (p === '/api/config' && req.method === 'GET') {
       return send(res, 200, {
-        hasKey: !!config.apiKey, apiKeyMasked: maskKey(config.apiKey), ffscouterKeyMasked: maskKey(config.ffscouterKey),
+        hasKey: !!config.apiKey, apiKeyMasked: maskKey(config.apiKey), ffscouterKeyMasked: maskKey(config.ffscouterKey), logKeyMasked: maskKey(config.logKey),
         coverDays: config.coverDays, pollMinutes: config.pollMinutes,
         deliveryHours: config.deliveryHours || 6, deliveryMode: config.deliveryMode || 'hours',
-        updateUrl: config.updateUrl || DEFAULT_UPDATE_URL,
+        updateUrl: DEFAULT_UPDATE_URL, version: APP_VERSION,
         features: config.features || {},
       });
     }
@@ -963,15 +1746,43 @@ async function handleApi(req, res, url) {
     if (p === '/api/job') return send(res, 200, await getJobInfo());
     if (p === '/api/travel') return send(res, 200, await getTravelProfit());
     if (p === '/api/levelling') return send(res, 200, await getLevelling(url.searchParams.get('list') || ''));
+    if (p === '/api/shoplifting') return send(res, 200, await getShoplifting());
+    if (p === '/api/awards') return send(res, 200, await getAwards());
+    if (p === '/api/crime-value') return send(res, 200, await getCrimeValue(url.searchParams.get('force') === '1'));
+    if (p === '/api/jail') return send(res, 200, await getJail());
+    if (p === '/api/events') return send(res, 200, await getEvents(url.searchParams.get('force') === '1'));
+    if (p === '/api/faction') {
+      const force = url.searchParams.get('force') === '1';
+      const [access, myOc] = await Promise.all([factionAccess(force).catch((e) => ({ error: e.message })), getMyOcInfo()]);
+      const oc = access.allowed ? await getFactionOC(force).catch((e) => ({ error: e.message })) : null;
+      return send(res, 200, { access, myOc, oc, at: Date.now() });
+    }
+    if (p === '/api/faction/report') return send(res, 200, await getFactionReport(req.method === 'POST'));
+    if (p === '/api/purchases' && req.method === 'GET') return send(res, 200, await getPurchases());
+    if (p === '/api/purchases' && req.method === 'POST') {
+      const b = await readBody(req);
+      ensureLogHistory();
+      const id = Number(b.id);
+      if (!Number.isInteger(id) || id <= 0) return send(res, 400, { error: 'Geçersiz eşya.' });
+      const cost = Number(b.cost);
+      if (cost > 0 && cost < 1e12) history.manualCosts[id] = { cost: Math.round(cost), at: Date.now() };
+      else delete history.manualCosts[id];
+      saveHistory();
+      return send(res, 200, { ok: true });
+    }
     if (p === '/api/config' && req.method === 'POST') {
       const b = await readBody(req);
       if (typeof b.apiKey === 'string' && b.apiKey.trim()) { config.apiKey = b.apiKey.trim(); cache.clear(); }
       if (typeof b.ffscouterKey === 'string') { config.ffscouterKey = b.ffscouterKey.trim(); ffCache.clear(); ffStatus = { ok: null, error: null, checkedAt: 0 }; }
+      if (typeof b.logKey === 'string') {
+        const k = b.logKey.trim();
+        if (k && !/^[A-Za-z0-9]{16}$/.test(k)) return send(res, 400, { error: 'Log key 16 karakterlik harf/rakam olmalı.' });
+        config.logKey = k; logStatus = { ok: null, error: null, at: 0 };
+      }
       if (b.coverDays != null) config.coverDays = Math.min(14, Math.max(1, Number(b.coverDays) || 3));
       if (b.pollMinutes != null) config.pollMinutes = Math.min(120, Math.max(5, Number(b.pollMinutes) || 15));
       if (b.deliveryHours != null) config.deliveryHours = Math.min(48, Math.max(1, Number(b.deliveryHours) || 6));
       if (b.deliveryMode === 'hours' || b.deliveryMode === '18tct') config.deliveryMode = b.deliveryMode;
-      if (typeof b.updateUrl === 'string' && (!b.updateUrl.trim() || /^https:\/\//i.test(b.updateUrl.trim()))) config.updateUrl = b.updateUrl.trim();
       saveConfig(); schedulePoll();
       return send(res, 200, { ok: true });
     }
@@ -995,6 +1806,7 @@ async function handleApi(req, res, url) {
       const prevPlayer = history.lastOverview?.player?.id;
       if (prevPlayer && prevPlayer !== user.player_id) {
         history = { days: [], addiction: {}, user: {}, stockOrders: {}, stockDeliveries: { at: 0, items: [] }, eduNames: history.eduNames };
+        config.logKey = ''; // önceki oyuncunun log key'i yeni oyuncuya ait değildir
         saveHistory();
       }
       config.apiKey = key;
@@ -1006,6 +1818,7 @@ async function handleApi(req, res, url) {
     if (p === '/api/logout' && req.method === 'POST') {
       config.apiKey = '';
       config.ffscouterKey = '';
+      config.logKey = '';
       cache.clear(); ffCache.clear(); estCache.clear();
       delete history.lastOverview; delete history.lastCompanyReport;
       saveConfig(); saveHistory();
@@ -1191,4 +2004,4 @@ process.on('exit', flushData);
 // API key sahibinin oyuncu numarası (Torn sekmesindeki `uid` çerezini doğrulamak için)
 const myPlayerId = () => { const id = Number(history.lastOverview?.player?.id); return Number.isInteger(id) && id > 0 ? String(id) : null; };
 
-module.exports = { startServer, server, stockProductNames, ingestStockDeliveries, warMemberStatuses, flushData, myPlayerId };
+module.exports = { startServer, server, stockProductNames, ingestStockDeliveries, warMemberStatuses, flushData, myPlayerId, getCrimeValue, crimeValueForPage, purchaseCostsForPage, seasonalActive, seasonalList, halloweenForPage };
