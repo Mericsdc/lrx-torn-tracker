@@ -58,7 +58,7 @@ async function loadCrimes() {
 }
 // Sayfadaki bütün kartlar kapatıldıysa
 const allCardsOff = () => emptyBox(tr('Bütün kartlar kapalı', 'All cards are off'),
-  tr('Bu sayfadaki kartları Ayarlar → Özellikler → Sayfalar bölümünden açabilirsin.', 'Turn the cards on this page on in Settings → Features → Pages.'));
+  tr('Bu sayfadaki kartları Ayarlar → Sayfalar bölümünden açabilirsin.', "You can turn this page's cards on in Settings → Pages."));
 // Tablodaki bir suç seçeneğinin $/N değeri (büyük/küçük harf duyarsız)
 const cvOption = (crime, target) => {
   const c = crimeState.cv?.crimes?.find((x) => x.crime.toLowerCase() === crime);
@@ -85,7 +85,7 @@ function shopCard() {
     <div class="sl-grid">${tiles}</div>
     <p class="muted sl-note">${tr(
       '★ ile takip ettiğin mağazada bütün kamera ve güvenlik kapandığında masaüstü bildirimi gelir. Veri Torn API\'den dakikada bir alınır.',
-      'Star a store to get a desktop notification when all its cameras and guards are down. Data comes from the Torn API once a minute.')}
+      'Star (★) a store to get a desktop notification when all of its cameras and security are down. Data comes from the Torn API once a minute.')}
       ${crimeState.shopErr ? `<span class="neg"> · ${esc(crimeState.shopErr.message)}</span>` : ''}</p>
   </article>`;
 }
@@ -95,7 +95,7 @@ const cvNote = () => {
   const d = crimeState.cv;
   return `${tr('Maksimum skill\'de nerve başına ortalama para kazancı; düşük skill\'de daha azdır. Crime XP değildir. Kaynak: Emforus\'un Crime Profitability Index tablosu (topluluk verisi).',
     'Average money per nerve at max skill; lower at low skill. This is not crime XP. Source: Emforus\' Crime Profitability Index (community data).')}
-    ${d?.fetchedAt ? ` · ${tr('güncelleme', 'updated')} ${new Date(d.fetchedAt).toLocaleDateString()}` : ''}${d?.stale ? ` · <span class="neg">${tr('son kopya kullanılıyor', 'using last copy')}</span>` : ''}`;
+    ${d?.fetchedAt ? ` · ${tr('güncelleme', 'updated')} ${new Date(d.fetchedAt).toLocaleDateString(state.lang === 'en' ? 'en-GB' : 'tr-TR')}` : ''}${d?.stale ? ` · <span class="neg">${tr('son kopya kullanılıyor', 'using the last saved copy')}</span>` : ''}`;
 };
 
 function valueCard() {
@@ -159,15 +159,15 @@ function jailCard() {
     <div class="grid kpis">
       ${kpi(tr('Başarılı bust', 'Successful busts'), n0(d.total.success), `${n0(d.total.fails)} ${tr('başarısız', 'failed')}`)}
       ${kpi(tr('Son 24 saat', 'Last 24 hours'), n0(d.last24), tr('bust', 'busts'))}
-      ${kpi(tr('Son 72 saat', 'Last 72 hours'), n0(d.last72), d.lastBust ? `${tr('son', 'last')}: ${new Date(d.lastBust).toLocaleString()}` : '')}
+      ${kpi(tr('Son 72 saat', 'Last 72 hours'), n0(d.last72), d.lastBust ? `${tr('son', 'last')}: ${new Date(d.lastBust).toLocaleString(state.lang === 'en' ? 'en-GB' : 'tr-TR')}` : '')}
       ${kpi(tr('Ceza puanı (tahmini)', 'Penalty score (est.)'), n0(d.score), tr('her bust +128, zamanla azalır', '+128 per bust, decays over time'))}
     </div>
     ${d.score > 0 ? `<div class="muted" style="margin:8px 0 4px">${tr('Önümüzdeki 72 saatte puanın', 'Your score over the next 72 hours')}</div>
       <div class="jail-decay">${d.decay.map((x) => `<div title="+${x.h} ${tr('saat', 'h')}: ${x.score}"><i style="height:${Math.max(2, (x.score / peak) * 100)}%"></i><span>${x.h}</span></div>`).join('')}</div>` : ''}
     <p class="muted sl-note">${d.source === 'log'
       ? tr('Bust zamanları Torn log\'undan okunuyor.', 'Bust times are read from your Torn log.')
-      : tr('Key\'in log okuyamadığı için bustlar, uygulama açıkken istatistiğindeki artıştan sayılır (önceki bustlar bilinmez). Tam takip için Araçlar sayfasına "log" izinli bir key ekleyebilirsin.',
-        'Your key cannot read logs, so busts are counted from your stats while the app is open (earlier busts are unknown). For full tracking, add a key with "log" access on the Tools page.')}
+      : tr('Key\'in log okuyamadığı için bustlar, uygulama açıkken istatistiğindeki artıştan sayılır (önceki bustlar bilinmez). Tam takip için Ayarlar → Hesap bölümünden "log" izinli bir key ekleyebilirsin.',
+        'Your key cannot read logs, so busts are counted from your stats while the app is open (earlier busts are unknown). For full tracking, add a key with "log" access in Settings → Account.')}
       ${tr('Ceza modeli topluluk tahminidir (BUSTR / Bustr+): her başarılı bust 128 puan ekler, 128/(1+saat/10) ile azalır ve 72 saatte düşer. Torn resmî rakam yayımlamaz. Jail sayfasında her mahkûmun yanında zorluk puanı görünür.',
         'The penalty model is a community estimate (BUSTR / Bustr+): each successful bust adds 128 points, decays as 128/(1+hours/10) and drops off after 72 hours. Torn publishes no official numbers. The jail page shows a difficulty score next to each inmate.')}</p>
   </article>`;
@@ -257,7 +257,7 @@ function renderAwards() {
           <div class="aw-prog">${a.pct != null
             ? `<div class="storage-bar"><i style="width:${(a.pct * 100).toFixed(1)}%;background:${a.pct >= 0.9 ? 'var(--ok)' : 'var(--tq)'}"></i></div>
                <span class="mono">${n0(a.cur)} / ${n0(a.goal)} · <b>${(a.pct * 100).toFixed(a.pct >= 0.995 ? 1 : 0)}%</b></span>`
-            : `<span class="muted">${a.circulation ? tr(`${n0(a.circulation)} oyuncuda var`, `${n0(a.circulation)} players have it`) : ''}${a.rarity ? ` · ${esc(a.rarity)}` : ''}</span>`}</div>
+            : `<span class="muted">${a.circulation ? tr(`${n0(a.circulation)} oyuncuda var`, `${n0(a.circulation)} ${a.circulation === 1 ? 'player has' : 'players have'} it`) : ''}${a.rarity ? ` · ${esc(a.rarity)}` : ''}</span>`}</div>
         </div>`).join('') || `<div class="muted">${tr('Eşleşen eksik ödül yok.', 'No matching missing awards.')}</div>`}</div>
       ${rows.length > awardState.limit ? `<button class="btn sm ghost aw-more" id="aw-more">${tr('Daha fazla göster', 'Show more')} (${n0(rows.length - awardState.limit)})</button>` : ''}
       <p class="muted sl-note">${tr(

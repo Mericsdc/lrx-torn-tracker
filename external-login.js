@@ -14,6 +14,14 @@ const { spawn } = require('child_process');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Language of user-facing messages: English by default, Turkish when the app is set to TR.
+// Reads the same config.json as server.js (electron-main sets TORN_DATA_DIR before loading this module).
+const T = (trStr, enStr) => {
+  let lang = 'en';
+  try { lang = JSON.parse(fs.readFileSync(path.join(process.env.TORN_DATA_DIR || path.join(__dirname, 'data'), 'config.json'), 'utf8')).lang; } catch {}
+  return lang === 'tr' ? trStr : enStr;
+};
+
 function findBrowser() {
   const env = process.env;
   const candidates = [
@@ -36,7 +44,7 @@ function findBrowser() {
 function cdpCall(wsUrl, method, params = {}, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
     let ws;
-    const timer = setTimeout(() => { try { ws && ws.close(); } catch {} reject(new Error('CDP zaman aşımı')); }, timeoutMs);
+    const timer = setTimeout(() => { try { ws && ws.close(); } catch {} reject(new Error(T('CDP zaman aşımı', 'CDP timed out'))); }, timeoutMs);
     try { ws = new WebSocket(wsUrl); } catch (e) { clearTimeout(timer); reject(e); return; }
     ws.addEventListener('open', () => ws.send(JSON.stringify({ id: 1, method, params })));
     ws.addEventListener('message', (m) => {
@@ -46,7 +54,7 @@ function cdpCall(wsUrl, method, params = {}, timeoutMs = 5000) {
       try { ws.close(); } catch {}
       if (j.error) reject(new Error(j.error.message)); else resolve(j.result);
     });
-    ws.addEventListener('error', () => { clearTimeout(timer); reject(new Error('CDP bağlantı hatası')); });
+    ws.addEventListener('error', () => { clearTimeout(timer); reject(new Error(T('CDP bağlantı hatası', 'CDP connection error'))); });
   });
 }
 
@@ -67,10 +75,10 @@ let active = null; // aynı anda tek oturum
  * @param {(...a: any[]) => void} [o.log]
  */
 async function externalGoogleLogin({ profileDir, targetSession, onStatus, log = () => {} }) {
-  if (active) { onStatus({ state: 'waiting', message: 'Harici tarayıcı zaten açık; girişi orada tamamla.' }); return active; }
+  if (active) { onStatus({ state: 'waiting', message: T('Harici tarayıcı zaten açık; girişi orada tamamla.', 'The external browser is already open; finish signing in there.') }); return active; }
   const browser = findBrowser();
   if (!browser) {
-    onStatus({ state: 'error', message: 'Chrome veya Edge bulunamadı. "Oturum Aktar" ile PHPSESSID girebilirsin.' });
+    onStatus({ state: 'error', message: T('Chrome veya Edge bulunamadı. "Oturum Aktar" ile PHPSESSID girebilirsin.', 'Chrome or Edge not found. You can enter your PHPSESSID under "Login Help".') });
     return null;
   }
   active = (async () => {
@@ -91,7 +99,8 @@ async function externalGoogleLogin({ profileDir, targetSession, onStatus, log = 
     child.on('exit', () => { exited = true; });
     child.on('error', (e) => { exited = true; log('external browser spawn err:', e.message); });
 
-    onStatus({ state: 'waiting', browser: browser.name, message: `${browser.name} açıldı. Orada Torn'a "Google ile giriş" yap; giriş algılanınca oturum otomatik aktarılacak.` });
+    onStatus({ state: 'waiting', browser: browser.name, message: T(`${browser.name} açıldı. Orada Torn'a "Google ile giriş" yap; giriş algılanınca oturum otomatik aktarılacak.`,
+      `${browser.name} opened. Sign in to Torn with Google there; your session will be imported automatically once sign-in is detected.`) });
 
     // DevTools portunu bekle
     let port = null;
@@ -100,7 +109,8 @@ async function externalGoogleLogin({ profileDir, targetSession, onStatus, log = 
       if (port) break;
       await sleep(250);
     }
-    if (!port) throw new Error(`${browser.name} başlatılamadı (zaten aynı profil açık olabilir, pencereyi kapatıp tekrar dene).`);
+    if (!port) throw new Error(T(`${browser.name} başlatılamadı (zaten aynı profil açık olabilir, pencereyi kapatıp tekrar dene).`,
+      `Could not start ${browser.name} (the same profile may already be open; close that window and try again).`));
     const base = `http://127.0.0.1:${port}`;
     const version = await (await fetch(`${base}/json/version`)).json();
     const browserWs = version.webSocketDebuggerUrl;
@@ -123,7 +133,9 @@ async function externalGoogleLogin({ profileDir, targetSession, onStatus, log = 
     }
     if (!loggedIn) {
       if (!exited) { try { await cdpCall(browserWs, 'Browser.close'); } catch {} }
-      throw new Error(exited ? 'Harici tarayıcı giriş tamamlanmadan kapatıldı.' : 'Giriş için süre doldu (10 dk).');
+      throw new Error(exited
+        ? T('Harici tarayıcı giriş tamamlanmadan kapatıldı.', 'The external browser was closed before sign-in finished.')
+        : T('Giriş için süre doldu (10 dk).', 'Sign-in timed out (10 min).'));
     }
 
     // Çerezleri oku ve aktar (Cloudflare çerezleri tarayıcıya özel olduğu için hariç)
@@ -149,8 +161,8 @@ async function externalGoogleLogin({ profileDir, targetSession, onStatus, log = 
     }
     try { await targetSession.cookies.flushStore(); } catch {}
     try { await cdpCall(browserWs, 'Browser.close'); } catch {}
-    if (!count) throw new Error('Torn çerezi bulunamadı.');
-    onStatus({ state: 'done', browser: browser.name, message: `Google girişi aktarıldı ✓ (${count} çerez)` });
+    if (!count) throw new Error(T('Torn çerezi bulunamadı.', 'No Torn cookies found.'));
+    onStatus({ state: 'done', browser: browser.name, message: T(`Google girişi aktarıldı ✓ (${count} çerez)`, `Google sign-in imported ✓ (${count} ${count === 1 ? 'cookie' : 'cookies'})`) });
     log('external login imported cookies:', count);
     return { count };
   })().catch((e) => {

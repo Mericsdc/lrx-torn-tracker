@@ -18,9 +18,9 @@
   const nowS = () => Math.floor(nowTct() / 1000);
   const profile = (id) => `${T}profiles.php?XID=${id}`;
   const nameBtn = (id, name) => `<a class="fac-name" href="${profile(id)}">${esc(name)}</a>`; // torn.com bağlantıları uygulama içi sekmede açılır
-  const hms = (s) => { s = Math.max(0, Math.round(s)); return `${Math.floor(s / 3600)}h:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}m:${String(s % 60).padStart(2, '0')}s`; };
+  const hms = (s) => { s = Math.max(0, Math.round(s)); return `${Math.floor(s / 3600)}${tr('sa', 'h')} ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}${tr('dk', 'm')} ${String(s % 60).padStart(2, '0')}${tr('sn', 's')}`; };
   const dayLabel = (d) => (d ? new Date(`${d}T00:00:00Z`).toLocaleDateString(state.lang === 'en' ? 'en-GB' : 'tr-TR', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '—');
-  const STATE_TR = { Traveling: ['uçakta', 'traveling'], Abroad: ['yurt dışında', 'abroad'], Hospital: ['hastanede', 'in hospital'], Jail: ['hapiste', 'in jail'], Federal: ['federal hapiste', 'in federal jail'], Okay: ['müsait', 'okay'] };
+  const STATE_TR = { Traveling: ['uçakta', 'Traveling'], Abroad: ['yurt dışında', 'Abroad'], Hospital: ['hastanede', 'In Hospital'], Jail: ['hapiste', 'In Jail'], Federal: ['federal hapiste', 'In Federal Jail'], Okay: ['müsait', 'Okay'] };
   const stateText = (s) => { const t = STATE_TR[s]; return t ? tr(t[0], t[1]) : esc(s || ''); };
   const ROLE_TR = { leader: ['Lider', 'Leader'], 'co-leader': ['Eş lider', 'Co-leader'] };
 
@@ -60,12 +60,12 @@
       let prev = null; try { prev = localStorage.getItem('lrx.oc.prev'); } catch {}
       const cur = my.inOc ? String(my.crime.id) : 'none';
       if (prev && prev !== 'none' && cur === 'none') {
-        notifyOnce(`lrx.oc.done.${prev}`, '🕵️ ' + tr('OC\'n bitti', 'Your OC is over'), tr('Şu an bir OC\'de değilsin: yeni bir OC\'ye katılabilirsin.', 'You are not in an OC now: you can join a new one.'), OC_URL);
+        notifyOnce(`lrx.oc.done.${prev}`, '🕵️ ' + tr('OC\'n bitti', 'Your OC has ended'), tr('Şu an bir OC\'de değilsin: yeni bir OC\'ye katılabilirsin.', 'You are no longer in an OC: you can join a new one.'), OC_URL);
       }
       try { localStorage.setItem('lrx.oc.prev', cur); } catch {}
       if (my.inOc && my.slot?.item && !my.slot.item.ok) {
         notifyOnce(`lrx.oc.item.${my.crime.id}`, '🧰 ' + tr('OC eşyan eksik', 'OC item missing'),
-          tr(`${my.crime.name} · ${my.slot.role}: ${my.slot.item.name} gerekiyor. Yoksa OC gecikir.`, `${my.crime.name} · ${my.slot.role}: needs ${my.slot.item.name}. The OC is delayed without it.`), OC_URL);
+          tr(`${my.crime.name} · ${my.slot.role}: ${my.slot.item.name} gerekiyor. Yoksa OC gecikir.`, `${my.crime.name} · ${my.slot.role}: needs ${my.slot.item.name}. The OC will be delayed without it.`), OC_URL);
       }
     }
     // Lider / yetkili: geciken ya da eşyası eksik OC'ler
@@ -119,12 +119,12 @@
   function lockedCard(a) {
     const why = !a.inFaction ? tr('Bir faction\'da değilsin.', 'You are not in a faction.')
       : a.apiAccess === false
-        ? tr(`Pozisyonun (${esc(a.position)}) için "Faction API Access" izni yok. Torn bu izin olmadan OC verisini vermez.`, `Your position (${esc(a.position)}) has no "Faction API Access". Torn does not give OC data without it.`)
-        : tr(`Pozisyonun (${esc(a.position)}) için "Organised Crimes" yetkisi yok.`, `Your position (${esc(a.position)}) has no "Organised Crimes" permission.`);
+        ? tr(`Pozisyonun (${esc(a.position)}) için "Faction API Access" izni yok. Torn bu izin olmadan OC verisini vermez.`, `Your position (${esc(a.position)}) does not have the "Faction API Access" permission. Torn does not share OC data without it.`)
+        : tr(`Pozisyonun (${esc(a.position)}) için "Organised Crimes" yetkisi yok.`, `Your position (${esc(a.position)}) does not have the "Organised Crimes" permission.`);
     return `<article class="glass card fac-lock">
       <div class="card-head"><h3>🔒 ${tr('OC takibi ve haftalık rapor', 'OC tracking and weekly report')}</h3></div>
-      <p>${tr('Bu bölüm yalnızca faction liderine, eş lidere ve liderin pozisyonuna <b>Organised Crimes</b> yetkisi verdiği üyelere açık. O pozisyonda <b>Faction API Access</b> de açık olmalı.', 'This section is only for the faction leader, the co-leader and members whose position the leader gave the <b>Organised Crimes</b> permission. That position also needs <b>Faction API Access</b>.')}</p>
-      <p class="muted">${why} ${tr('Yetkiyi lider oyunda verir: Faction → Controls → Positions. İzin verildikten sonra en geç 10 dakikada burada açılır.', 'The leader grants it in game: Faction → Controls → Positions. Once granted it unlocks here within 10 minutes.')}</p>
+      <p>${tr('Bu bölüm yalnızca faction liderine, eş lidere ve liderin pozisyonuna <b>Organised Crimes</b> yetkisi verdiği üyelere açık. O pozisyonda <b>Faction API Access</b> de açık olmalı.', 'This section is only for the faction leader, the co-leader and members in positions the leader has given the <b>Organised Crimes</b> permission. That position also needs <b>Faction API Access</b>.')}</p>
+      <p class="muted">${why} ${tr('Yetkiyi lider oyunda verir: Faction → Controls → Positions. İzin verildikten sonra en geç 10 dakikada burada açılır.', 'The leader grants it in game: Faction → Controls → Positions. Once granted, it unlocks here within 10 minutes.')}</p>
     </article>`;
   }
 
@@ -136,7 +136,7 @@
       <td class="num">${m.days}</td></tr>`).join('');
     return `<article class="glass card">
       <div class="card-head wrap"><h3>🚫 ${tr('OC\'ye girmeyenler', 'Not in an OC')} <span class="muted">(${oc.notInOc.length})</span></h3>
-        <span class="muted">${tr('Son görülene göre sıralı · isme tıkla: profil', 'Sorted by last seen · click a name: profile')}</span></div>
+        <span class="muted">${tr('Son görülene göre sıralı · isme tıkla: profil', 'Sorted by last seen · click a name to open the profile')}</span></div>
       ${oc.notInOc.length ? `<div class="tbl-wrap"><table class="tbl compact">
         <thead><tr><th>${tr('Üye', 'Member')}</th><th class="num">Lv</th><th>${tr('Pozisyon', 'Position')}</th><th>${tr('Son görülme', 'Last seen')}</th><th>${tr('Durum', 'Status')}</th><th class="num">${tr('Gün', 'Days')}</th></tr></thead>
         <tbody>${rows}</tbody></table></div>` : `<div class="muted">${tr('Herkes bir OC\'de 🎉', 'Everyone is in an OC 🎉')}</div>`}
@@ -149,10 +149,10 @@
       const probs = [
         ...c.missing.map((m) => `<span class="chip danger">🧰 ${esc(m.name)}: ${esc(m.item)}</span>`),
         ...c.away.map((a) => `<span class="chip blue">${esc(a.name)}: ${stateText(a.state)}${a.until ? ` · ${human(a.until - now)}` : ''}</span>`),
-        ...(c.open ? [`<span class="chip warn">${c.open} ${tr('boş slot', 'open slot')}${c.open > 1 && state.lang === 'en' ? 's' : ''}</span>`] : []),
+        ...(c.open ? [`<span class="chip warn">${c.open} ${tr('boş slot', c.open > 1 ? 'open slots' : 'open slot')}</span>`] : []),
       ];
       const when = c.delayed ? `<span class="chip danger">${tr('gecikiyor', 'delayed')}</span>`
-        : c.status === 'Planning' && c.readyAt ? `${human(c.readyAt - now)} <span class="muted">${tr('sonra hazır', 'to ready')}</span>`
+        : c.status === 'Planning' && c.readyAt ? tr(`${human(c.readyAt - now)} <span class="muted">sonra hazır</span>`, `<span class="muted">ready in</span> ${human(c.readyAt - now)}`)
         : c.status === 'Recruiting' && c.expiredAt ? `<span class="muted">${tr('dolmazsa', 'expires in')}</span> ${human(c.expiredAt - now)}` : '—';
       return `<tr class="${c.delayed ? 'fac-bad' : ''}"><td><b>${esc(c.name)}</b> <span class="muted">· ${c.difficulty}</span></td>
         <td><span class="chip ${c.status === 'Planning' ? 'tq' : 'dim'}">${esc(c.status)}</span></td>
@@ -160,21 +160,21 @@
     }).join('');
     return `<article class="glass card">
       <div class="card-head wrap"><h3>⏳ ${tr('Devam eden OC\'ler', 'Ongoing OCs')} <span class="muted">(${oc.crimes.length})</span></h3>
-        <span class="muted">${tr('Önce gecikenler ve eşyası eksik olanlar', 'Delayed and missing-item ones first')}</span></div>
+        <span class="muted">${tr('Önce gecikenler ve eşyası eksik olanlar', 'Delayed and missing-item OCs first')}</span></div>
       ${oc.crimes.length ? `<div class="tbl-wrap"><table class="tbl compact">
-        <thead><tr><th>${tr('Suç', 'Crime')}</th><th>${tr('Durum', 'Status')}</th><th class="num">Slot</th><th>${tr('Zaman', 'Time')}</th><th>${tr('Sorunlar', 'Issues')}</th></tr></thead>
+        <thead><tr><th>${tr('Suç', 'Crime')}</th><th>${tr('Durum', 'Status')}</th><th class="num">${tr('Slot', 'Slots')}</th><th>${tr('Zaman', 'Time')}</th><th>${tr('Sorunlar', 'Issues')}</th></tr></thead>
         <tbody>${rows}</tbody></table></div>` : `<div class="muted">${tr('Şu an devam eden OC yok.', 'No ongoing OCs right now.')}</div>`}
     </article>`;
   }
 
   const BOARDS = [
-    ['activity', '⏱', ['En aktif 10', 'Top 10 activity'], ['Oynama süresi', 'Time played'], hms],
-    ['gym', '🏋', ['En çok gym yapan 10', 'Top 10 bodybuilders'], ['Harcanan E', 'Spent E'], n0],
+    ['activity', '⏱', ['En aktif 10', 'Top 10 most active'], ['Oynama süresi', 'Time played'], hms],
+    ['gym', '🏋', ['En çok gym yapan 10', 'Top 10 bodybuilders'], ['Harcanan E', 'Energy spent'], n0],
     ['xanax', '💊', ['En çok Xanax alan 10', 'Top 10 Xanax users'], ['Xanax', 'Xanax'], n0],
     ['crimes', '🕵️', ['En çok suç işleyen 10', 'Top 10 criminals'], ['Suç', 'Crimes'], n0],
     ['blood', '🩸', ['En çok kan bağışlayan 10', 'Top 10 blood donors'], ['Torba', 'Bags filled'], n0],
-    ['oc', '🎯', ['En çok OC yapan 10', 'Top 10 OC'], ['OC', 'OCs'], n0],
-    ['idle', '💤', ['En az oynayan 10', 'Least active 10'], ['Oynama süresi', 'Time played'], hms],
+    ['oc', '🎯', ['En çok OC yapan 10', 'Top 10 OC participants'], ['OC', 'OCs'], n0],
+    ['idle', '💤', ['En az oynayan 10', '10 least active'], ['Oynama süresi', 'Time played'], hms],
   ];
   function reportCard() {
     const r = fac.rep;
@@ -192,7 +192,7 @@
     const table = ([key, icon, title, col, fmt]) => {
       const list = r.boards?.[key] || [];
       let note = '';
-      if (key === 'gym') note = r.gymRange?.error ? esc(r.gymRange.error) : !r.gymRange?.from ? tr('Gym verisi her gün kaydedilir; fark yarından itibaren görünür.', 'Gym data is recorded daily; the difference shows from tomorrow.') : r.gymRange.days < 7 ? tr(`Son ${r.gymRange.days} gün (7 günlük kayıt birikiyor)`, `Last ${r.gymRange.days} days (building up 7 days of records)`) : '';
+      if (key === 'gym') note = r.gymRange?.error ? esc(r.gymRange.error) : !r.gymRange?.from ? tr('Gym verisi her gün kaydedilir; fark yarından itibaren görünür.', 'Gym data is recorded daily; changes show from tomorrow.') : r.gymRange.days < 7 ? tr(`Son ${r.gymRange.days} gün (7 günlük kayıt birikiyor)`, `Last ${r.gymRange.days} day${r.gymRange.days === 1 ? '' : 's'} (building up 7 days of records)`) : '';
       return `<div class="fac-board"><div class="fac-board-h">${icon} ${tr(...title)}</div>
         <table class="tbl compact"><thead><tr><th>${tr('İsim', 'Name')}</th><th class="num">${tr(...col)}</th></tr></thead>
         <tbody>${list.map((x) => `<tr><td>${nameBtn(x.id, x.name)}</td><td class="num mono">${fmt(x.value)}</td></tr>`).join('') || `<tr><td colspan="2" class="muted">${run ? tr('hazırlanıyor…', 'building…') : tr('veri yok', 'no data')}</td></tr>`}</tbody></table>
@@ -202,7 +202,7 @@
       <div class="fac-boards">${BOARDS.map(table).join('')}</div>
       <p class="muted sl-note">${tr(
         'Torn API\'deki kişisel istatistiklerin son 7 günlük farkı (Torn günlük kayıt tutar). Gym enerjisi faction katkı listesinden gelir. Natural nerve bar (NNB) Torn API\'de başka oyuncular için yok, bu yüzden listede değil. İlk hazırlık üye başına 2 istek, sonraki günler 1 istek; veriler yalnızca bu bilgisayarda saklanır.',
-        'The last 7 days of personal stats from the Torn API (Torn keeps daily records). Gym energy comes from the faction contributors list. Natural nerve bar (NNB) is not in the Torn API for other players, so it is not listed. The first build costs 2 requests per member, later days 1; data stays on this computer.')}</p>
+        'Change in personal stats over the last 7 days, from the Torn API (Torn keeps daily records). Gym Energy comes from the faction contributors list. Natural Nerve Bar (NNB) is not available in the Torn API for other players, so it is not listed. The first build takes 2 requests per member, later days 1; data stays on this computer.')}</p>
     </article>`;
   }
 
@@ -219,7 +219,7 @@
     const kpis = a.inFaction ? `<div class="grid kpis">
       ${kpi('<span lang="en">Faction</span>', `${esc(a.faction?.name || '')} <small class="muted">[${esc(a.faction?.tag || '')}]</small>`, esc(a.position || ''))}
       ${kpi(tr('Erişim', 'Access'), role, '', a.allowed ? 'tq-text' : '')}
-      ${oc ? kpi(tr('OC\'de', 'In an OC'), `${oc.totals.inOc} <small class="muted">/ ${oc.totals.members}</small>`, tr(`${oc.notInOc.length} üye OC dışında`, `${oc.notInOc.length} members outside`)) : ''}
+      ${oc ? kpi(tr('OC\'de', 'In an OC'), `${oc.totals.inOc} <small class="muted">/ ${oc.totals.members}</small>`, tr(`${oc.notInOc.length} üye OC dışında`, `${oc.notInOc.length} not in an OC`)) : ''}
       ${oc ? kpi(tr('Geciken OC', 'Delayed OCs'), String(delayed), tr(`${oc.crimes.length} devam eden OC`, `${oc.crimes.length} ongoing`), delayed ? 'neg' : '') : ''}
     </div>` : '';
     el.innerHTML = kpis + myOcCard(d.myOc)

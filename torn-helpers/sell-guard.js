@@ -7,6 +7,7 @@
 (() => {
   if (window.__lrxSellGuard) return;
   window.__lrxSellGuard = true;
+  const L = (t, e) => (window.__lrxLang === 'tr' ? t : e);
 
   const style = document.createElement('style');
   style.id = 'lrx-sell-css';
@@ -71,12 +72,17 @@
       if (!tag) { tag = document.createElement('div'); tag.className = 'lrx-sg'; host.after(tag); }
       const be = Math.ceil(cost / (1 - fee));
       const price = priceOf(input);
-      let text = `LRX · alış ${money(cost)} · başa baş ${money(be)}${fee ? ` (${where} %${Math.round(fee * 100)})` : ''}`;
+      const pct = Math.round(fee * 100);
+      let text = L(`LRX · alış ${money(cost)} · başa baş ${money(be)}${fee ? ` (${where} %${pct})` : ''}`,
+        `LRX · bought at ${money(cost)} · break-even ${money(be)}${fee ? ` (${where} ${pct}% fee)` : ''}`);
       let cls = 'lrx-sg';
       if (price) {
         const net = price * (1 - fee) - cost;
-        if (net < 0) { cls += ' loss'; text = `⚠ LRX · alış fiyatının altında: adet başı ${money(net)} zarar · başa baş ${money(be)}`; }
-        else { cls += ' ok'; text = `LRX · adet başı ${money(net)} kâr · alış ${money(cost)}`; }
+        if (net < 0) {
+          cls += ' loss';
+          text = L(`⚠ LRX · alış fiyatının altında: adet başı ${money(net)} zarar · başa baş ${money(be)}`,
+            `⚠ LRX · below your buy price: loss of ${money(-net)} per item · break-even ${money(be)}`);
+        } else { cls += ' ok'; text = L(`LRX · adet başı ${money(net)} kâr · alış ${money(cost)}`, `LRX · ${money(net)} profit per item · bought at ${money(cost)}`); }
         if (net < 0) row.setAttribute('data-lrx-loss', ''); else row.removeAttribute('data-lrx-loss');
       } else row.removeAttribute('data-lrx-loss');
       if (tag.textContent !== text) tag.textContent = text;

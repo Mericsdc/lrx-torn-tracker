@@ -6,6 +6,7 @@
 (() => {
   if (window.__lrxHw) return;
   window.__lrxHw = true;
+  const L = (t, e) => (window.__lrxLang === 'tr' ? t : e);
   const info = window.__lrxHalloween || {};
 
   const style = document.createElement('style');
@@ -21,12 +22,18 @@
   document.head.appendChild(style);
 
   const note = () => {
+    const foot = L('LRX · bilgi amaçlı, hiçbir şeye tıklamaz', 'LRX · for info only, never clicks anything');
     if (info.hasBasket === true) {
-      return { ok: true, html: `🎃 <b>Sepetin var${info.basket ? `: ${esc(info.basket)}` : ''}.</b> Şekerler saldırı kazandıkça düşer; ikinci sepet gerekmez.<br><small>LRX · bilgi amaçlı, hiçbir şeye tıklamaz</small>` };
+      const name = info.basket ? `: ${esc(info.basket)}` : '';
+      return { ok: true, html: L(`🎃 <b>Sepetin var${name}.</b> Şekerler saldırı kazandıkça düşer; ikinci sepet gerekmez.`,
+        `🎃 <b>You have a basket${name}.</b> Treats drop as you win attacks; you don't need a second basket.`) + `<br><small>${foot}</small>` };
     }
-    const lead = info.stage === 'prep' ? 'Sepetler satışta, etkinlik yakında başlıyor. ' : info.hasBasket === false ? 'Henüz sepetin yok. ' : '';
-    return { ok: false, html: `🎃 <b>Trick or Treat:</b> ${lead}Şeker (treat) toplamak için <b>Halloween Basket</b> gerekli ($35, seviye 5) — aşağıda turuncu çerçeveyle işaretli. Satın almayı sen yaparsın.<br>
-      <small>Tükendiyse her 15 dakikada 1.000 adet gelir, sayfayı yenile · Günlük 100 eşyalık şehir limitini önce kullan, sonra sepeti al (sepet limitten sayılır) · Satın alamıyorsan zaten sepetin vardır: envanter ya da Display Cabinet<br>LRX · bilgi amaçlı, hiçbir şeye tıklamaz</small>` };
+    const lead = info.stage === 'prep' ? L('Sepetler satışta, etkinlik yakında başlıyor. ', 'Baskets are on sale; the event starts soon. ')
+      : info.hasBasket === false ? L('Henüz sepetin yok. ', "You don't have a basket yet. ") : '';
+    return { ok: false, html: L(`🎃 <b>Trick or Treat:</b> ${lead}Şeker (treat) toplamak için <b>Halloween Basket</b> gerekli ($35, seviye 5) — aşağıda turuncu çerçeveyle işaretli. Satın almayı sen yaparsın.<br>
+      <small>Tükendiyse her 15 dakikada 1.000 adet gelir, sayfayı yenile · Günlük 100 eşyalık şehir limitini önce kullan, sonra sepeti al (sepet limitten sayılır) · Satın alamıyorsan zaten sepetin vardır: envanter ya da Display Cabinet<br>${foot}</small>`,
+    `🎃 <b>Trick or Treat:</b> ${lead}You need a <b>Halloween Basket</b> to collect treats ($35, level 5). It's marked with an orange frame below. You make the purchase yourself.<br>
+      <small>If it's sold out, 1,000 are restocked every 15 minutes; refresh the page · Use your daily 100-item city shop limit first, then buy the basket (it counts toward the limit) · If you can't buy one, you already have a basket: check your inventory or Display Cabinet<br>${foot}</small>`) };
   };
   function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
@@ -51,7 +58,7 @@
       if (!el.querySelector('.lrx-hw-tag') && !el.nextElementSibling?.classList?.contains('lrx-hw-tag')) {
         const tag = document.createElement('span');
         tag.className = 'lrx-hw-tag';
-        tag.textContent = info.hasBasket === true ? 'sepetin var ✓' : 'şeker için gerekli';
+        tag.textContent = info.hasBasket === true ? L('sepetin var ✓', 'you have one ✓') : L('şeker için gerekli', 'needed for treats');
         el.insertAdjacentElement('afterend', tag);
       }
     }

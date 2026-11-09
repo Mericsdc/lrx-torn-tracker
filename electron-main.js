@@ -308,6 +308,8 @@ function main() {
       if (!h.match.test(url) || ![].concat(h.feature).some(featureEnabled) || (h.needsFocus && !tabViewed(id))) continue;
       if (h.event && !seasonalActive(h.event)) continue; // etkinlik günü değil
       try {
+        // Helpers read window.__lrxLang ('en' | 'tr') for the text they add to Torn pages
+        await wc.executeJavaScript(`window.__lrxLang=${JSON.stringify(appLang())};`, true);
         if (h.run) await h.run(wc);
         else await wc.executeJavaScript((h.prelude ? h.prelude() : '') + helperSrc(h.name), true);
         if (h.after) h.after(id);
@@ -658,7 +660,7 @@ function main() {
   });
   let updating = false;
   ipcMain.handle('update-apply', async () => {
-    if (updating) return { ok: false, error: 'Güncelleme zaten sürüyor' };
+    if (updating) return { ok: false, error: T('Güncelleme zaten sürüyor', 'An update is already in progress') };
     updating = true;
     try {
       let download = true;
@@ -667,7 +669,7 @@ function main() {
         try { download = (await updater.checkForUpdate(updateUrl())).available; } catch { download = false; }
       }
       if (download) await updater.applyUpdate(updateUrl(), (p) => sendToRenderer('update-progress', p));
-      sendToRenderer('update-progress', { step: 'restart', message: 'Yeniden başlatılıyor…' });
+      sendToRenderer('update-progress', { step: 'restart', message: T('Yeniden başlatılıyor…', 'Restarting…') });
       log(download ? 'update applied, relaunching' : 'restart for pending update', runningVersion, '->', updater.currentVersion());
       relaunch();
       return { ok: true };
@@ -717,6 +719,12 @@ function main() {
     try { tornSession.setSpellCheckerEnabled(false); } catch {}
     try { session.defaultSession.setSpellCheckerEnabled(false); } catch {}
   }
+
+  // App language (EN default, TR optional), set from the app's language toggle via the server's config.json
+  function appLang() {
+    try { return JSON.parse(fs.readFileSync(path.join(persistentDataDir, 'config.json'), 'utf8')).lang === 'tr' ? 'tr' : 'en'; } catch { return 'en'; }
+  }
+  const T = (trStr, enStr) => (appLang() === 'tr' ? trStr : enStr);
 
   function featureEnabled(key) {
     try { return JSON.parse(fs.readFileSync(path.join(persistentDataDir, 'config.json'), 'utf8')).features?.[key] !== false; } catch { return true; }

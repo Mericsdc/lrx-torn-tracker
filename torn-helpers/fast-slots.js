@@ -4,6 +4,7 @@
 (() => {
   if (window.__lrxFastSlots) return;
   window.__lrxFastSlots = true;
+  const L = (t, e) => (window.__lrxLang === 'tr' ? t : e);
 
   const start = () => {
     const $ = window.jQuery;
@@ -39,7 +40,7 @@
       if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
       const badge = document.createElement('div');
       badge.className = 'lrx-slots-badge';
-      badge.textContent = '⚡ LRX HIZLI SLOT';
+      badge.textContent = L('⚡ LRX HIZLI SLOT', '⚡ LRX FAST SLOTS');
       wrap.appendChild(badge);
     }
 
@@ -116,14 +117,14 @@
       $.getJSON(`/page.php?rfcv=${window.getRFC()}&sid=slotsData&step=play&stake=${encodeURIComponent(stake)}`)
         .done((r) => {
           if (!r || r.error) {
-            const msg = String(r?.error || 'Unknown error');
+            const msg = String(r?.error || L('Bilinmeyen hata', 'Unknown error'));
             if (/spin is already in/i.test(msg)) S.delay += 100;
             sound('clickstart');
             return showResult('error', msg);
           }
           applySpin(stake, r);
         })
-        .fail(() => showResult('error', 'CONNECTION ERROR — TRY AGAIN'))
+        .fail(() => showResult('error', L('BAĞLANTI HATASI — TEKRAR DENE', 'CONNECTION ERROR — TRY AGAIN')))
         .always(() => { S.inFlight = false; });
     };
 

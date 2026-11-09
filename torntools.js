@@ -16,6 +16,14 @@ const SHIM_VERSION = 2; // shim değişirse artır → eklenti yeniden kurulur
 const CHECK_EVERY_MS = 24 * 3600_000;
 const EXT_PAGES = ['popup.html', 'options.html', 'targets.html', 'tos.html', 'offscreen.html'];
 
+// Language of user-facing messages: English by default, Turkish when the app is set to TR.
+// Reads the same config.json as server.js (electron-main sets TORN_DATA_DIR before loading this module).
+const T = (trStr, enStr) => {
+  let lang = 'en';
+  try { lang = JSON.parse(fs.readFileSync(path.join(process.env.TORN_DATA_DIR || path.join(__dirname, 'data'), 'config.json'), 'utf8')).lang; } catch {}
+  return lang === 'tr' ? trStr : enStr;
+};
+
 const crxUrl = () => `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=${process.versions.chrome || '140.0.0.0'}&acceptformat=crx2,crx3&x=id%3D${EXT_ID}%26uc`;
 
 function varint(buf, p) {
@@ -33,7 +41,7 @@ function pbFields(buf) {
     else if (wt === 0) { p = varint(buf, p)[1]; }
     else if (wt === 5) p += 4;
     else if (wt === 1) p += 8;
-    else throw new Error('CRX başlığı çözülemedi');
+    else throw new Error(T('CRX başlığı çözülemedi', 'Could not parse the CRX header'));
   }
   return out;
 }
@@ -41,7 +49,7 @@ const idFromKey = (der) => [...crypto.createHash('sha256').update(der).digest('h
   .map((ch) => String.fromCharCode(97 + parseInt(ch, 16))).join('');
 
 function parseCrx(buf) {
-  if (buf.toString('latin1', 0, 4) !== 'Cr24') throw new Error('İndirilen dosya CRX değil');
+  if (buf.toString('latin1', 0, 4) !== 'Cr24') throw new Error(T('İndirilen dosya CRX değil', 'The downloaded file is not a CRX'));
   const ver = buf.readUInt32LE(4);
   if (ver === 3) {
     const hs = buf.readUInt32LE(8);
@@ -57,7 +65,7 @@ function parseCrx(buf) {
     const key = buf.subarray(16, 16 + kl);
     return { zip: buf.subarray(16 + kl + sl), key: idFromKey(key) === EXT_ID ? key : null };
   }
-  throw new Error('Desteklenmeyen CRX sürümü: ' + ver);
+  throw new Error(T('Desteklenmeyen CRX sürümü: ', 'Unsupported CRX version: ') + ver);
 }
 
 function unzip(buf, dest) {
@@ -65,13 +73,13 @@ function unzip(buf, dest) {
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) {
     if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
   }
-  if (eocd < 0) throw new Error('ZIP sonu bulunamadı');
+  if (eocd < 0) throw new Error(T('ZIP sonu bulunamadı', 'Could not find the end of the ZIP file'));
   const count = buf.readUInt16LE(eocd + 10);
   let p = buf.readUInt32LE(eocd + 16);
   const root = path.resolve(dest);
   fs.mkdirSync(root, { recursive: true });
   for (let n = 0; n < count; n++) {
-    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Error('ZIP dizini bozuk');
+    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Error(T('ZIP dizini bozuk', 'The ZIP directory is corrupt'));
     const method = buf.readUInt16LE(p + 10);
     const csize = buf.readUInt32LE(p + 20);
     const nlen = buf.readUInt16LE(p + 28), xlen = buf.readUInt16LE(p + 30), clen = buf.readUInt16LE(p + 32);
@@ -86,7 +94,7 @@ function unzip(buf, dest) {
     let content;
     if (method === 0) content = data;
     else if (method === 8) content = zlib.inflateRawSync(data);
-    else throw new Error('Desteklenmeyen ZIP sıkıştırması: ' + method);
+    else throw new Error(T('Desteklenmeyen ZIP sıkıştırması: ', 'Unsupported ZIP compression: ') + method);
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.writeFileSync(out, content);
   }
@@ -141,7 +149,7 @@ async function ensureTornTools({ baseDir, log = () => {}, force = false }) {
     tmp = path.join(root, `tmp-${Date.now()}`);
     unzip(zip, tmp);
     const version = readJson(path.join(tmp, 'manifest.json'), {}).version;
-    if (!version) throw new Error('manifest.json okunamadı');
+    if (!version) throw new Error(T('manifest.json okunamadı', 'Could not read manifest.json'));
 
     if (currentDir && st.version === version && st.shim === SHIM_VERSION) {
       fs.rmSync(tmp, { recursive: true, force: true });

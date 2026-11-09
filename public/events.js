@@ -12,7 +12,7 @@ const SEASONAL_INFO = {
   easter: { icon: '🥚', name: 'Easter Egg Hunt', helper: 'torn.eggFinder',
     what: ['Yumurta bulucu (bütün Torn sayfaları) · rehber', 'Egg finder (every Torn page) · guide'] },
   halloween: { icon: '🎃', name: 'Trick or Treat', helper: 'torn.halloweenHelper',
-    what: ["Sepetler satışa çıkınca (bir gün önce 12:00 TCT) Sweet Shop işareti · ayrıntılı rehber, yükseltme sırası ve sepet takibi", 'From basket sale time (12:00 TCT the day before): Sweet Shop marker · detailed guide, upgrade order and basket tracking'] },
+    what: ["Sepetler satışa çıkınca (bir gün önce 12:00 TCT) Sweet Shop işareti · ayrıntılı rehber, yükseltme sırası ve sepet takibi", 'Sweet Shop marker once baskets go on sale (12:00 TCT the day before) · detailed guide, upgrade order and basket tracking'] },
   christmas: { icon: '🎄', name: 'Christmas Town', helper: 'torn.ctHelper',
     what: ['Christmas Town yardımcısı ve sandık çözücü · rehber', 'Christmas Town helper and chest solver · guide'] },
 };
@@ -38,7 +38,7 @@ const tct = (ts) => new Date(ts * 1000).toLocaleString(state.lang === 'en' ? 'en
 const localTime = (ts) => new Date(ts * 1000).toLocaleString(state.lang === 'en' ? 'en-GB' : 'tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 const span = (sec) => {
   const s = Math.max(0, sec); const d = Math.floor(s / 86400); const h = Math.floor((s % 86400) / 3600);
-  return d ? `${d}${tr('g', 'd')} ${h}${tr('s', 'h')}` : `${h}${tr('s', 'h')} ${Math.floor((s % 3600) / 60)}${tr('dk', 'm')}`;
+  return d ? `${d}${tr('g', 'd')} ${h}${tr('sa', 'h')}` : `${h}${tr('sa', 'h')} ${Math.floor((s % 3600) / 60)}${tr('dk', 'm')}`;
 };
 function windowText(s) {
   if (!s.start) return '';
@@ -60,10 +60,10 @@ const helperChip = (key) => (feat(key) ? `<span class="chip green">${tr('yardım
 function easterGuide(d) {
   const e = d?.easter;
   return {
-    stats: e ? `<div class="grid kpis">${kpi(tr('Bu etkinlikte bulunan', 'Found this event'), n0(e.score))}${kpi(tr('Toplam', 'Total'), n0(e.total))}</div>` : '',
+    stats: e ? `<div class="grid kpis">${kpi(tr('Bu etkinlikte bulunan', 'Found in this event'), n0(e.score))}${kpi(tr('Toplam', 'Total'), n0(e.total))}</div>` : '',
     buy: tr('Satın alman gereken bir şey yok.', 'There is nothing you need to buy.'),
     steps: [
-      step('🔎', tr("Torn'u normal gez", 'Browse Torn as usual'), tr('Yumurtalar herhangi bir Torn sayfasında rastgele belirir; ne kadar çok sayfa açarsan o kadar çok şans.', 'Eggs appear at random on any Torn page; the more pages you open, the more chances.')),
+      step('🔎', tr("Torn'u normal gez", 'Browse Torn as usual'), tr('Yumurtalar herhangi bir Torn sayfasında rastgele belirir; ne kadar çok sayfa açarsan o kadar çok şans.', 'Eggs appear at random on any Torn page; the more pages you open, the better your chances.')),
       step('🥚', tr('Yumurta bulucu', 'Egg finder'), feat('torn.eggFinder')
         ? tr('Baktığın sayfada yumurta varsa ortada büyütülüp kırmızı çerçeveyle gösterilir ve uygulama haber verir. Tıklamak sana kalmış; LRX tıklamaz.', 'If the page you are viewing has an egg, it is shown enlarged in the middle with a red border and the app tells you. Clicking is up to you; LRX never clicks.')
         : tr('Kapalı. Ayarlar → Etkinlikler sekmesinden açabilirsin.', 'Off. Turn it on in Settings → Events.')),
@@ -90,19 +90,19 @@ const HW_ORDER = [
   ['Shadow of Doubt', 1000, 4, 'Anında 1.100 şeker; sepet ilerlemesine sayılır. 7 → 8 arası yaklaşık bütün bir etkinlik saldırısı ister', 'Gives 1,100 treats at once, counting toward basket progress. 7 → 8 takes about a whole event of attacking'],
   ['Multipack', 180, 4, 'Takasta tüketimlik eşyaların bir kısmı multipack olur', 'Some consumables become multipacks on exchange'],
   ['Deal with the Devil', 320, 4, 'Takasta %3 ihtimalle booster / özel eşya (Erotic DVD, Feathery Hotel Coupon, Business Class, Casino Pass)', '3% chance of boosters / special items on exchange (Erotic DVD, Feathery Hotel Coupon, Business Class, Casino Pass)'],
-  ['Dark Power', 285, 3, 'Takas edilen her şeker için +5 enerji (en çok 1.000)', '+5 energy per treat exchanged (up to 1,000)'],
+  ['Dark Power', 285, 3, 'Takas edilen her şeker için +5 enerji (en çok 1.000)', '+5 Energy per treat exchanged (up to 1,000)'],
   ['Freebie', 120, 3, 'Her 10 şekere 1 bedava', 'One free treat for every 10 exchanged'],
-  ['Bloody Mary', 15, 2, 'Orta seviye alkol (Bottle of Wicked Witch)', 'Medium alcohol (Bottle of Wicked Witch)'],
-  ['Nice Chianti', 30, 2, 'Yüksek seviye alkol (Bottle of Stinky Swamp Punch)', 'High alcohol (Bottle of Stinky Swamp Punch)'],
-  ['Nightcrawler', 45, 2, 'Orta enerji içeceği (Can of Munster)', 'Medium energy drink (Can of Munster)'],
-  ["It's Alive", 90, 2, 'Yüksek enerji içeceği (Can of Red Cow)', 'High energy drink (Can of Red Cow)'],
+  ['Bloody Mary', 15, 2, 'Orta seviye alkol (Bottle of Wicked Witch)', 'Mid-tier alcohol (Bottle of Wicked Witch)'],
+  ['Nice Chianti', 30, 2, 'Yüksek seviye alkol (Bottle of Stinky Swamp Punch)', 'High-tier alcohol (Bottle of Stinky Swamp Punch)'],
+  ['Nightcrawler', 45, 2, 'Orta enerji içeceği (Can of Munster)', 'Mid-tier energy drink (Can of Munster)'],
+  ["It's Alive", 90, 2, 'Yüksek enerji içeceği (Can of Red Cow)', 'High-tier energy drink (Can of Red Cow)'],
   ['Cashback', 230, 3, 'Takastan sonra şekerlerin %10\'u geri', '10% of treats back after an exchange'],
-  ['Candyman', 5, 2, 'Orta seviye şeker (Bag of Bloody Eyeballs)', 'Medium candy (Bag of Bloody Eyeballs)'],
-  ['Sweet Release', 10, 2, 'Yüksek seviye şeker (Bag of Chocolate Truffles)', 'High candy (Bag of Chocolate Truffles)'],
-  ['Cold Sweat', 170, 3, 'Takas edilen her şeker için +1 nerve (suçlar için)', '+1 nerve per treat exchanged (for crimes)'],
+  ['Candyman', 5, 2, 'Orta seviye şeker (Bag of Bloody Eyeballs)', 'Mid-tier candy (Bag of Bloody Eyeballs)'],
+  ['Sweet Release', 10, 2, 'Yüksek seviye şeker (Bag of Chocolate Truffles)', 'High-tier candy (Bag of Chocolate Truffles)'],
+  ['Cold Sweat', 170, 3, 'Takas edilen her şeker için +1 nerve (suçlar için)', '+1 Nerve per treat exchanged (for crimes)'],
 ];
 const HW_NEVER = [
-  ['Save Your Tears', 95, 3, 'Takasta şeker başına +500 mutluluk', '+500 happiness per treat exchanged'],
+  ['Save Your Tears', 95, 3, 'Takasta şeker başına +500 mutluluk', '+500 Happy per treat exchanged'],
   ['Mortal Coil', 500, 4, 'Etkinlikte saatte 1 bedava şeker; yılda 168 şeker, kârı 3. yılda çıkar (isteğe bağlı)', '1 free treat per hour during the event; 168 a year, breaks even in year 3 (optional)'],
   ['Inflation', 777, 4, 'Etkinlikte sepetteki şekerler saatte %0,1 artar', 'Treats in the basket grow 0.1% per hour during the event'],
   ['Summon Cthulhu', 9999, 4, "M'aol'u çağırır (ileri seviye, aşağıya bak)", "Summons M'aol (advanced, see below)"],
@@ -141,7 +141,7 @@ function halloweenGuide(d, s) {
     const o = owned(n); const cost = costOf(n, c);
     const locked = !o && total != null && total < HW_TIER_UNLOCK[tier];
     const st = o ? `<span class="chip green">✓</span>`
-      : locked ? `<span class="chip dim" title="${tr('Açılması için sepet', 'Unlocks at basket')}: ${HW_TIER_NAME[tier]}">🔒 ${HW_TIER_NAME[tier]}</span>`
+      : locked ? `<span class="chip dim" title="${tr('Açılması için sepet', 'Unlocks at basket level')}:${HW_TIER_NAME[tier]}">🔒 ${HW_TIER_NAME[tier]}</span>`
       : cur != null && cur >= cost ? `<span class="chip tq">${tr('alınabilir', 'affordable')}</span>` : '';
     return `<tr class="${i === nextIdx ? 'hw-next' : ''} ${o ? 'hw-own' : ''}"><td class="num"><b>${i + 1}</b></td><td><b>${esc(n)}</b>${i === nextIdx ? ` <span class="chip warn">${tr('sıradaki', 'next')}</span>` : ''}<div class="muted aw-desc">${esc(L ? ee : te)}</div></td>
       <td class="num">${n0(cost)}</td><td class="muted">${['I', 'II', 'III', 'IV'][tier - 1]}</td><td>${st}</td></tr>`;
@@ -161,15 +161,15 @@ function halloweenGuide(d, s) {
         ${kpi(tr('Yükseltmeler', 'Upgrades'), `${n0((h.upgrades || []).filter((u) => u.owned).length)} <small class="muted">/ ${n0((h.upgrades || []).length)}</small>`)}
       </div>` : '',
     cta,
-    buy: tr('Alınacaklar: <b>Halloween Basket</b> (zorunlu, $35) · bol <b>enerji</b> · isteğe bağlı <b>spooky kıyafet</b> ve <b>spooky silah</b>.', 'Shopping list: <b>Halloween Basket</b> (required, $35) · plenty of <b>energy</b> · optional <b>spooky clothing</b> and a <b>spooky weapon</b>.'),
+    buy: tr('Alınacaklar: <b>Halloween Basket</b> (zorunlu, $35) · bol <b>enerji</b> · isteğe bağlı <b>spooky kıyafet</b> ve <b>spooky silah</b>.', 'Shopping list: <b>Halloween Basket</b> (required, $35) · plenty of <b>Energy</b> · optional <b>spooky clothing</b> and a <b>spooky weapon</b>.'),
     steps: [
       step('🧺', tr('Sepeti doğru zamanda al', 'Buy the basket at the right time'),
         tr("Sepetler etkinlikten bir gün önce 12:00 TCT'de satışa çıkar. Tükenirse her 15 dakikada 1.000 adet yenilenir: bekleyip sayfayı yenile. Günlük 100 eşyalık şehir alışveriş limitini doldurmuş olsan bile sepeti alabilirsin; önce sepeti alırsan o gün 99 eşya daha alabilirsin. Bu yüzden önce günlük limitini kullan, sonra sepeti al.",
-          'Baskets go on sale at 12:00 TCT the day before the event. If they sell out, 1,000 restock every 15 minutes: wait and refresh. You can still buy one after using your 100-item daily city limit, but buying the basket first leaves only 99 other items that day. So use your daily limit first, then buy the basket.'),
-        `<div class="eg-btns">${shopBtn}</div><div class="muted eg-small">${tr("Satın alamıyorsan zaten bir sepetin vardır: envanterde ya da Display Cabinet'te ara.", 'If you cannot buy one, you already own a basket: check your inventory or Display Cabinet.')}</div>`),
+          'Baskets go on sale at 12:00 TCT the day before the event. If they sell out, 1,000 more are restocked every 15 minutes: wait and refresh. You can still buy one after using your 100-item daily city limit, but buying the basket first leaves only 99 other items that day. So use your daily limit first, then buy the basket.'),
+        `<div class="eg-btns">${shopBtn}</div><div class="muted eg-small">${tr("Satın alamıyorsan zaten bir sepetin vardır: envanterde ya da Display Cabinet'te ara.", 'If you cannot buy one, you already own a basket: check your inventory or your Display Cabinet.')}</div>`),
       step('⚔️', tr('Saldır, şeker topla', 'Attack to collect treats'),
         tr("Şeker yalnızca senin başlattığın saldırılardan düşer (savunma vermez); herhangi bir oyuncuya saldırabilirsin. Yurt dışında da çalışır; sepet Torn'da kalsa bile şeker gelir. Etkinlik süresince enerji = şeker: Xanax, FHC, enerji içeceği ve günlük enerji yenilemesini buna ayır, etkinlikten önce enerji biriktir.",
-          'Treats only drop from attacks you start (not from defends); any player works. It also works abroad; you still collect even though the basket stays in Torn. During the event energy = treats: save Xanax, FHCs, energy drinks and your daily refill for it, and stack energy before the event.'),
+          'Treats only drop from attacks you start (not from defending); you can attack any player. It also works abroad: you still get treats even if your basket stays in Torn. During the event Energy = treats: save Xanax, FHCs, energy drinks and your daily refill for it, and stack Energy before the event.'),
         `<div class="eg-btns">${openBtn('page.php?sid=ItemMarket', 'Item Market')}</div>`),
       step('🎭', tr('Spooky kıyafet ve silah', 'Spooky clothing and weapon'),
         tr(`"I See Dead People" alındıktan sonra spooky kıyafetle +%10, "Here's Johnny" alındıktan sonra son vuruşu spooky silahla yaparsan +%10 şans. Bu yükseltmeler olmadan bonus yok. Etkinlik başlayınca eşya açıklamasında "Spooky: Yes" yazar.`,
@@ -179,15 +179,15 @@ function halloweenGuide(d, s) {
          <div class="eg-btns"><button class="btn sm ghost" data-open-url="https://wiki.torn.com/wiki/Scary_Clothing" data-tab-label="Wiki">${tr('Bütün kıyafetler (Wiki)', 'All clothing (Wiki)')} ↗</button><button class="btn sm ghost" data-open-url="https://wiki.torn.com/wiki/Scary_Weapon" data-tab-label="Wiki">${tr('Bütün silahlar (Wiki)', 'All weapons (Wiki)')} ↗</button></div>`),
       step('📈', tr('Sepet kendiliğinden büyür', 'The basket levels up by itself'),
         tr('Toplam topladığın şeker (harcanmış ya da harcanmamış) arttıkça sepet bir üst seviyeye geçer; seviye atlamak şeker harcamaz. Seviye atlama ancak bir saldırıdan şeker kazandığında olur. Her seviye temel şansı %5 artırır.',
-          'Your basket levels up as your total treats (spent or not) grow; levelling costs nothing. It only levels up when you earn a treat from an attack. Each level adds 5% base chance.'),
+          'Your basket levels up as your total treats (spent or not) grow; leveling up costs nothing. It only levels up when you earn a treat from an attack. Each level adds 5% to the base chance.'),
         `<div class="eg-tiers">${tiers}</div>`),
       step('⬆️', tr('Yükseltmeleri sırayla al', 'Buy upgrades in order'),
         tr('Yükseltmeler şeker harcar. Items → Special Items → Halloween Basket → "Use Item" ile açılır. Aşağıdaki 1–20 sırasını izle; kilitli katmanlar sepet seviyesiyle açılır (II: Frightful, III: Shocking, IV: Horrifying). Yükseltmeler yeni sepete ve sonraki yıla taşınır.',
-          'Upgrades cost treats. Open them via Items → Special Items → Halloween Basket → "Use Item". Follow the 1–20 order below; locked tiers open with basket level (II: Frightful, III: Shocking, IV: Horrifying). Upgrades carry over to new baskets and the next year.'),
+          'Upgrades cost treats. Open them via Items → Special Items → Halloween Basket → "Use Item". Follow the 1–20 order below; locked tiers unlock with basket level (II: Frightful, III: Shocking, IV: Horrifying). Upgrades carry over to new baskets and the next year.'),
         `<div class="eg-btns">${openBtn('item.php', tr('Eşyalar', 'Items'), 'Items')}</div>`),
       step('🔄', tr('Şekerleri en son takas et', 'Exchange treats last'),
         tr('"Exchange All Treats" elindeki bütün şekerleri şeker, alkol ve enerji içeceğine çevirir. Bunu yükseltmeleri bitirdikten sonra yap; 10\'un katlarıyla, en iyisi 100\'er 100\'er (Freebie bonusu, enerji taşmaz). Şekerler sonraki yıla taşınır: yükseltmeye devam edeceksen yıl sonunda takas etme.',
-          '"Exchange All Treats" turns all your treats into candy, alcohol and energy drinks. Do it after finishing upgrades; in multiples of 10, ideally 100 at a time (Freebie bonus, no energy overflow). Treats carry over to next year: if you will keep upgrading, do not exchange at year end.')),
+          '"Exchange All Treats" turns all your treats into candy, alcohol and energy drinks. Do it after you finish your upgrades, in multiples of 10, ideally 100 at a time (Freebie bonus, no Energy overflow). Treats carry over to next year: if you plan to keep upgrading, do not exchange them at the end of the year.')),
     ],
     extra: `${nextLine}
       <div class="tbl-wrap"><table class="tbl compact hw-order">
@@ -195,22 +195,22 @@ function halloweenGuide(d, s) {
         <tbody>${order}</tbody></table></div>
       <details class="eg-more"><summary>🚫 ${tr('Önerilmeyenler ("Never")', 'Not recommended ("Never")')}</summary><ul class="eg-list">${never}</ul></details>
       <details class="eg-more"><summary>🏅 ${tr('Honor\'lar', 'Honors')}</summary><ul class="eg-list">
-        <li><b>Phantastic</b> <span class="muted">— ${tr('sepeti Frightful yap', 'upgrade your basket to Frightful')}</span></li>
-        <li><b>Something Humerus</b> <span class="muted">— ${tr('sepeti Terrifying yap', 'upgrade your basket to Terrifying')}</span></li>
-        <li><b>Oh My Gourd!</b> <span class="muted">— ${tr('sepeti Nightmarish yap', 'upgrade your basket to Nightmarish')}</span></li></ul></details>
+        <li><b>Phantastic</b> <span class="muted">— ${tr('sepeti Frightful yap', 'get your basket to Frightful')}</span></li>
+        <li><b>Something Humerus</b> <span class="muted">— ${tr('sepeti Terrifying yap', 'get your basket to Terrifying')}</span></li>
+        <li><b>Oh My Gourd!</b> <span class="muted">— ${tr('sepeti Nightmarish yap', 'get your basket to Nightmarish')}</span></li></ul></details>
       <details class="eg-more"><summary>👹 ${tr("İleri seviye: M'aol", "Advanced: M'aol")}</summary><ul class="eg-list">
-        <li>${tr("Sepette 9.999 şekerle \"Summon Cthulhu\" M'aol'u çağırır. Etkinliğin ilk 24 saatinde çağrılamaz; yenildikten sonra 48 saat yeniden çağrılamaz.", "\"Summon Cthulhu\" with 9,999 treats in the basket summons M'aol. Not possible in the first 24 hours of the event, and not again within 48 hours of his defeat.")}</li>
+        <li>${tr("Sepette 9.999 şekerle \"Summon Cthulhu\" M'aol'u çağırır. Etkinliğin ilk 24 saatinde çağrılamaz; yenildikten sonra 48 saat yeniden çağrılamaz.", "\"Summon Cthulhu\" with 9,999 treats in the basket summons M'aol. He cannot be summoned in the first 24 hours of the event, or within 48 hours after being defeated.")}</li>
         <li>${tr("M'aol ve 5 muhafızı (Praetorian) rastgele ülkelerde belirir; \"Astral Guard\" yüzünden yalnızca Crystalline Falcata ile ya da biri Stygian Darkness attıktan sonraki 20 saniyede hasar alırlar.", 'M\'aol and his 5 Praetorians appear in random countries; because of "Astral Guard" they only take damage from a Crystalline Falcata or within 20 seconds after someone throws a Stygian Darkness.')}</li>
-        <li>${tr('Uyarı: Stygian Darkness normal saldırıda yanlışlıkla kullanılabilir ve geri gelmez (yalnızca 5 tane). Saldırı ayarlarında geçici eşyaları kapat.', 'Warning: Stygian Darkness can be used by accident in normal attacks and is not refunded (only 5 ever). Turn off temporary items in your attack settings.')}</li>
+        <li>${tr('Uyarı: Stygian Darkness normal saldırıda yanlışlıkla kullanılabilir ve geri gelmez (yalnızca 5 tane). Saldırı ayarlarında geçici eşyaları kapat.', 'Warning: Stygian Darkness can be used by accident in normal attacks and is not refunded (there are only 5). Turn off temporary items in your attack settings.')}</li>
         <li>${tr('Yenilen muhafızlar relic ve Arca Fortunae (şeker) düşürür; relic\'ler bir yıl çalışır.', 'Defeated Praetorians drop relics and Arca Fortunae (treats); relics work for one year.')}</li></ul></details>`,
-    source: tr("Kaynak: IceBlueFire'ın \"Halloween Trick or Treat Guide\" konusu ve Andyman'ın yükseltme sırası (Torn forumları). Bedeller ve sahip olduğun yükseltmeler Torn API'den canlı gelir.", 'Source: IceBlueFire\'s "Halloween Trick or Treat Guide" thread and Andyman\'s upgrade order (Torn forums). Costs and your owned upgrades come live from the Torn API.'),
+    source: tr("Kaynak: IceBlueFire'ın \"Halloween Trick or Treat Guide\" konusu ve Andyman'ın yükseltme sırası (Torn forumları). Bedeller ve sahip olduğun yükseltmeler Torn API'den canlı gelir.", 'Source: IceBlueFire\'s "Halloween Trick or Treat Guide" thread and Andyman\'s upgrade order (Torn forums). Costs and the upgrades you own come live from the Torn API.'),
   };
 }
 
 function christmasGuide() {
   return {
     stats: '',
-    buy: tr('Zorunlu bir alışveriş yok: giriş ücretsiz, haritada yürümek enerji ya da nerve harcamaz.', 'Nothing to buy: entry is free and walking the map costs no energy or nerve.'),
+    buy: tr('Zorunlu bir alışveriş yok: giriş ücretsiz, haritada yürümek enerji ya da nerve harcamaz.', 'Nothing to buy: entry is free and walking the map costs no Energy or Nerve.'),
     steps: [
       step('🎄', tr("Christmas Town'a gir", 'Enter Christmas Town'), tr('Etkinlik boyunca haritalarda dolaş; farklı haritalar farklı ödüller saklar.', 'Walk the maps during the event; different maps hide different rewards.'), openBtn('christmas_town.php', 'Christmas Town')),
       step('🎁', tr('Hediye ve eşyalar', 'Gifts and items'), feat('torn.ctHelper')
@@ -234,7 +234,7 @@ function eventGuideCard(s) {
     <ol class="eg-steps">${g.steps.join('')}</ol>
     ${g.extra || ''}
     ${g.table || ''}
-    <p class="muted sl-note">${g.source ? `${g.source} ` : `${tr('Topluluk rehberlerinden derlendi.', 'Compiled from community guides.')} `}${tr('Torn kuralları her yıl değiştirebilir. LRX yalnızca gösterir: tıklamaz, satın almaz.', 'Torn may change the rules each year. LRX only shows: it never clicks or buys.')}</p>
+    <p class="muted sl-note">${g.source ? `${g.source} ` : `${tr('Topluluk rehberlerinden derlendi.', 'Compiled from community guides.')} `}${tr('Torn kuralları her yıl değiştirebilir. LRX yalnızca gösterir: tıklamaz, satın almaz.', 'Torn may change the rules each year. LRX only shows information: it never clicks or buys anything.')}</p>
   </article>`;
 }
 // Araçlar sayfası: aktif ya da 7 gün içinde başlayacak etkinliklerin rehberleri
@@ -257,7 +257,7 @@ function renderEventSettings() {
       <div class="evs-ico">${info.icon}</div>
       <div class="evs-main"><div class="evs-title"><b>${esc(info.name)}</b> ${statusChip(s)}</div>
         <div class="muted">${s.start ? windowText(s) : tr('Torn takviminde bu yıl için tarih yok; yayınlanınca kendiliğinden eklenir.', 'No date on the Torn calendar yet; it is added automatically once published.')}</div>
-        ${s.status === 'past' ? `<div class="muted">${tr('Gelecek yılın tarihi Torn takvimi yayınlayınca kendiliğinden gelir.', "Next year's date arrives automatically once Torn publishes the calendar.")}</div>` : ''}
+        ${s.status === 'past' ? `<div class="muted">${tr('Gelecek yılın tarihi Torn takvimi yayınlayınca kendiliğinden gelir.', "Next year's date is added automatically once Torn publishes its calendar.")}</div>` : ''}
         <div class="evs-what"><small>${tr('Etkinlik günlerinde açılır', 'Turns on during the event')}: ${esc(info.what[state.lang === 'en' ? 1 : 0])}</small></div></div>
       ${f ? featRow(f) : ''}
     </div>`;
@@ -270,7 +270,7 @@ function renderEventSettings() {
       ${d ? `<div class="evs-list">${rows}</div>` : evData.err ? errorBox(evData.err) : loadingBox()}
       <p class="muted sl-note">${tr('Tarihler sabit değil: her yıl Torn takviminden (API) okunur ve senin kişisel başlangıç saatine göre hesaplanır. Yardımcılar yalnızca etkinlik penceresinde çalışır; ayar kapalıysa o günlerde de çalışmaz.', 'Dates are not fixed: they are read from the Torn calendar (API) every year and adjusted to your personal start time. Helpers run only inside the event window; if a switch is off they stay off on those days too.')}</p>
     </article>
-    <article class="glass card"><div class="card-head"><h3>${tr('Rehber ve bildirim', 'Guide and notification')}</h3></div>
+    <article class="glass card"><div class="card-head"><h3>${tr('Rehber ve bildirim', 'Guide and notifications')}</h3></div>
       <div class="feat-list">${featRow(FEATURE_DEF_MAP['event.guide'])}${featRow(FEATURE_DEF_MAP['notify.events'], !notifyOn)}</div>
       ${notifyOn ? '' : `<small class="muted">${tr('Masaüstü bildirimleri kapalı (Bildirimler sekmesi).', 'Desktop notifications are off (Notifications tab).')}</small>`}
     </article>`;
@@ -319,7 +319,7 @@ function notifyEventStarts() {
     const shop = s.id === 'halloween' && noBasket ? T_URL + HW_SHOP : null;
     if (s.stage === 'prep' && s.id === 'halloween' && noBasket) {
       notifyOnce(`lrx.evNote.${s.id}.prep`, s.start, `${info.icon} ${tr('Halloween sepetleri satışta', 'Halloween baskets are on sale')}`,
-        tr(`Trick or Treat ${tct(s.start)} TCT'de başlıyor. Tıkla: Sweet Shop'ta Halloween Basket al ($35).`, `Trick or Treat starts ${tct(s.start)} TCT. Click: buy a Halloween Basket in the Sweet Shop ($35).`), shop);
+        tr(`Trick or Treat ${tct(s.start)} TCT'de başlıyor. Tıkla: Sweet Shop'ta Halloween Basket al ($35).`, `Trick or Treat starts on ${tct(s.start)} TCT. Click to buy a Halloween Basket in the Sweet Shop ($35).`), shop);
     }
     if (s.status === 'active') {
       notifyOnce(`lrx.evNote.${s.id}`, s.start, `${info.icon} ${info.name} ${tr('başladı', 'has started')}`,

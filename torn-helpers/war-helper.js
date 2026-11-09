@@ -5,6 +5,7 @@
    API verisi yoksa Torn'un kendi Status yazısına göre çalışır. Harici sunucu yoktur. */
 (() => {
   if (window.__lrxWar) return;
+  const L = (t, e) => (window.__lrxLang === 'tr' ? t : e);
 
   const ROW = 'li.enemy, li.your, li[class*="enemy___"], li[class*="your___"]';
   const ENEMY = 'li.enemy, li[class*="enemy___"]';
@@ -67,7 +68,7 @@
     btn.target = '_blank';
     btn.rel = 'noopener';
     btn.textContent = 'Attack';
-    btn.title = 'LRX · saldırıyı yeni sekmede aç';
+    btn.title = L('LRX · saldırıyı yeni sekmede aç', 'LRX · open the attack in a new tab');
     const cell = row.querySelector(ATTACK);
     if (cell) {
       cell.classList.add('lrx-atk-cell');

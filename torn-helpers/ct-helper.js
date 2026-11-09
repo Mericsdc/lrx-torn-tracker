@@ -7,15 +7,17 @@
 (() => {
   if (window.__lrxCT) return;
   window.__lrxCT = true;
+  const L = (t, e) => (window.__lrxLang === 'tr' ? t : e);
 
+  // label: [Türkçe, English]
   const KINDS = {
-    gift: { label: 'Hediye', color: '#43a047' },
-    gold: { label: 'Altın sandık', color: '#f9a825' },
-    silver: { label: 'Gümüş sandık', color: '#b0bec5' },
-    bronze: { label: 'Bronz sandık', color: '#a1662f' },
-    combo: { label: 'Kombinasyon sandığı', color: '#8e24aa' },
-    key: { label: 'Anahtar', color: '#1e88e5' },
-    item: { label: 'Eşya', color: '#00acc1' },
+    gift: { label: ['Hediye', 'Gift'], color: '#43a047' },
+    gold: { label: ['Altın sandık', 'Gold chest'], color: '#f9a825' },
+    silver: { label: ['Gümüş sandık', 'Silver chest'], color: '#b0bec5' },
+    bronze: { label: ['Bronz sandık', 'Bronze chest'], color: '#a1662f' },
+    combo: { label: ['Kombinasyon sandığı', 'Combination chest'], color: '#8e24aa' },
+    key: { label: ['Anahtar', 'Key'], color: '#1e88e5' },
+    item: { label: ['Eşya', 'Item'], color: '#00acc1' },
   };
   const kindOf = (src) => {
     const s = (src || '').toLowerCase();
@@ -100,19 +102,20 @@
     const mk = JSON.stringify(solver.guesses);
     if (memo.key !== mk) { const cs = candidates(); memo = { key: mk, c: cs, sug: suggest(cs) }; } // tahmin hesabı yalnızca giriş değişince
     const { c, sug } = memo;
-    const fbNames = { g: 'yeşil', y: 'sarı', r: 'kırmızı' };
-    return `<div class="muted">Sandıkta denediğin 3 rakamı yaz, her rakamın rengini oyundaki gibi seç (tıkla: kırmızı → sarı → yeşil), sonra ekle.</div>
-      <input maxlength="3" inputmode="numeric" value="${solver.draft}" placeholder="örn. 123">
+    const fbNames = { g: L('yeşil', 'green'), y: L('sarı', 'yellow'), r: L('kırmızı', 'red') };
+    return `<div class="muted">${L('Sandıkta denediğin 3 rakamı yaz, her rakamın rengini oyundaki gibi seç (tıkla: kırmızı → sarı → yeşil), sonra ekle.',
+      'Type the 3 digits you tried on the chest, set each digit\'s color to match the game (click: red → yellow → green), then click Add.')}</div>
+      <input maxlength="3" inputmode="numeric" value="${solver.draft}" placeholder="${L('örn. 123', 'e.g. 123')}">
       <div class="fb">${solver.fb.map((f, i) => `<button data-i="${i}" data-c="${f}" title="${fbNames[f]}">${solver.draft[i] || '·'}</button>`).join('')}</div>
-      <div class="act"><button data-act="add">Ekle</button><button data-act="reset">Sıfırla</button></div>
+      <div class="act"><button data-act="add">${L('Ekle', 'Add')}</button><button data-act="reset">${L('Sıfırla', 'Reset')}</button></div>
       ${solver.guesses.map((g) => `<div class="muted">${g.code} → ${[...g.fb].map((f) => ({ g: '🟩', y: '🟨', r: '🟥' }[f])).join('')}</div>`).join('')}
-      <div style="margin-top:4px">Olası şifre: <b>${c.length}</b></div>
-      ${c.length ? `<div>Sıradaki tahmin: <span class="sug">${sug}</span></div>` : '<div class="muted">Girilen renklerle uyuşan şifre yok; kontrol et.</div>'}`;
+      <div style="margin-top:4px">${L('Olası şifre', 'Possible codes')}: <b>${c.length}</b></div>
+      ${c.length ? `<div>${L('Sıradaki tahmin', 'Next guess')}: <span class="sug">${sug}</span></div>` : `<div class="muted">${L('Girilen renklerle uyuşan şifre yok; kontrol et.', 'No code matches the colors you entered; check them.')}</div>`}`;
   };
   const render = (force) => {
     const p = panel();
-    const html = `<h4 data-toggle="items"><span>🎄 LRX · yakındaki eşyalar</span><span>${collapsed.items ? '▸' : '▾'}</span></h4>${collapsed.items ? '' : itemsHtml}
-      <h4 data-toggle="chest"><span>🔐 Kombinasyon sandığı</span><span>${collapsed.chest ? '▸' : '▾'}</span></h4>${chestHtml()}`;
+    const html = `<h4 data-toggle="items"><span>🎄 LRX · ${L('yakındaki eşyalar', 'nearby items')}</span><span>${collapsed.items ? '▸' : '▾'}</span></h4>${collapsed.items ? '' : itemsHtml}
+      <h4 data-toggle="chest"><span>🔐 ${L('Kombinasyon sandığı', 'Combination chest')}</span><span>${collapsed.chest ? '▸' : '▾'}</span></h4>${chestHtml()}`;
     if (force || p.dataset.k !== html) {
       const focusInput = document.activeElement && p.contains(document.activeElement) && document.activeElement.matches('input');
       p.innerHTML = html; p.dataset.k = html;
@@ -127,10 +130,10 @@
     return m ? { x: Number(m[1]), y: Number(m[2]) } : null;
   };
   const dirText = (dx, dy) => {
-    if (!dx && !dy) return 'tam burada';
+    if (!dx && !dy) return L('tam burada', 'right here');
     const parts = [];
-    if (dx) parts.push(`${Math.abs(dx)} ${dx > 0 ? 'sağ' : 'sol'}`);
-    if (dy) parts.push(`${Math.abs(dy)} ${dy > 0 ? 'yukarı' : 'aşağı'}`);
+    if (dx) parts.push(`${Math.abs(dx)} ${dx > 0 ? L('sağ', 'right') : L('sol', 'left')}`);
+    if (dy) parts.push(`${Math.abs(dy)} ${dy > 0 ? L('yukarı', 'up') : L('aşağı', 'down')}`);
     return parts.join(', ');
   };
 
@@ -148,13 +151,13 @@
       found.push({ kind, x, y, d: me ? Math.abs(x - me.x) + Math.abs(y - me.y) : 0 });
     }
     found.sort((a, b) => a.d - b.d);
-    const key = JSON.stringify([me, found]);
+    const key = JSON.stringify([me, found, window.__lrxLang]); // dil değişince liste yazısı da yenilensin
     if (key !== lastItemsKey) {
       lastItemsKey = key;
       itemsHtml = found.length
-        ? found.slice(0, 10).map((f) => `<div class="row"><span class="dot" style="background:${KINDS[f.kind].color}"></span>${KINDS[f.kind].label}
+        ? found.slice(0, 10).map((f) => `<div class="row"><span class="dot" style="background:${KINDS[f.kind].color}"></span>${L(...KINDS[f.kind].label)}
             <span class="muted" style="margin-left:auto">${me ? dirText(f.x - me.x, f.y - me.y) : `${f.x}, ${f.y}`}</span></div>`).join('')
-        : '<div class="muted">Görünür alanda eşya yok.</div>';
+        : `<div class="muted">${L('Görünür alanda eşya yok.', 'No items in view.')}</div>`;
     }
     render(false);
   };

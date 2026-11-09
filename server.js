@@ -39,6 +39,8 @@ function writeJson(file, obj, pretty = false) {
 }
 
 let config = { ...DEFAULT_CONFIG, ...readJson(CONFIG_FILE, {}) };
+// Language of user-facing server messages: English by default, Turkish when the app is set to TR
+const T = (trStr, enStr) => (config.lang === 'tr' ? trStr : enStr);
 delete config.updateUrl; // eski sürümlerde ayarlanabiliyordu; artık hep sabit adres kullanılır
 let history = readJson(HISTORY_FILE, { days: [], addiction: {}, user: {}, stockOrders: {} });
 history.days ||= []; history.addiction ||= {}; history.user ||= {}; history.stockOrders ||= {};
@@ -102,14 +104,14 @@ async function cached(key, ttl, loader) {
 }
 
 async function tornRaw(pathq) {
-  if (!config.apiKey) throw new ApiError('API key ayarlanmamış. Ayarlar sekmesinden ekleyin.', 'NO_KEY');
+  if (!config.apiKey) throw new ApiError(T('API key ayarlanmamış. Ayarlar sekmesinden ekleyin.', 'API key not set. Add it in Settings.'), 'NO_KEY');
   await throttle();
   const sep = pathq.includes('?') ? '&' : '?';
   const url = `https://api.torn.com/${pathq}${sep}key=${encodeURIComponent(config.apiKey)}&comment=TornTracker`;
   const res = await fetch(url, { headers: { 'User-Agent': 'TornTracker/1.0' } });
   const text = await res.text();
   let json;
-  try { json = JSON.parse(text); } catch { throw new ApiError(`Torn API yanıtı okunamadı (HTTP ${res.status})`, 'BAD_RESPONSE'); }
+  try { json = JSON.parse(text); } catch { throw new ApiError(T(`Torn API yanıtı okunamadı (HTTP ${res.status})`, `Could not read the Torn API response (HTTP ${res.status})`), 'BAD_RESPONSE'); }
   if (json.error) throw new ApiError(`Torn API: ${json.error.error}`, json.error.code);
   return json;
 }
@@ -211,7 +213,7 @@ async function getOverview(force = false) {
     },
     education: {
       currentId: eduId || 0,
-      current: eduId ? (eduNames[eduId]?.name || `Kurs #${eduId}`) : null,
+      current: eduId ? (eduNames[eduId]?.name || `${T('Kurs', 'Course')} #${eduId}`) : null,
       code: eduId ? eduNames[eduId]?.code : null,
       duration: eduId ? eduNames[eduId]?.duration : null,
       timeLeft: u.education_timeleft || 0,
@@ -351,7 +353,7 @@ async function fetchStocks() {
       const r = await fetch(url, { headers: { 'User-Agent': 'LRX-Torn-Tracker' }, signal: AbortSignal.timeout(15_000) });
       if (!r.ok) throw new Error(`${name} HTTP ${r.status}`);
       const j = await r.json();
-      if (!j || typeof j.stocks !== 'object') throw new Error(`${name}: beklenmeyen veri`);
+      if (!j || typeof j.stocks !== 'object') throw new Error(T(`${name}: beklenmeyen veri`, `${name}: unexpected data`));
       return j;
     };
     const [y, p] = await Promise.allSettled([
@@ -360,7 +362,7 @@ async function fetchStocks() {
     ]);
     const yata = y.status === 'fulfilled' ? y.value : null;
     const prom = p.status === 'fulfilled' ? p.value : null;
-    if (!yata && !prom) throw new ApiError(`Stok verisi alınamadı (${y.reason?.message}; ${p.reason?.message})`, 'TRAVEL');
+    if (!yata && !prom) throw new ApiError(T(`Stok verisi alınamadı (${y.reason?.message}; ${p.reason?.message})`, `Could not get stock data (${y.reason?.message}; ${p.reason?.message})`), 'TRAVEL');
     const out = {};
     for (const code of new Set([...Object.keys(yata?.stocks || {}), ...Object.keys(prom?.stocks || {})])) {
       const yc = yata?.stocks?.[code], pc = prom?.stocks?.[code];
@@ -717,7 +719,7 @@ async function ffscouterStats(ids) {
         res = await fetch(url, { headers: { 'User-Agent': 'TornTracker/1.0' } });
         body = await res.text();
       } catch (e) {
-        ffStatus = { ok: false, error: 'FFScouter erişilemedi: ' + e.message, checkedAt: Date.now() };
+        ffStatus = { ok: false, error: T('FFScouter erişilemedi: ', 'Could not reach FFScouter: ') + e.message, checkedAt: Date.now() };
         break;
       }
       let json; try { json = JSON.parse(body); } catch { json = null; }
@@ -726,8 +728,9 @@ async function ffscouterStats(ids) {
         ffStatus = {
           ok: false,
           error: res.status === 401 || /regist/i.test(String(msg))
-            ? 'API key FFScouter\'a kayıtlı değil. ffscouter.com adresinde key\'inizle bir kez giriş yapıp kaydedin (ücretsiz).'
-            : `FFScouter hatası: ${msg}`,
+            ? T('API key FFScouter\'a kayıtlı değil. ffscouter.com adresinde key\'inizle bir kez giriş yapıp kaydedin (ücretsiz).',
+              'Your API key is not registered with FFScouter. Sign in once on ffscouter.com with your key to register it (free).')
+            : T(`FFScouter hatası: ${msg}`, `FFScouter error: ${msg}`),
           checkedAt: Date.now(),
         };
         break;
@@ -847,7 +850,7 @@ const plainNum = (v) => Number(String(v ?? '').replace(/[^\d.]/g, '')) || 0;
 function getLevelLists() {
   return cached('level-lists', 6 * 3600_000, async () => {
     const r = await fetch(LEVEL_LISTS_URL, { headers: { 'User-Agent': 'TornTracker' } });
-    if (!r.ok) throw new ApiError(`Hedef listesi alınamadı (HTTP ${r.status})`, 'LIST_HTTP', 'levelling');
+    if (!r.ok) throw new ApiError(T(`Hedef listesi alınamadı (HTTP ${r.status})`, `Could not get the target list (HTTP ${r.status})`), 'LIST_HTTP', 'levelling');
     const lists = {};
     for (const [name, rows] of Object.entries((await r.json()) || {})) {
       const arr = (Array.isArray(rows) ? rows : Object.values(rows || {}))
@@ -855,7 +858,7 @@ function getLevelLists() {
         .filter((x) => Number.isInteger(x.id) && x.id > 0);
       if (arr.length) lists[name] = arr;
     }
-    if (!Object.keys(lists).length) throw new ApiError('Hedef listesi boş geldi', 'LIST_EMPTY', 'levelling');
+    if (!Object.keys(lists).length) throw new ApiError(T('Hedef listesi boş geldi', 'The target list came back empty'), 'LIST_EMPTY', 'levelling');
     return lists;
   });
 }
@@ -1148,7 +1151,7 @@ function buildCrimeValue(allCsv, burgCsv, crackCsv) {
   const cracking = parseCsv(crackCsv).slice(1).map((r) => ({
     type: (r[0] || '').trim(), service: (r[1] || '').trim(), v6: cvNum(r[6]), v7: cvNum(r[7]),
   })).filter((c) => c.type && c.service && (c.v6 != null || c.v7 != null));
-  if (!crimes.length) throw new Error('tablo boş geldi');
+  if (!crimes.length) throw new Error(T('tablo boş geldi', 'the sheet came back empty'));
   // Burglary için "All" sekmesi yalnızca focused/ortalama değerleri verir; normal keşifteki en iyi hedefi öne al
   const bc = crimes.find((c) => c.crime.toLowerCase() === 'burglary');
   const topB = [...burglary].sort((a, b) => b.value - a.value)[0];
@@ -1174,7 +1177,7 @@ async function getCrimeValue(force = false) {
       try { writeJson(CV_FILE, cvMem); } catch {}
     } catch (e) {
       cvMem ||= readJson(CV_SNAPSHOT, null);
-      if (!cvMem) throw new ApiError(`Kârlılık tablosu alınamadı: ${e.message}`, 'CV_FETCH', 'sheet');
+      if (!cvMem) throw new ApiError(T(`Kârlılık tablosu alınamadı: ${e.message}`, `Could not get the profitability sheet: ${e.message}`), 'CV_FETCH', 'sheet');
       cvMem = { ...cvMem, stale: e.message };
     } finally { cvBusy = null; }
     return cvMem;
@@ -1213,7 +1216,7 @@ let logStatus = { ok: null, error: null, at: 0 };
 
 async function tornLogRaw(pathq) {
   const key = config.logKey || config.apiKey;
-  if (!key) throw new ApiError('API key ayarlanmamış.', 'NO_KEY');
+  if (!key) throw new ApiError(T('API key ayarlanmamış.', 'API key not set.'), 'NO_KEY');
   await throttle();
   const res = await fetch(`https://api.torn.com/${pathq}&key=${encodeURIComponent(key)}&comment=TornTracker`, { headers: { 'User-Agent': 'TornTracker/1.0' } });
   const json = await res.json().catch(() => ({ error: { code: 0, error: `HTTP ${res.status}` } }));
@@ -1433,7 +1436,7 @@ const halloweenForPage = () => ({
 
 async function getEvents(force = false) {
   const cal = await refreshEventCal(force).catch((e) => { if (history.eventCal) return history.eventCal; throw e; });
-  if (!cal) throw new Error('Torn takvimi okunamadı.');
+  if (!cal) throw new Error(T('Torn takvimi okunamadı.', 'Could not read the Torn calendar.'));
   const now = Math.floor(Date.now() / 1000);
   const offset = startOffset(cal.startTime);
   const events = cal.list
@@ -1587,7 +1590,7 @@ async function memberStats(id, ts) {
 async function runFactionReport() {
   if (facJob.running) return facJob;
   const access = await factionAccess();
-  if (!access.allowed) throw new ApiError('Bu rapor faction liderine ve yetki verdiği pozisyonlara açık.', 'FAC_DENIED');
+  if (!access.allowed) throw new ApiError(T('Bu rapor faction liderine ve yetki verdiği pozisyonlara açık.', 'This report is only available to the faction leader and the positions they have given access.'), 'FAC_DENIED');
   Object.assign(facJob, { running: true, done: 0, total: 0, error: null, startedAt: Date.now(), finishedAt: 0 });
   (async () => {
     const st = facStore();
@@ -1697,9 +1700,10 @@ async function sendFeedback(b) {
   const message = String(b.message || '').trim().slice(0, 4000);
   const name = String(b.name || '').trim().slice(0, 80);
   const contact = String(b.contact || '').trim().slice(0, 120);
-  if (message.length < 5) throw new ApiError('Mesaj çok kısa.', 'FEEDBACK_SHORT');
+  if (message.length < 5) throw new ApiError(T('Mesaj çok kısa.', 'Message is too short.'), 'FEEDBACK_SHORT');
   const wait = 60_000 - (Date.now() - feedbackLast);
-  if (wait > 0) throw new ApiError(`Bir dakikada bir mesaj gönderilebilir (${Math.ceil(wait / 1000)} sn).`, 'FEEDBACK_RATE');
+  const waitS = Math.ceil(wait / 1000);
+  if (wait > 0) throw new ApiError(T(`Bir dakikada bir mesaj gönderilebilir (${waitS} sn).`, `You can send one message per minute (try again in ${waitS} s).`), 'FEEDBACK_RATE');
   const payload = {
     _subject: `LRX Torn Tracker · ${FEEDBACK_KINDS[kind]}${name ? ` · ${name}` : ''}`,
     _template: 'table', _captcha: 'false',
@@ -1714,7 +1718,7 @@ async function sendFeedback(b) {
     body: JSON.stringify(payload),
   });
   const j = await res.json().catch(() => ({}));
-  if (!res.ok || String(j.success) !== 'true') throw new ApiError(j.message || `Gönderilemedi (HTTP ${res.status})`, 'FEEDBACK_FAIL');
+  if (!res.ok || String(j.success) !== 'true') throw new ApiError(j.message || T(`Gönderilemedi (HTTP ${res.status})`, `Could not send (HTTP ${res.status})`), 'FEEDBACK_FAIL');
   feedbackLast = Date.now();
   return { ok: true };
 }
@@ -1766,7 +1770,14 @@ async function handleApi(req, res, url) {
         deliveryHours: config.deliveryHours || 6, deliveryMode: config.deliveryMode || 'hours',
         updateUrl: DEFAULT_UPDATE_URL, version: APP_VERSION,
         features: config.features || {},
+        lang: config.lang === 'tr' ? 'tr' : 'en',
       });
+    }
+    if (p === '/api/lang' && req.method === 'POST') {
+      const b = await readBody(req);
+      const lang = b.lang === 'tr' ? 'tr' : 'en';
+      if (config.lang !== lang) { config.lang = lang; saveConfig(); }
+      return send(res, 200, { ok: true, lang });
     }
     if (p === '/api/features' && req.method === 'POST') {
       const b = await readBody(req);
@@ -1803,7 +1814,7 @@ async function handleApi(req, res, url) {
       const b = await readBody(req);
       ensureLogHistory();
       const id = Number(b.id);
-      if (!Number.isInteger(id) || id <= 0) return send(res, 400, { error: 'Geçersiz eşya.' });
+      if (!Number.isInteger(id) || id <= 0) return send(res, 400, { error: T('Geçersiz eşya.', 'Invalid item.') });
       const cost = Number(b.cost);
       if (cost > 0 && cost < 1e12) history.manualCosts[id] = { cost: Math.round(cost), at: Date.now() };
       else delete history.manualCosts[id];
@@ -1816,7 +1827,7 @@ async function handleApi(req, res, url) {
       if (typeof b.ffscouterKey === 'string') { config.ffscouterKey = b.ffscouterKey.trim(); ffCache.clear(); ffStatus = { ok: null, error: null, checkedAt: 0 }; }
       if (typeof b.logKey === 'string') {
         const k = b.logKey.trim();
-        if (k && !/^[A-Za-z0-9]{16}$/.test(k)) return send(res, 400, { error: 'Log key 16 karakterlik harf/rakam olmalı.' });
+        if (k && !/^[A-Za-z0-9]{16}$/.test(k)) return send(res, 400, { error: T('Log key 16 karakterlik harf/rakam olmalı.', 'The log key must be 16 letters and digits.') });
         config.logKey = k; logStatus = { ok: null, error: null, at: 0 };
       }
       if (b.coverDays != null) config.coverDays = Math.min(14, Math.max(1, Number(b.coverDays) || 3));
@@ -1829,18 +1840,20 @@ async function handleApi(req, res, url) {
     if (p === '/api/auth' && req.method === 'POST') {
       const b = await readBody(req);
       const key = String(b.apiKey || '').trim();
-      if (!/^[A-Za-z0-9]{16}$/.test(key)) return send(res, 400, { error: 'API key 16 karakterlik harf/rakam olmalı.' });
+      if (!/^[A-Za-z0-9]{16}$/.test(key)) return send(res, 400, { error: T('API key 16 karakterlik harf/rakam olmalı.', 'The API key must be 16 letters and digits.') });
       const call = async (q) => {
         await throttle();
         const r = await fetch(`https://api.torn.com/${q}&key=${encodeURIComponent(key)}&comment=TornTracker`, { headers: { 'User-Agent': 'TornTracker/1.0' } });
         const j = await r.json().catch(() => ({ error: { error: `HTTP ${r.status}` } }));
-        if (j.error) throw new ApiError(j.error.code === 2 ? 'API key geçersiz.' : `Torn API: ${j.error.error}`, j.error.code);
+        if (j.error) throw new ApiError(j.error.code === 2 ? T('API key geçersiz.', 'Invalid API key.') : `Torn API: ${j.error.error}`, j.error.code);
         return j;
       };
       const [info, user] = await Promise.all([call('key/?selections=info'), call('user/?selections=basic')]);
       const level = Number(info.access_level) || 0;
       if (level < 3) {
-        return send(res, 403, { error: `Bu key "${info.access_type || 'Public'}" seviyesinde. Şirket ve faction verileri için en az "Limited Access" key gerekli.` });
+        const accessType = info.access_type || 'Public';
+        return send(res, 403, { error: T(`Bu key "${accessType}" seviyesinde. Şirket ve faction verileri için en az "Limited Access" key gerekli.`,
+          `This key has "${accessType}" access. Company and faction data need at least a "Limited Access" key.`) });
       }
       // Farklı bir oyuncuya geçildiyse önceki oyuncunun verilerini karıştırma
       const prevPlayer = history.lastOverview?.player?.id;
@@ -1908,7 +1921,7 @@ async function handleApi(req, res, url) {
     if (p === '/api/wars') return send(res, 200, await getMyWars());
     if (p === '/api/player') {
       const id = Number(url.searchParams.get('id'));
-      if (!id) return send(res, 400, { error: 'id parametresi gerekli' });
+      if (!id) return send(res, 400, { error: T('id parametresi gerekli', 'The id parameter is required') });
       const j = await torn(`user/${id}?selections=profile,timestamp`, 15_000);
       return send(res, 200, {
         id: j.player_id, name: j.name, level: j.level, status: j.status, lastAction: j.last_action,
@@ -1918,7 +1931,7 @@ async function handleApi(req, res, url) {
     }
     if (p === '/api/targets') {
       const fid = Number(url.searchParams.get('faction'));
-      if (!fid) return send(res, 400, { error: 'faction parametresi gerekli' });
+      if (!fid) return send(res, 400, { error: T('faction parametresi gerekli', 'The faction parameter is required') });
       return send(res, 200, await getTargets(fid));
     }
     if (p === '/api/estimate' && req.method === 'POST') {
@@ -1932,7 +1945,7 @@ async function handleApi(req, res, url) {
       const j = await r.json().catch(() => ({}));
       return send(res, 200, { registered: !!j.is_registered, premium: !!j.is_premium, raw: { registered_at: j.registered_at, last_used: j.last_used } });
     }
-    return send(res, 404, { error: 'Bulunamadı' });
+    return send(res, 404, { error: T('Bulunamadı', 'Not found') });
   } catch (e) {
     console.warn('[api]', p, e.message);
     return send(res, e.code === 'NO_KEY' ? 412 : 502, { error: e.message, code: e.code });

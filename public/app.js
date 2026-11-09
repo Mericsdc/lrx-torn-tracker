@@ -6,7 +6,7 @@ const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 
 const state = {
   view: 'overview',
-  lang: localStorage.getItem('tt.lang') || 'tr',
+  lang: localStorage.getItem('tt.lang') === 'tr' ? 'tr' : 'en', // English is the default; Turkish is optional
   activeWsTab: 'tracker',
   browserTabs: [],
   nextTabSeq: 1,
@@ -24,6 +24,8 @@ const state = {
 };
 
 const tr = (trStr, enStr) => (state.lang === 'en' ? enStr : trStr);
+// Locale for clock times shown in the UI (24-hour in both languages)
+const timeLocale = () => (state.lang === 'en' ? 'en-GB' : 'tr-TR');
 
 const I18N = {
   'nav.overview': ['Genel Bakış', 'Overview'],
@@ -36,27 +38,37 @@ const I18N = {
   'top.refresh': ['Yenile', 'Refresh'],
   'ws.tornHome': ['Torn Ana Sayfa', 'Torn Home'],
   'ws.company': ['Şirketim', 'My Company'],
+  'ws.travel': ['Rehab / Seyahat', 'Rehab / Travel'],
+  'ws.newTab': ['Yeni Torn Sekmesi Aç (Torn Ana Sayfa)', 'Open a new Torn tab (Torn Home)'],
+  'ws.back': ['Geri', 'Back'],
+  'ws.forward': ['İleri', 'Forward'],
+  'ws.reload': ['Yenile', 'Reload'],
+  'ws.urlPh': ["Torn URL veya Oyuncu ID (XID) yazıp Enter'a basın…", 'Enter a Torn URL or player ID (XID) and press Enter…'],
   'ws.go': ['Git', 'Go'],
   'ws.loginHelp': ['Oturum Aktar', 'Login Help'],
-  'ws.ext': ['Tarayıcıda', 'External'],
-  'ov.dayReset': ['Günün Bitmesine (18:00 TCT)', 'Day Reset (18:00 TCT)'],
+  'ws.loginHelpTitle': ['Google Giriş & Oturum Aktarma', 'Google sign-in & session import'],
+  'ws.ext': ['Tarayıcıda', 'In Browser'],
+  'ws.extTitle': ['Harici Tarayıcıda Aç', 'Open in your external browser'],
+  'ov.edu': ['Eğitim', 'Education'],
+  'ov.dayReset': ['Günün Bitmesine (18:00 TCT)', 'Until Day Reset (18:00 TCT)'],
   'ov.bars': ['Barlar', 'Bars'],
   'ov.battlePower': ['Savaş Gücü', 'Battle Stats'],
-  'stock.capacity': ['Depo Kapasitesi', 'Warehouse Capacity'],
+  'stock.capacity': ['Depo Kapasitesi', 'Storage Capacity'],
   'report.eyebrow': ['Günlük Satış & Sipariş Raporu', 'Daily Sales & Order Report'],
-  'report.targetStock': ['Hedef stok', 'Target cover'],
+  'report.targetStock': ['Hedef stok', 'Target stock'],
   'report.copyBtn': ['Raporu Kopyala', 'Copy Report'],
   'report.tableTitle': ['Ürün Bazlı Satış', 'Sales by Product'],
-  'report.tableSub': ['Son gün verisi · ortalama son 7 kayıt', 'Last day · average of last 7 records'],
+  'report.tableSub': ['Son gün verisi · ortalama son 7 kayıt', 'Last day · average of the last 7 records'],
   'report.orderList': ['Sipariş Listesi', 'Order List'],
   'emp.tableTitle': ['Çalışanlar & Addiction', 'Employees & Addiction'],
-  'emp.tableSub': ['Addiction etkinliği düşürür · -8 ve sonrası için REHAB önerilir', 'Addiction reduces effectiveness · REHAB recommended at -8 or worse'],
+  'emp.tableSub': ['Addiction etkinliği düşürür · -8 ve sonrası için REHAB önerilir', 'Addiction lowers effectiveness · Rehab recommended at -8 or worse'],
   'inc.pnlTitle': ['Günlük Gelir Tablosu', 'Daily Income Statement'],
   'inc.lastDay': ['Son gün', 'Last day'],
-  'inc.donutTitle': ['Ürün Gelir Dağılımı', 'Product Revenue Breakdown'],
+  'inc.donutTitle': ['Ürün Gelir Dağılımı', 'Revenue by Product'],
   'inc.histTitle': ['Gelir Geçmişi', 'Income History'],
   'inc.dayByDay': ['Gün Gün', 'Day by Day'],
   'war.enemyFaction': ['Rakip Faction', 'Enemy Faction'],
+  'war.factionPh': ['Faction ID gir (örn. 8205)', 'Enter faction ID (e.g. 8205)'],
   'war.scanBtn': ['Tara', 'Scan'],
   'war.noXanax': ['Xanaxsız', 'No Xanax'],
   'war.withXanax': ['Xanaxlı', 'With Xanax'],
@@ -64,13 +76,18 @@ const I18N = {
   'war.onlyFit': ['Sadece uygun', 'Good fit only'],
   'set.title': ['API Ayarları', 'API Settings'],
   'set.apiKeyLabel': ['Torn API Key (Limited)', 'Torn API Key (Limited)'],
-  'set.ffKeyLabel': ['FFScouter Key (boşsa Torn key kullanılır)', 'FFScouter Key (uses Torn key if blank)'],
-  'set.coverLabel': ['Hedef stok (gün)', 'Target cover (days)'],
-  'set.pollLabel': ['Arka plan kayıt (dk)', 'Background poll (min)'],
+  'set.keyPh': ['Değiştirmek için yeni key gir', 'Enter a new key to change it'],
+  'set.ffKeyLabel': ['FFScouter Key (boşsa Torn key kullanılır)', 'FFScouter Key (uses the Torn key if blank)'],
+  'set.optionalPh': ['Opsiyonel', 'Optional'],
+  'set.coverLabel': ['Hedef stok (gün)', 'Target stock (days)'],
+  'set.pollLabel': ['Arka plan kayıt (dk)', 'Background refresh (min)'],
   'set.saveBtn': ['Kaydet', 'Save'],
-  'auth.login': ['Giriş Yap', 'Sign In'],
+  'auth.sub': ["Devam etmek için Torn <b>Limited Access</b> API key'ini gir.", 'Enter your Torn <b>Limited Access</b> API key to continue.'],
+  'auth.showHide': ['Göster / gizle', 'Show / hide'],
+  'auth.login': ['Giriş Yap', 'Log In'],
   'auth.getKey': ['Limited API key oluştur →', 'Create a Limited API key →'],
   'auth.privacy': ["Key yalnızca bu bilgisayarda saklanır ve api.torn.com'a gönderilir. Ayrı bir FFScouter key girmezsen Savaş Hedefleri için ffscouter.com'a da gönderilir.", 'Your key is stored only on this computer and sent to api.torn.com. Unless you enter a separate FFScouter key, it is also sent to ffscouter.com for War Targets.'],
+  'auth.creditTitle': ['Torn profili', 'Torn profile'],
   // Torn API kullanım koşulları (ToS) tablosu — key'in girildiği ekranda gösterilmesi gerekir
   'tos.title': ['API kullanım koşulları (Torn ToS)', 'API terms of use (Torn ToS)'],
   'tos.storage': ['Veri saklama', 'Data storage'],
@@ -82,7 +99,7 @@ const I18N = {
   'tos.keyStorage': ['Key saklama ve paylaşım', 'Key storage & sharing'],
   'tos.keyStorageV': ["Bu bilgisayarda config.json içinde. api.torn.com'a, ayrı FFScouter key yoksa ffscouter.com'a gönderilir. Başka yere gönderilmez.", 'In config.json on this computer. Sent to api.torn.com, and to ffscouter.com if no separate FFScouter key is set. Sent nowhere else.'],
   'tos.access': ['Key erişim seviyesi', 'Key access level'],
-  'tos.accessV': ['Limited Access. Log okuyan özellikler için isteğe bağlı ayrı bir "log" key.', 'Limited Access. Optional separate "log" key for log-based features.'],
+  'tos.accessV': ['Limited Access. Log okuyan özellikler için isteğe bağlı ayrı bir "log" key.', 'Limited Access. An optional separate "log" key for features that read logs.'],
   'set.logout': ['Çıkış Yap', 'Log Out'],
   'set.tab.account': ['Hesap', 'Account'],
   'set.tab.general': ['Genel', 'General'],
@@ -92,61 +109,91 @@ const I18N = {
   'set.tab.events': ['Etkinlikler', 'Events'],
   'set.keysTitle': ['API anahtarları', 'API keys'],
   'set.logKeyLabel': ['Log key (isteğe bağlı)', 'Log key (optional)'],
-  'set.logKeyCreate': ["Torn'da log key oluştur ↗", 'Create log key in Torn ↗'],
+  'set.logKeyCreate': ["Torn'da log key oluştur ↗", 'Create a log key in Torn ↗'],
   'set.logKeyRemove': ["Log key'i sil", 'Remove log key'],
   'set.trackTitle': ['Takip', 'Tracking'],
   'set.updateTitle': ['Güncelleme', 'Updates'],
   'set.updateCheck': ['Şimdi kontrol et', 'Check now'],
   'set.appTitle': ['Uygulama', 'App'],
-  'set.pagesHint': ['Kapattığın sayfa menüden kalkar; alt seçenekler sayfadaki kartları açıp kapatır', 'Turned-off pages leave the menu; sub-options toggle cards on that page'],
+  'set.pagesHint': ['Kapattığın sayfa menüden kalkar; alt seçenekler sayfadaki kartları açıp kapatır', 'Pages you turn off are removed from the menu; sub-options show or hide cards on that page'],
   'set.notifyHint': ['Masaüstü bildirimleri', 'Desktop notifications'],
   'set.tornHint': ['Torn sekmelerinde çalışır · değişiklik sayfa yenilenince geçerli olur', 'Runs in Torn tabs · changes apply when the page reloads'],
   'set.ffStatusTitle': ['FFScouter Durumu', 'FFScouter Status'],
   'set.checkBtn': ['Kontrol et', 'Check'],
+  // Torn giriş / oturum aktarma penceresi (gömülü tarayıcı)
+  'login.title': ['🔑 Torn Giriş & Oturum Aktarma (Google Hesabı İçin)', '🔑 Torn Login & Session Import (for Google Accounts)'],
+  'login.close': ['Kapat', 'Close'],
+  'login.why': [
+    `<b>Neden Google "Oturumunuz açılamadı / Bu tarayıcı güvenli olmayabilir" diyor?</b><br>
+            Google, masaüstü <code>.exe</code> uygulamalarının (Electron) içindeki gömülü tarayıcılarda Google hesabıyla girişi engeller. TornTracker bu yüzden Google girişini <b>bilgisayarındaki Chrome/Edge'de</b> yaptırıp oturumu otomatik olarak uygulamaya aktarır.`,
+    `<b>Why does Google say "Couldn't sign you in / This browser or app may not be secure"?</b><br>
+            Google blocks Google-account sign-in inside browsers embedded in desktop <code>.exe</code> apps (Electron). So TornTracker has you sign in with Google <b>in Chrome/Edge on your computer</b> and then imports the session into the app automatically.`,
+  ],
+  'login.m1Title': ['Yöntem 1 · Google ile Giriş (Chrome/Edge üzerinden) — Önerilen', 'Method 1 · Sign in with Google (via Chrome/Edge) — Recommended'],
+  'login.m1Body': [
+    `Butona bas → Chrome (yoksa Edge) TornTracker'a özel ayrı bir pencerede Torn'u açar → orada <b>Google ile giriş</b> yap. Giriş algılanınca oturum buraya aktarılır ve o pencere kendiliğinden kapanır. Torn'daki Google (G) butonuna basınca da bu akış otomatik başlar.`,
+    `Press the button → Chrome (or Edge if Chrome isn't installed) opens Torn in a separate window just for TornTracker → <b>sign in with Google</b> there. Once the login is detected, the session is imported here and that window closes by itself. Pressing the Google (G) button on Torn also starts this flow automatically.`,
+  ],
+  'login.m1Btn': ['🔐 Google ile Giriş Yap', '🔐 Sign in with Google'],
+  'login.m2Title': ['Yöntem 2 · Torn E-posta & Şifre', 'Method 2 · Torn Email & Password'],
+  'login.m2Body': [
+    `Torn giriş ekranında Google (G) butonu yerine doğrudan <b>E-posta ve Şifrenizi</b> yazarak giriş yapın.<br><br>
+              Hesabınızı Google ile açtıysanız ve Torn şifreniz yoksa, Torn giriş ekranında bir kez <b>"Forgot Password?"</b> diyerek e-postanıza şifre tanımlayabilirsiniz.`,
+    `On the Torn login screen, type your <b>email and password</b> instead of using the Google (G) button.<br><br>
+              If you created your account with Google and have no Torn password, click <b>"Forgot Password?"</b> once on the Torn login screen to set one by email.`,
+  ],
+  'login.m3Title': ['Yöntem 3 · Tarayıcıdaki Açık Oturumu Elle Aktar', 'Method 3 · Import an Open Browser Session Manually'],
+  'login.m3Body': [
+    `Normal tarayıcınızda (Chrome/Edge) Torn açıkken <b>F12</b> → <b>Application</b> → <b>Cookies</b> → <code>https://www.torn.com</code> bölümünden <code>PHPSESSID</code> (ve varsa <code>uid</code> / <code>pass</code>) değerini aşağıya yapıştırın:`,
+    `With Torn open in your normal browser (Chrome/Edge), go to <b>F12</b> → <b>Application</b> → <b>Cookies</b> → <code>https://www.torn.com</code> and paste the <code>PHPSESSID</code> value (plus <code>uid</code> / <code>pass</code> if present) below:`,
+  ],
+  'login.sessLabel': ['PHPSESSID (Zorunlu)', 'PHPSESSID (required)'],
+  'login.sessPh': ['Örn: a1b2c3d4e5f6...', 'e.g. a1b2c3d4e5f6...'],
+  'login.uidLabel': ['uid (Opsiyonel - Kalıcı Oturum)', 'uid (optional, keeps you logged in)'],
+  'login.uidPh': ['Örn: 1234567', 'e.g. 1234567'],
+  'login.passLabel': ['pass (Opsiyonel) veya Tüm Cookie Metni', 'pass (optional) or the full cookie string'],
+  'login.passPh': ['pass değeri veya PHPSESSID=...; uid=...; pass=...', 'pass value or PHPSESSID=...; uid=...; pass=...'],
+  'login.apply': ['✓ Oturumu Uygula & Yenile', '✓ Apply Session & Reload'],
 };
 
 const VIEW_META = {
   overview: { tr: ['Genel Bakış', 'Anlık durum, sayaçlar ve savaş gücü'], en: ['Overview', 'Live status, timers and battle stats'] },
-  stock: { tr: ['Stok Durumu', 'Şirket deposu, ürün stokları ve kalan gün'], en: ['Stock Status', 'Company storage, product inventory and cover days'] },
-  report: { tr: ['Günlük Rapor', 'Ne kadar satıldı, ne kadar sipariş vermelisin'], en: ['Daily Report', 'Daily sales breakdown and recommended restock orders'] },
+  stock: { tr: ['Stok Durumu', 'Şirket deposu, ürün stokları ve kalan gün'], en: ['Stock Status', 'Company storage, product stock and days left'] },
+  report: { tr: ['Günlük Rapor', 'Ne kadar satıldı, ne kadar sipariş vermelisin'], en: ['Daily Report', 'What sold and how much you should order'] },
   employees: { tr: ['Çalışanlar', 'Addiction, effectiveness ve aktivite takibi'], en: ['Employees', 'Addiction, effectiveness and activity tracking'] },
   income: { tr: ['Gelir Tablosu', 'Gelir, maliyet, maaş ve net kâr'], en: ['Income Statement', 'Revenue, COGS, wages and net profit'] },
-  war: { tr: ['Savaş Hedefleri', 'Savaş gücüne uygun rakipler · FFScouter'], en: ['War Targets', 'Opponent targets matched to your battle stats · FFScouter'] },
+  war: { tr: ['Savaş Hedefleri', 'Savaş gücüne uygun rakipler · FFScouter'], en: ['War Targets', 'Opponents that suit your battle stats · FFScouter'] },
   settings: { tr: ['Ayarlar', 'API key ve rapor tercihleri'], en: ['Settings', 'API keys and reporting preferences'] },
 };
 
 function applyLang() {
   document.documentElement.lang = state.lang;
   $$('#lang-toggle button').forEach((b) => b.classList.toggle('active', b.dataset.lang === state.lang));
-  $$('[data-i18n]').forEach((el) => {
-    const pair = I18N[el.dataset.i18n];
-    if (pair) el.textContent = state.lang === 'en' ? pair[1] : pair[0];
-  });
-  const vm = VIEW_META[state.view]?.[state.lang] || VIEW_META.overview.tr;
+  // Static text in index.html: data-i18n (text), data-i18n-html (markup), data-i18n-title, data-i18n-placeholder
+  const pick = (key) => { const p = I18N[key]; return p ? (state.lang === 'en' ? p[1] : p[0]) : null; };
+  $$('[data-i18n]').forEach((el) => { const v = pick(el.dataset.i18n); if (v != null) el.textContent = v; });
+  $$('[data-i18n-html]').forEach((el) => { const v = pick(el.dataset.i18nHtml); if (v != null) el.innerHTML = v; });
+  $$('[data-i18n-title]').forEach((el) => { const v = pick(el.dataset.i18nTitle); if (v != null) el.title = v; });
+  $$('[data-i18n-placeholder]').forEach((el) => { const v = pick(el.dataset.i18nPlaceholder); if (v != null) el.placeholder = v; });
+  const vm = VIEW_META[state.view]?.[state.lang] || VIEW_META.overview[state.lang];
   $('#view-title').textContent = vm[0];
   $('#view-sub').textContent = vm[1];
   $$('#cover-days option').forEach((opt) => {
     const v = opt.value;
     opt.textContent = state.lang === 'en' ? `${v} ${v === '1' ? 'day' : 'days'}` : `${v} gün`;
   });
-  const fi = $('#faction-input');
-  if (fi) fi.placeholder = tr('Faction ID gir (örn. 8205)', 'Enter Faction ID (e.g. 8205)');
-  const sk = $('#s-key');
-  if (sk) sk.placeholder = tr('Değiştirmek için yeni key gir', 'Enter new key to change');
-  const sf = $('#s-ff');
-  if (sf) sf.placeholder = tr('Opsiyonel', 'Optional');
-  const bu = $('#browser-url');
-  if (bu) bu.placeholder = tr("Torn URL veya Oyuncu ID (XID) yazıp Enter'a basın…", 'Enter Torn URL or Player ID (XID) and press Enter…');
-  const nt = $('#new-tab-btn');
-  if (nt) nt.title = tr('Yeni Torn Sekmesi Aç (Torn Ana Sayfa)', 'Open New Torn Tab (Torn Home)');
+  // Placeholder texts that live data replaces later
+  if (!state.overview) $$('[data-sub="drug"], [data-sub="edu"]').forEach((el) => { el.textContent = tr('Yükleniyor…', 'Loading…'); });
+  if (!state.targets) { const wt = $('#war-title'); if (wt) wt.textContent = tr('Hedefler', 'Targets'); }
+  const ub = $('#update-btn');
+  if (ub && !state.update) ub.title = tr('Güncellemeleri denetle', 'Check for updates');
+  $$('[data-close-tab]').forEach((b) => { b.title = tr('Sekmeyi kapat', 'Close tab'); });
 
   const wf = $('#war-footnote');
   if (wf) wf.innerHTML = tr(
     '<b>Oran</b> = Rakip tahmini toplam BS ÷ senin seçili efektif toplam BS. <b>FF</b> ≈ 1 + 8/3·√oran (en fazla 3; oran ≥ 0.56 → FF 3). <b>Puan</b> = tahmini kazanma × FF (ödeme payın buna göre). <span class="fit easy">Kolay</span> &lt; 0.35 · <span class="fit ideal">İdeal</span> 0.35–0.80 (FF 2.6–3.0) · <span class="fit risk">Riskli</span> 0.80–1.10 · <span class="fit avoid">Kaçın</span> &gt; 1.10. Kazanma yüzdesi stat tahminine dayalı kaba bir tahmindir.',
-    '<b>Ratio</b> = Opponent estimated total BS ÷ your selected effective total BS. <b>FF</b> ≈ 1 + 8/3·√ratio (max 3; ratio ≥ 0.56 → FF 3). <b>Points</b> = est. win chance × FF (your payout share follows this). <span class="fit easy">Easy</span> &lt; 0.35 · <span class="fit ideal">Ideal</span> 0.35–0.80 (FF 2.6–3.0) · <span class="fit risk">Risky</span> 0.80–1.10 · <span class="fit avoid">Avoid</span> &gt; 1.10. Win % is a rough estimate based on stat estimates.'
+    '<b>Ratio</b> = opponent\'s estimated total BS ÷ your selected effective total BS. <b>FF</b> ≈ 1 + 8/3·√ratio (max 3; ratio ≥ 0.56 → FF 3). <b>Points</b> = est. win chance × FF (your payout share follows this). <span class="fit easy">Easy</span> &lt; 0.35 · <span class="fit ideal">Ideal</span> 0.35–0.80 (FF 2.6–3.0) · <span class="fit risk">Risky</span> 0.80–1.10 · <span class="fit avoid">Avoid</span> &gt; 1.10. Win % is a rough guess based on estimated stats.'
   );
-  const asub = $('#auth-body .auth-sub');
-  if (asub) asub.innerHTML = tr("Devam etmek için Torn <b>Limited Access</b> API key'ini gir.", 'Enter your Torn <b>Limited Access</b> API key to continue.');
   const sil = $('#set-info-list');
   if (sil) sil.innerHTML = tr(
     `<div><span>Veri dosyası</span><span class="mono">data/history.json</span></div>
@@ -154,7 +201,7 @@ function applyLang() {
      <div><span>Savaş gücü kaynağı</span><span>FFScouter API + Torn rank tahmini</span></div>`,
     `<div><span>History file</span><span class="mono">data/history.json</span></div>
      <div><span>Config file</span><span class="mono">data/config.json</span></div>
-     <div><span>Battle stat source</span><span>FFScouter API + Torn rank estimate</span></div>`
+     <div><span>Battle stats source</span><span>FFScouter API + Torn rank estimate</span></div>`
   );
 }
 
@@ -228,7 +275,7 @@ async function sendRehabChat(emp, btn) {
     if (r?.ok && r.sent !== false) toast(tr(`✓ Rehab mesajı ${name} kişisine chat'ten gönderildi`, `✓ Rehab message sent to ${name} via chat`));
     else if (r?.ok) toast(tr(`Mesaj chat kutusuna yazıldı · Enter ile gönder`, `Message typed into chat · press Enter to send`));
     else if (r?.step === 'load' && state.tornLoggedIn === false) await fallback(tr("Torn'a giriş yapılmamış", 'not logged in to Torn'));
-    else await fallback(r?.step || 'hata');
+    else await fallback(r?.step || tr('hata', 'error'));
   } catch (e) {
     await fallback(e.message);
   } finally {
@@ -282,7 +329,7 @@ function statusTimerChip(st, withOkay = false) {
   const until = Number(st.until) || 0;
   if ((st.state === 'Hospital' || st.state === 'Jail') && until > nowTct() / 1000) {
     const icon = st.state === 'Hospital' ? '🏥' : '⛓';
-    return `<span class="chip ${si.cls} mono hosp-timer" title="${esc(st.description || si.text)} · ${tr('çıkış', 'out at')} ${new Date((until * 1000) - state.skew).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}">${icon} <span data-until="${until}">${clock(until - nowTct() / 1000)}</span></span>`;
+    return `<span class="chip ${si.cls} mono hosp-timer" title="${esc(st.description || si.text)} · ${tr('çıkış', 'out at')} ${new Date((until * 1000) - state.skew).toLocaleTimeString(timeLocale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' })}">${icon} <span data-until="${until}">${clock(until - nowTct() / 1000)}</span></span>`;
   }
   if (!withOkay) return '';
   return `<span class="chip ${si.cls}" title="${esc(st.description || '')}">${si.text}</span>`;
@@ -299,7 +346,7 @@ function showView(v) {
   state.view = v;
   $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === v));
   $$('.view').forEach((s) => s.classList.toggle('active', s.id === `view-${v}`));
-  const vm = VIEW_META[v]?.[state.lang] || VIEW_META.overview.tr;
+  const vm = VIEW_META[v]?.[state.lang] || VIEW_META.overview[state.lang];
   $('#view-title').textContent = vm[0];
   $('#view-sub').textContent = vm[1];
   location.hash = v;
@@ -310,14 +357,17 @@ function showView(v) {
 $('#nav').addEventListener('click', (e) => { const b = e.target.closest('.nav-item'); if (b) showView(b.dataset.view); });
 $('#lang-toggle').addEventListener('click', (e) => {
   const b = e.target.closest('[data-lang]'); if (!b) return;
-  state.lang = b.dataset.lang;
+  state.lang = b.dataset.lang === 'tr' ? 'tr' : 'en';
   localStorage.setItem('tt.lang', state.lang);
+  syncLangToServer();
   applyLang();
   if (state.overview) renderOverview();
   if (state.company) renderCompany();
   if (state.wars) renderWarChips();
   if (state.targets) renderTargets();
   if (state.config) loadConfig();
+  if (state.update) renderUpdateBtn();
+  renderTornToolsBtn();
   window.onLangChanged?.();
   tick();
 });
@@ -353,7 +403,7 @@ function renderOverview() {
   $('#me-chip').style.cursor = 'pointer';
   $('#me-chip').dataset.openUrl = `https://www.torn.com/profiles.php?XID=${p.id}`;
   $('#me-chip').dataset.tabLabel = `${decode(p.name)} [${p.id}]`;
-  $('#me-chip').title = tr('Profilimi sekmede aç', 'Open my profile in tab');
+  $('#me-chip').title = tr('Profilimi sekmede aç', 'Open my profile in a tab');
   const fac = p.faction || {};
   const ftag = fac.faction_tag && fac.faction_tag !== 'None' ? fac.faction_tag : '';
   $('#me-chip').innerHTML = `<div class="avatar" style="background-image:url('${esc(p.image || '')}')"></div>
@@ -380,11 +430,11 @@ function renderOverview() {
   if (o.travel) chips.push(`<span class="chip blue">✈ ${esc(o.travel.description)}</span>`);
   if (o.drug.xanToday != null) chips.push(`<span class="chip tq">${tr('Bugün Xanax', 'Xanax Today')}: ${o.drug.xanToday}</span>`);
   if (o.drug.xantaken != null) chips.push(`<span class="chip">${tr('Toplam Xanax', 'Total Xanax')}: ${n0(o.drug.xantaken)}</span>`);
-  if (o.drug.refills != null) chips.push(`<span class="chip">Refill: ${n0(o.drug.refills)}</span>`);
+  if (o.drug.refills != null) chips.push(`<span class="chip">${tr('Refill', 'Refills')}: ${n0(o.drug.refills)}</span>`);
   chips.push(`<span class="chip ${o.cooldowns.booster ? 'warn' : ''}">Booster CD: <span data-cd="booster">${o.cooldowns.booster ? human(o.cooldowns.booster) : tr('yok', 'none')}</span></span>`);
   chips.push(`<span class="chip ${o.cooldowns.medical ? 'warn' : ''}">Medical CD: <span data-cd="medical">${o.cooldowns.medical ? human(o.cooldowns.medical) : tr('yok', 'none')}</span></span>`);
   if (o.bars.chain?.current) chips.push(`<span class="chip orange">Chain: ${o.bars.chain.current}</span>`);
-  if (o.bank) chips.push(`<span class="chip ${o.bank.timeLeft > 0 ? '' : 'green'}">🏦 ${tr('Banka', 'Bank')}: ${cmoney(o.bank.amount)} · ${o.bank.timeLeft > 0 ? `${human(o.bank.timeLeft)} ${tr('kaldı', 'left')}` : tr('bitti, çekilebilir', 'done, withdraw it')}</span>`);
+  if (o.bank) chips.push(`<span class="chip ${o.bank.timeLeft > 0 ? '' : 'green'}">🏦 ${tr('Banka', 'Bank')}: ${cmoney(o.bank.amount)} · ${o.bank.timeLeft > 0 ? `${human(o.bank.timeLeft)} ${tr('kaldı', 'left')}` : tr('bitti, çekilebilir', 'done, ready to withdraw')}</span>`);
   $('#mini-row').innerHTML = chips.join('');
 
   // battle stats
@@ -425,7 +475,7 @@ function tick() {
   const resetSec = 18 * 3600; // 18:00 TCT
   const left = secOfDay < resetSec ? (resetSec - secOfDay) : (86400 - secOfDay + resetSec);
   $('[data-timer="day"]').textContent = clock(left);
-  $('[data-sub="day"]').textContent = `18:00 TCT · ${tr('yerel', 'local')} ${new Date(Date.now() + left * 1000).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}`;
+  $('[data-sub="day"]').textContent = `18:00 TCT · ${tr('yerel', 'local')} ${new Date(Date.now() + left * 1000).toLocaleTimeString(timeLocale(), { hour: '2-digit', minute: '2-digit' })}`;
   setRing('#t-day', left / 86400, false);
 
   // stock order delivery countdowns
@@ -450,7 +500,7 @@ function tick() {
     const max = Number(localStorage.getItem('tt.drugMax')) || 8 * 3600;
     if (d > 0) {
       dv.textContent = clock(d); dv.classList.remove('ready');
-      const end = new Date(Date.now() + d * 1000).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+      const end = new Date(Date.now() + d * 1000).toLocaleTimeString(timeLocale(), { hour: '2-digit', minute: '2-digit' });
       $('[data-sub="drug"]').textContent = `${o.drug.xanaxActive ? tr('Xanax aktif', 'Xanax active') : (o.drug.icon ? decode(o.drug.icon).split(' - ')[1] || tr('Drug aktif', 'Drug active') : tr('Drug aktif', 'Drug active'))} · ${tr('biter', 'ends')} ${end}`;
       setRing('#t-drug', d / max, false);
     } else {
@@ -538,7 +588,7 @@ async function loadCompany(force = false) {
   } catch (e) {
     if (NOT_DIRECTOR_CODES.includes(Number(e.code))) { applyCompanyMode(false); return; }
     if (!state.company) {
-      setAlert('company', `<b>${tr('Şirket verisi alınamadı:', 'Failed to load company data:')}</b>&nbsp;${esc(e.message)} <span class="muted">${tr('(Stok ve detaylar için şirket direktörü olmalısın.)', '(You must be a company director for stock & details.)')}</span>`, 'warn');
+      setAlert('company', `<b>${tr('Şirket verisi alınamadı:', 'Failed to load company data:')}</b>&nbsp;${esc(e.message)} <span class="muted">${tr('(Stok ve detaylar için şirket direktörü olmalısın.)', '(You need to be a company director to see stock and details.)')}</span>`, 'warn');
     }
   }
 }
@@ -586,17 +636,17 @@ function renderOverviewCompany(c) {
   $('#ov-company').innerHTML = `
     <article class="glass card">
       <div class="card-head"><h3>${esc(c.company.name)}</h3><span class="chip tq">${'★'.repeat(c.company.rating || 0)}</span></div>
-      <span class="eyebrow">${tr('Son gün gelir (18:00 TCT)', 'Last day revenue (18:00 TCT)')}</span>
+      <span class="eyebrow">${tr('Son gün gelir (18:00 TCT)', "Last day's revenue (18:00 TCT)")}</span>
       <div class="big-num">${money(c.company.dailyIncome)}</div>
       <div class="ov-list">
         <div><span class="muted">${tr('Net kâr (tahmini)', 'Net profit (est.)')}</span><span class="mono ${c.income.net >= 0 ? 'pos' : 'neg'}">${money(c.income.net)}</span></div>
         <div><span class="muted">${tr('Müşteri', 'Customers')}</span><span class="mono">${n0(c.company.dailyCustomers)}</span></div>
-        <div><span class="muted">${tr('7 gün gelir', '7d revenue')}</span><span class="mono">${money(c.company.weeklyIncome)}</span></div>
+        <div><span class="muted">${tr('7 gün gelir', '7-day revenue')}</span><span class="mono">${money(c.company.weeklyIncome)}</span></div>
         <div><span class="muted">${tr('Şirket fonu', 'Company funds')}</span><span class="mono">${money(c.company.funds)}</span></div>
       </div>
     </article>
     <article class="glass card">
-      <div class="card-head"><h3>${tr('Stok & Sipariş Süreleri', 'Stock & Order Timers')}</h3><span class="chip ${alertsP.length ? 'warn' : 'green'}">${alertsP.length ? alertsP.length + tr(' ürün düşük', ' low') : tr('Hepsi iyi', 'All good')}</span></div>
+      <div class="card-head"><h3>${tr('Stok & Sipariş Süreleri', 'Stock & Order Timers')}</h3><span class="chip ${alertsP.length ? 'warn' : 'green'}">${alertsP.length ? alertsP.length + tr(' ürün düşük', ' low on stock') : tr('Hepsi iyi', 'All good')}</span></div>
       <div class="ov-list">${c.products.map((p) => {
         const od = p.orderDelivery;
         const eta = od ? `<span class="mono tq-text" data-eta="${od.etaMs}">—</span>` : `<span class="muted">${tr('yok', 'none')}</span>`;
@@ -605,7 +655,7 @@ function renderOverviewCompany(c) {
       }).join('')}</div>
     </article>
     <article class="glass card">
-      <div class="card-head"><h3>Addiction & Rehab</h3><span class="chip ${critAddicts.length ? 'danger' : warnAddicts.length ? 'orange' : 'green'}">${critAddicts.length ? critAddicts.length + tr(' kişi ≤ -8 (Rehab)', ' ≤ -8 (Rehab)') : warnAddicts.length ? warnAddicts.length + tr(' kişi ≤ -5', ' ≤ -5') : tr('Temiz', 'Clean')}</span></div>
+      <div class="card-head"><h3>Addiction & Rehab</h3><span class="chip ${critAddicts.length ? 'danger' : warnAddicts.length ? 'orange' : 'green'}">${critAddicts.length ? critAddicts.length + tr(' kişi ≤ -8 (Rehab)', ' at ≤ -8 (Rehab)') : warnAddicts.length ? warnAddicts.length + tr(' kişi ≤ -5', ' at ≤ -5') : tr('Temiz', 'Clean')}</span></div>
       <div class="ov-list">${c.employees.slice(0, 6).map((e) => `<div><span>${esc(e.name)} <span class="sub-text">${esc(e.position)}</span></span><span style="display:inline-flex;align-items:center;gap:6px">${addictionChip(e.addiction)}${e.addiction < 0 ? `<button class="btn sm ghost" data-copy-rehab="${e.id}" title="${tr('Rehab mesajını kopyala (EN)', 'Copy Rehab message (EN)')}">📋</button>` : ''}</span></div>`).join('')}</div>
     </article>`;
 }
@@ -622,10 +672,10 @@ function renderStock(c) {
       : `${tr('tahmini', 'estimate')} · ${od.deliveryHours}${tr('sa kargo', 'h transit')}`);
   const hasEstimates = onOrderProds.some((p) => p.orderDelivery.source !== 'torn');
   const canSync = !!window.electronAPI?.tabCreate;
-  const seenAt = c.deliveriesSeenAt ? new Date(c.deliveriesSeenAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : null;
+  const seenAt = c.deliveriesSeenAt ? new Date(c.deliveriesSeenAt).toLocaleTimeString(timeLocale(), { hour: '2-digit', minute: '2-digit' }) : null;
   $('#stock-kpis').innerHTML = [
-    kpi(tr('Stoktaki ürün', 'In stock'), n0(c.totals.inStock), `${c.products.length} ${tr('çeşit', 'products')}`),
-    kpi(tr('Siparişte (Yolda)', 'On order (Transit)'), n0(c.totals.onOrder), firstEta ? `${tr('Teslim', 'ETA')}: ${firstEta.source === 'torn' ? '' : '~'}${new Date(firstEta.etaMs).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}` : tr('aktif sipariş yok', 'no active orders')),
+    kpi(tr('Stoktaki ürün', 'In stock'), n0(c.totals.inStock), `${c.products.length} ${tr('çeşit', c.products.length === 1 ? 'product' : 'products')}`),
+    kpi(tr('Siparişte (Yolda)', 'On order (in transit)'), n0(c.totals.onOrder), firstEta ? `${tr('Teslim', 'ETA')}: ${firstEta.source === 'torn' ? '' : '~'}${new Date(firstEta.etaMs).toLocaleTimeString(timeLocale(), { hour: '2-digit', minute: '2-digit' })}` : tr('aktif sipariş yok', 'no active orders')),
     kpi(tr('İlk teslimat', 'First delivery'), firstEta ? `<span data-eta="${firstEta.etaMs}">${clock((firstEta.etaMs - Date.now()) / 1000)}</span>` : '—', firstEta ? etaHint(firstEta) : tr('Sipariş yok', 'No orders'), 'tq'),
     kpi(tr('Depo doluluğu', 'Storage used'), s.space ? pct(s.used / s.space) : '—', s.space ? `${n0(s.free)} ${tr('boş alan', 'free space')}` : ''),
     kpi(tr('Şirket fonu', 'Company funds'), cmoney(c.company.funds), `${tr('Reklam', 'Ads')} ${cmoney(c.company.ads)}/${tr('gün', 'day')}`),
@@ -636,9 +686,9 @@ function renderStock(c) {
     <div class="card-head wrap">
       <div>
         <h3>🚚 ${tr('Sipariş Zamanı', 'Order Timing')}</h3>
-        <span class="muted">${onOrderProds.length ? tr(`${onOrderProds.length} üründe toplam ${n0(c.totals.onOrder)} adet sipariş yolda · Şirket gün sonu: 18:00 TCT (<span class="mono" data-eta="${c.nextResetMs}">—</span> kaldı)`, `${n0(c.totals.onOrder)} units on order across ${onOrderProds.length} products · Company reset: 18:00 TCT (<span class="mono" data-eta="${c.nextResetMs}">—</span> left)`) : tr('Şu an yolda olan sipariş bulunmuyor.', 'No stock orders currently in transit.')}</span>
+        <span class="muted">${onOrderProds.length ? tr(`${onOrderProds.length} üründe toplam ${n0(c.totals.onOrder)} adet sipariş yolda · Şirket gün sonu: 18:00 TCT (<span class="mono" data-eta="${c.nextResetMs}">—</span> kaldı)`, `${n0(c.totals.onOrder)} units on order across ${onOrderProds.length} ${onOrderProds.length === 1 ? 'product' : 'products'} · Company reset: 18:00 TCT (<span class="mono" data-eta="${c.nextResetMs}">—</span> left)`) : tr('Şu an yolda olan sipariş bulunmuyor.', 'No stock orders currently in transit.')}</span>
         ${onOrderProds.length ? `<div class="sub-text" style="margin-top:4px">${hasEstimates
-          ? `⚠ ${tr('Süreler tahmini. Kesin süre için Torn\'da şirket stok sayfasını aç; LRX "Delivered in" sayaçlarını otomatik okur.', 'Times are estimates. Open the company stock page in Torn; LRX reads the "Delivered in" timers automatically.')}`
+          ? `⚠ ${tr('Süreler tahmini. Kesin süre için Torn\'da şirket stok sayfasını aç; LRX "Delivered in" sayaçlarını otomatik okur.', 'Times are estimates. For exact times, open the company stock page in Torn; LRX reads the "Delivered in" timers automatically.')}`
           : `✓ ${tr(`Süreler Torn'un kendi sayacından${seenAt ? ` (okundu ${seenAt})` : ''}`, `Times from Torn's own timers${seenAt ? ` (read ${seenAt})` : ''}`)}`}</div>` : ''}
       </div>
       <div class="delivery-controls">
@@ -674,14 +724,14 @@ function renderStock(c) {
         <div><small>${tr('Stokta', 'In Stock')}</small><strong>${n0(p.in_stock)}</strong></div>
         <div><small>${tr('Siparişte', 'On Order')}</small><strong>${n0(p.on_order)}</strong></div>
         <div><small>${tr('Ort. satış / gün', 'Avg. Sales / Day')}</small><strong>${n0(p.avgDaily)}</strong></div>
-        <div><small>${tr('Son gün satış', 'Sold Yesterday')}</small><strong>${n0(p.sold_amount)}</strong></div>
+        <div><small>${tr('Son gün satış', 'Last Day Sales')}</small><strong>${n0(p.sold_amount)}</strong></div>
         <div><small>${tr('Stok süresi', 'Stock Duration')}</small><strong>${daysTxt(p.daysLeft)}${tr('g', 'd')} <span class="muted">(${hoursTxt(p.hoursLeft)})</span></strong></div>
         <div><small>${tr('+ Sipariş ile', '+ With Order')}</small><strong>${daysTxt(p.daysLeftWithOrder)}${tr('g', 'd')} <span class="muted">(${hoursTxt(p.hoursLeftWithOrder)})</span></strong></div>
       </div>
       <div class="product-delivery">
         ${od ? `<div class="pd-row"><span>🚚 ${tr('Teslimata kalan', 'Delivery ETA')} <span class="chip tq mono">+${n0(p.on_order)}</span></span><strong class="mono tq-text" data-eta="${od.etaMs}">${clock((od.etaMs - Date.now()) / 1000)}</strong></div>
           <div class="bar" style="height:4px;margin-top:6px"><i data-eta-bar="${od.etaMs}" data-eta-total="${od.cycleTotalMs}" style="width:50%;background:var(--tq)"></i></div>
-          <div class="pd-row" style="margin-top:7px"><span class="sub-text">${tr('Varış', 'Arrives')} <b class="mono">${od.source === 'torn' ? '' : '~'}${new Date(od.etaMs).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</b> · ${etaHint(od)}</span><span class="chip ${od.safeUntilDelivery ? 'green' : 'danger'}">${od.safeUntilDelivery ? tr('Yeterli ✓', 'Safe ✓') : tr('Önce biter ⚠', 'Runs out ⚠')}</span></div>` : `<div class="pd-row"><span class="muted">${tr('Yolda sipariş yok', 'No order in transit')}</span><span class="muted">—</span></div>`}
+          <div class="pd-row" style="margin-top:7px"><span class="sub-text">${tr('Varış', 'Arrives')} <b class="mono">${od.source === 'torn' ? '' : '~'}${new Date(od.etaMs).toLocaleTimeString(timeLocale(), { hour: '2-digit', minute: '2-digit' })}</b> · ${etaHint(od)}</span><span class="chip ${od.safeUntilDelivery ? 'green' : 'danger'}">${od.safeUntilDelivery ? tr('Yeterli ✓', 'Safe ✓') : tr('Önce biter ⚠', 'Runs out ⚠')}</span></div>` : `<div class="pd-row"><span class="muted">${tr('Yolda sipariş yok', 'No order in transit')}</span><span class="muted">—</span></div>`}
       </div>
       <div class="product-foot"><span class="muted">${tr('Önerilen sipariş', 'Suggested order')}</span>${p.need ? `<strong class="tq-text mono">${n0(p.need)} ${tr('adet', 'units')} · ${cmoney(p.orderCost)}</strong>` : `<span class="chip green">${tr('Gerek yok', 'None needed')}</span>`}</div>
     </article>`;
@@ -695,19 +745,19 @@ function renderReport(c) {
   const samples = Math.max(...c.products.map((p) => p.samples), 0);
   $('#report-note').textContent = tr(
     `Ortalama satış ${samples || 1} günlük kayıttan hesaplandı · Hedef: ${c.coverDays} günlük stok · Sonraki yenilenme: 18:00 TCT${c.storage.limited ? ' · ⚠ Depo kapasitesi nedeniyle siparişler orantılı azaltıldı' : ''}`,
-    `Average sales calculated from ${samples || 1} daily records · Target: ${c.coverDays} days cover · Next reset: 18:00 TCT${c.storage.limited ? ' · ⚠ Orders scaled down to fit warehouse capacity' : ''}`
+    `Average sales based on ${samples || 1} daily ${(samples || 1) === 1 ? 'record' : 'records'} · Target: ${c.coverDays} ${Number(c.coverDays) === 1 ? 'day' : 'days'} of stock · Next reset: 18:00 TCT${c.storage.limited ? ' · ⚠ Orders scaled down to fit storage capacity' : ''}`
   );
   $('#report-kpis').innerHTML = [
     kpi(tr('Satılan ürün', 'Units sold'), n0(t.sold), `${n0(c.company.dailyCustomers)} ${tr('müşteri', 'customers')}`),
     kpi(tr('Gelir', 'Revenue'), money(t.revenue), '', 'tq'),
-    kpi(tr('Ürün maliyeti', 'COGS'), money(t.cogs), pct(t.revenue ? t.cogs / t.revenue : 0) + tr(' gelirin', ' of rev')),
+    kpi(tr('Ürün maliyeti', 'COGS'), money(t.cogs), pct(t.revenue ? t.cogs / t.revenue : 0) + tr(' gelirin', ' of revenue')),
     kpi(tr('Brüt kâr', 'Gross profit'), money(t.profit), pct(t.revenue ? t.profit / t.revenue : 0) + tr(' marj', ' margin'), t.profit >= 0 ? 'pos' : 'neg'),
     kpi(tr('Verilecek sipariş', 'Order to place'), n0(t.need) + ' ' + tr('adet', 'units'), money(t.orderCost) + (c.company.funds != null && t.orderCost > c.company.funds ? tr(' · fon yetersiz!', ' · insufficient funds!') : '')),
   ].join('');
 
   $('#report-table').innerHTML = `<thead><tr>
       <th>${tr('Ürün', 'Product')}</th><th class="num">${tr('Satılan', 'Sold')}</th><th class="num">${tr('Ort./gün', 'Avg/day')}</th><th class="num">${tr('Ort. fiyat', 'Avg price')}</th><th class="num">${tr('Gelir', 'Revenue')}</th>
-      <th class="num">${tr('Maliyet', 'COGS')}</th><th class="num">${tr('Kâr', 'Profit')}</th><th class="num">${tr('Marj', 'Margin')}</th><th class="num">${tr('Stok', 'Stock')}</th><th class="num">${tr('Sipariş', 'Order')}</th><th class="num">${tr('Sipariş Teslim', 'Delivery ETA')}</th><th class="num">${tr('Toplam Süre', 'Total Cover')}</th><th class="num">${tr('Önerilen', 'Suggested')}</th><th>${tr('Durum', 'Status')}</th>
+      <th class="num">${tr('Maliyet', 'COGS')}</th><th class="num">${tr('Kâr', 'Profit')}</th><th class="num">${tr('Marj', 'Margin')}</th><th class="num">${tr('Stok', 'Stock')}</th><th class="num">${tr('Sipariş', 'On Order')}</th><th class="num">${tr('Sipariş Teslim', 'Delivery ETA')}</th><th class="num">${tr('Toplam Süre', 'Total Duration')}</th><th class="num">${tr('Önerilen', 'Suggested')}</th><th>${tr('Durum', 'Status')}</th>
     </tr></thead><tbody>${c.products.map((p, i) => {
       const [sLbl, sCls] = statusLabel(p.status);
       return `<tr>
@@ -733,13 +783,13 @@ function reportText(c) {
   L.push(`📦 ${decode(c.company.name)} – ${tr('Günlük Rapor', 'Daily Report')} (${tctDateStr(nowTct())} · 18:00 TCT)`);
   L.push(`${tr('Gelir', 'Revenue')}: ${money(c.totals.revenue)} | ${tr('Müşteri', 'Customers')}: ${n0(c.company.dailyCustomers)} | ${tr('Brüt kâr', 'Gross profit')}: ${money(c.totals.profit)} | Net: ${money(c.income.net)}`);
   L.push('');
-  L.push(tr('Satışlar & Stok Süreleri:', 'Sales & Stock Cover:'));
+  L.push(tr('Satışlar & Stok Süreleri:', 'Sales & Stock Duration:'));
   c.products.forEach((p) => {
     const eta = p.orderDelivery ? ` · ${tr('teslimata', 'ETA')} ${clock((p.orderDelivery.etaMs - Date.now()) / 1000)}` : '';
     L.push(`• ${p.name}: ${n0(p.sold_amount)} ${tr('satıldı', 'sold')} (${money(p.sold_worth)}) · ${tr('stok', 'stock')} ${n0(p.in_stock)} (${hoursTxt(p.hoursLeft)}) + ${n0(p.on_order)} ${tr('siparişte', 'on order')}${eta} -> ${tr('toplam', 'total')} ${daysTxt(p.daysLeftWithOrder)} ${tr('gün', 'days')} (${hoursTxt(p.hoursLeftWithOrder)})`);
   });
   L.push('');
-  L.push(tr(`Sipariş (${c.coverDays} günlük hedef):`, `Restock Order (${c.coverDays} days target):`));
+  L.push(tr(`Sipariş (${c.coverDays} günlük hedef):`, `Restock Order (${c.coverDays}-day target):`));
   const need = c.products.filter((p) => p.need);
   if (!need.length) L.push(tr('• Sipariş gerekmiyor ✅', '• No order needed ✅'));
   need.forEach((p) => L.push(`• ${p.name}: ${n0(p.need)} ${tr('adet', 'units')} (${money(p.orderCost)})`));
@@ -752,7 +802,7 @@ $('#copy-report').addEventListener('click', async () => {
 });
 $('#cover-days').addEventListener('change', async (e) => {
   await api('/api/config', { method: 'POST', body: JSON.stringify({ coverDays: Number(e.target.value) }) });
-  await loadCompany(); toast(tr(`Hedef stok: ${e.target.value} gün`, `Target cover: ${e.target.value} days`));
+  await loadCompany(); toast(tr(`Hedef stok: ${e.target.value} gün`, `Target stock: ${e.target.value} ${e.target.value === '1' ? 'day' : 'days'}`));
 });
 
 /* ---------- Employees & Rehab Messages ---------- */
@@ -781,7 +831,7 @@ function renderEmployees(c) {
     kpi(tr('Günlük maaş', 'Daily wages'), money(c.income.wages)),
     kpi(tr('Ort. effectiveness', 'Avg. effectiveness'), n0(eff.length ? eff.reduce((a, b) => a + b, 0) / eff.length : 0), '', 'tq'),
     kpi(tr('Addiction olan', 'With addiction'), anyAddict.length, tr(`toplam ${e.reduce((a, x) => a + x.addiction, 0)} puan kayıp`, `${e.reduce((a, x) => a + x.addiction, 0)} total points lost`)),
-    kpi(tr('Rehab gereken (≤ -8)', 'Needs Rehab (≤ -8)'), critList.length, critList.length ? tr('Hemen mesaj gönder!', 'Send message now!') : tr(`${warnList.length} kişi -5..-7 arasında`, `${warnList.length} between -5..-7`), critList.length ? 'neg' : warnList.length ? 'tq' : 'pos'),
+    kpi(tr('Rehab gereken (≤ -8)', 'Needs Rehab (≤ -8)'), critList.length, critList.length ? tr('Hemen mesaj gönder!', 'Send a message now!') : tr(`${warnList.length} kişi -5..-7 arasında`, `${warnList.length} between -5 and -7`), critList.length ? 'neg' : warnList.length ? 'tq' : 'pos'),
   ].join('');
 
   // Filter targets for rehab message generator
@@ -804,8 +854,8 @@ function renderEmployees(c) {
   $('#rehab-card').innerHTML = `
     <div class="card-head wrap">
       <div>
-        <h3>💬 ${tr('Rehab Mesaj Oluşturucu (-8 ve Sonrası Kritik · EN)', 'Rehab Message Generator (-8 & Worse Critical · EN)')}</h3>
-        <span class="muted">${tr('Addiction yüksek çalışanlara tek tıkla kopyalayıp Torn üzerinden gönderebileceğin hazır İngilizce mesajlar', 'Ready-to-send English messages for employees with high addiction — copy or open directly in Torn')}</span>
+        <h3>💬 ${tr('Rehab Mesaj Oluşturucu (-8 ve Sonrası Kritik · EN)', 'Rehab Message Generator (-8 or worse is critical · EN)')}</h3>
+        <span class="muted">${tr('Addiction yüksek çalışanlara tek tıkla kopyalayıp Torn üzerinden gönderebileceğin hazır İngilizce mesajlar', 'Ready-made English messages for employees with high addiction: copy one or send it through Torn in one click')}</span>
       </div>
       <div class="rehab-tools">
         <div class="toggle" id="rehab-filter-toggle">
@@ -819,12 +869,12 @@ function renderEmployees(c) {
     <div class="rehab-tpl-bar">
       <div class="rehab-presets">
         <span class="sub-text">${tr('Şablon (EN):', 'Template (EN):')}</span>
-        <button class="btn sm ${state.rehabTplKey === 'en_polite' ? 'primary' : ''}" data-tpl="en_polite">EN · Polite (Default)</button>
-        <button class="btn sm ${state.rehabTplKey === 'en_firm' ? 'primary' : ''}" data-tpl="en_firm">EN · Urgent (-8 Critical)</button>
-        <button class="btn sm ${state.rehabTplKey === 'en_short' ? 'primary' : ''}" data-tpl="en_short">EN · Short & Casual</button>
+        <button class="btn sm ${state.rehabTplKey === 'en_polite' ? 'primary' : ''}" data-tpl="en_polite">${tr('EN · Kibar (Varsayılan)', 'EN · Polite (Default)')}</button>
+        <button class="btn sm ${state.rehabTplKey === 'en_firm' ? 'primary' : ''}" data-tpl="en_firm">${tr('EN · Acil (-8 Kritik)', 'EN · Urgent (-8 Critical)')}</button>
+        <button class="btn sm ${state.rehabTplKey === 'en_short' ? 'primary' : ''}" data-tpl="en_short">${tr('EN · Kısa & Samimi', 'EN · Short & Casual')}</button>
       </div>
       <div class="rehab-custom">
-        <input class="input" id="rehab-tpl-input" value="${esc(state.rehabTpl)}" placeholder="Message template ({name} and {addiction} are replaced automatically)" />
+        <input class="input" id="rehab-tpl-input" value="${esc(state.rehabTpl)}" placeholder="${tr('Mesaj şablonu ({name} ve {addiction} otomatik doldurulur)', 'Message template ({name} and {addiction} are filled in automatically)')}" />
       </div>
     </div>
 
@@ -854,11 +904,12 @@ function renderEmployees(c) {
     }).join('')}</div>` : `<div class="empty-state">${tr('Addiction değeri negatif olan çalışan bulunmuyor.', 'No employees with negative addiction.')}</div>`}`;
 
   const effParts = [['working_stats', '#c9a96a'], ['settled_in', '#d4d9df'], ['merits', '#3d78c9'], ['director_education', '#607d8b'], ['management', '#26b880']];
-  $('#emp-table').innerHTML = `<thead><tr><th>${tr('Çalışan', 'Employee')}</th><th>${tr('Durum', 'Status')}</th><th>${tr('Son aktivite', 'Last action')}</th><th class="num">${tr('Gün', 'Days')}</th><th class="num">${tr('Maaş', 'Wage')}</th><th class="num">MAN / INT / END</th><th>Effectiveness</th><th>Addiction</th><th>${tr('Trend (14g)', 'Trend (14d)')}</th><th class="num">${tr('İnaktif', 'Inactive')}</th><th>${tr('Rehab Mesajı', 'Rehab DM')}</th></tr></thead><tbody>${
+  const effNames = { working_stats: tr('Çalışma statları', 'Working stats'), settled_in: tr('Alışma', 'Settled in'), merits: 'Merits', director_education: tr('Direktör eğitimi', 'Director education'), management: tr('Yönetim', 'Management') };
+  $('#emp-table').innerHTML = `<thead><tr><th>${tr('Çalışan', 'Employee')}</th><th>${tr('Durum', 'Status')}</th><th>${tr('Son aktivite', 'Last action')}</th><th class="num">${tr('Gün', 'Days')}</th><th class="num">${tr('Maaş', 'Wage')}</th><th class="num">MAN / INT / END</th><th>Effectiveness</th><th>Addiction</th><th>${tr('Trend (14g)', 'Trend (14d)')}</th><th class="num">${tr('İnaktif', 'Inactive')}</th><th>${tr('Rehab Mesajı', 'Rehab Message')}</th></tr></thead><tbody>${
     e.map((x) => {
       const si = statusInfo(x.status);
       const total = x.effectiveness.total || 0;
-      const bar = effParts.map(([k, col]) => x.effectiveness[k] ? `<i style="width:${(x.effectiveness[k] / Math.max(total, 150)) * 100}%;background:${col}" title="${k}: ${x.effectiveness[k]}"></i>` : '').join('');
+      const bar = effParts.map(([k, col]) => x.effectiveness[k] ? `<i style="width:${(x.effectiveness[k] / Math.max(total, 150)) * 100}%;background:${col}" title="${effNames[k] || k}: ${x.effectiveness[k]}"></i>` : '').join('');
       return `<tr>
         <td><div class="name-cell"><a href="https://www.torn.com/profiles.php?XID=${x.id}" target="_blank" rel="noopener">${esc(x.name)}</a></div><div class="sub-text">${esc(x.position)}</div></td>
         <td><span class="chip ${si.cls}" title="${esc(x.status?.description)}">${si.text}</span></td>
@@ -882,7 +933,7 @@ function renderIncome(c) {
     <div class="pnl-row"><span>${tr('Satış geliri', 'Sales revenue')}</span><span>${money(i.revenue)}</span></div>
     <div class="pnl-row minus"><span>${tr('Ürün maliyeti', 'Cost of goods (COGS)')}</span><span>-${money(i.cogs)}</span></div>
     <div class="pnl-row"><span><b>${tr('Brüt kâr', 'Gross profit')}</b></span><span><b>${money(gross)}</b></span></div>
-    <div class="pnl-row minus"><span>${tr(`Maaşlar (${c.employees.length} çalışan)`, `Wages (${c.employees.length} employees)`)}</span><span>-${money(i.wages)}</span></div>
+    <div class="pnl-row minus"><span>${tr(`Maaşlar (${c.employees.length} çalışan)`, `Wages (${c.employees.length} ${c.employees.length === 1 ? 'employee' : 'employees'})`)}</span><span>-${money(i.wages)}</span></div>
     <div class="pnl-row minus"><span>${tr('Reklam bütçesi', 'Advertising budget')}</span><span>-${money(i.ads)}</span></div>
     <div class="pnl-row total ${i.net >= 0 ? 'pos' : 'neg'}"><span>${tr('Net kâr', 'Net profit')}</span><span>${money(i.net)}</span></div>
     <div class="pnl-row sub"><span>${tr('Müşteri (gün / hafta)', 'Customers (day / week)')}</span><span>${n0(i.customers)} / ${n0(i.weeklyCustomers)}</span></div>
@@ -905,11 +956,11 @@ function renderIncome(c) {
 
   // chart
   const days = c.days.slice(-30);
-  $('#hist-note').textContent = tr(`${c.days.length} gün kayıtlı`, `${c.days.length} days recorded`);
+  $('#hist-note').textContent = tr(`${c.days.length} gün kayıtlı`, `${c.days.length} ${c.days.length === 1 ? 'day' : 'days'} recorded`);
   incomeChartDays = days.length >= 2 ? days : null;
   if (incomeChartDays) renderIncomeChart();
   else $('#income-chart').innerHTML =
-    `<div class="empty"><div><b class="tq-text">${tr('Geçmiş birikiyor', 'Building history')}</b><br>${tr('Sunucu açık kaldıkça her gün otomatik kayıt alınır.', 'Daily snapshots are recorded automatically while the server runs.')}<br><span class="muted">${tr('Şimdilik 7 günlük ortalama:', 'Current 7-day average:')} ${money(i.weeklyAvg)} / ${tr('gün', 'day')}</span></div></div>`;
+    `<div class="empty"><div><b class="tq-text">${tr('Geçmiş birikiyor', 'Building history')}</b><br>${tr('Sunucu açık kaldıkça her gün otomatik kayıt alınır.', 'Daily snapshots are recorded automatically while the app is running.')}<br><span class="muted">${tr('Şimdilik 7 günlük ortalama:', '7-day average for now:')} ${money(i.weeklyAvg)} / ${tr('gün', 'day')}</span></div></div>`;
 
   $('#income-table').innerHTML = `<thead><tr><th>${tr('Tarih', 'Date')}</th><th class="num">${tr('Müşteri', 'Customers')}</th><th class="num">${tr('Gelir', 'Revenue')}</th><th class="num">${tr('Ürün maliyeti', 'COGS')}</th><th class="num">${tr('Maaş', 'Wages')}</th><th class="num">${tr('Reklam', 'Ads')}</th><th class="num">Net</th><th class="num">${tr('Popülerlik', 'Popularity')}</th></tr></thead><tbody>${
     c.days.slice().reverse().map((d) => `<tr><td class="mono">${d.date}</td><td class="num">${n0(d.customers)}</td><td class="num">${money(d.revenue)}</td><td class="num muted">${money(d.cogs)}</td><td class="num muted">${money(d.wages)}</td><td class="num muted">${money(d.ads)}</td><td class="num ${d.net >= 0 ? 'pos' : 'neg'}">${money(d.net)}</td><td class="num">${d.popularity ?? '—'}</td></tr>`).join('')
@@ -1079,8 +1130,8 @@ function renderWarMe() {
   const o = state.overview; if (!o) return;
   const t = o.battle.totals;
   $('#war-me').innerHTML = `
-    <div class="bs-total tq"><small>${tr('Xanaxsız gücün', 'Your No-Xanax BS')}</small><strong>${compact(t.noXanax)}</strong></div>
-    <div class="bs-total warn"><small>${tr('Xanaxlı gücün', 'Your With-Xanax BS')}</small><strong>${compact(t.withXanax)}</strong></div>`;
+    <div class="bs-total tq"><small>${tr('Xanaxsız gücün', 'Your BS (No Xanax)')}</small><strong>${compact(t.noXanax)}</strong></div>
+    <div class="bs-total warn"><small>${tr('Xanaxlı gücün', 'Your BS (With Xanax)')}</small><strong>${compact(t.withXanax)}</strong></div>`;
 }
 
 const FIT_ORDER = { ideal: 0, easy: 1, risk: 2, avoid: 3, unknown: 4 };
@@ -1093,6 +1144,7 @@ function fitOf(ratio) {
 const ffOf = (ratio) => (ratio == null || !isFinite(ratio) ? null : Math.min(3, 1 + (8 / 3) * Math.sqrt(ratio)));
 // Kaba kazanma tahmini (stat oranına göre lojistik eğri). Saldıran tarafın avantajı için merkez 1.05.
 const winOf = (ratio) => (ratio == null || !isFinite(ratio) ? null : 1 / (1 + Math.pow(ratio / 1.05, 6)));
+const winPct = (w) => (state.lang === 'en' ? `${Math.round(w * 100)}%` : `%${Math.round(w * 100)}`);
 // Faction ödeme kuralı: savaş vuruşu (mug'sız) = 1 × FF puan, mug = 0.75 × FF, assist = 1, dış chain = 1.
 const HIT_POINTS = { warHit: 1, mug: 0.75, assist: 1, outsideChain: 1 };
 const fitLabel = (f) => ({
@@ -1156,10 +1208,10 @@ function renderRecommendations(all) {
       <td class="num">${bsCell(m)}</td>
       <td class="num">${m.ratio.toFixed(2)}</td>
       <td class="num"><b>${m.ff.toFixed(2)}</b></td>
-      <td class="num">%${Math.round(m.win * 100)}</td>
+      <td class="num">${winPct(m.win)}</td>
       <td class="num"><b class="tq-text">${m.exp.toFixed(2)}</b></td>
       <td>${attackBtn(m)}</td></tr>`;
-  const head = (extraTh) => `<thead><tr><th>${tr('Oyuncu', 'Player')}</th>${extraTh}<th class="num">${tr('Tahmini BS', 'Est. BS')}</th><th class="num">${tr('Oran', 'Ratio')}</th><th class="num">FF</th><th class="num">${tr('Kazanma', 'Win')}</th><th class="num">${tr('Puan', 'Points')}</th><th></th></tr></thead>`;
+  const head = (extraTh) => `<thead><tr><th>${tr('Oyuncu', 'Player')}</th>${extraTh}<th class="num">${tr('Tahmini BS', 'Est. BS')}</th><th class="num">${tr('Oran', 'Ratio')}</th><th class="num">FF</th><th class="num">${tr('Kazanma', 'Win %')}</th><th class="num">${tr('Puan', 'Points')}</th><th></th></tr></thead>`;
 
   box.innerHTML = `
     <div class="card-head wrap">
@@ -1198,7 +1250,7 @@ function renderTargets() {
   let ffHtml = '';
   if (ff.ok === false) {
     ffHtml = `<div class="alert warn"><div><b>${tr('FFScouter verisi alınamadı.', 'FFScouter data unavailable.')}</b> ${esc(ff.error || '')}<br><span class="muted">${tr('Kayıt için <a href="https://ffscouter.com/" target="_blank" rel="noopener">ffscouter.com</a>\'a git → Torn Limited API key\'inle giriş yap. Bu sırada rank tabanlı tahmin kullanabilirsin.', 'Visit <a href="https://ffscouter.com/" target="_blank" rel="noopener">ffscouter.com</a> and register with your Torn Limited API key. Meanwhile, you can scan using rank-based estimation.')}</span></div>
-      ${job && job.running ? `<span class="chip tq">${tr('Tahmin', 'Est.')}: ${job.done}/${job.total}</span>` : `<button class="btn sm" id="est-btn">${tr('Rank tahmini ile tara', 'Scan with rank estimate')}</button>`}</div>`;
+      ${job && job.running ? `<span class="chip tq">${tr('Tahmin', 'Estimating')}: ${job.done}/${job.total}</span>` : `<button class="btn sm" id="est-btn">${tr('Rank tahmini ile tara', 'Scan with rank estimate')}</button>`}</div>`;
   } else if (job && job.running) {
     ffHtml = `<div class="alert info">${tr('Rank tahmini çalışıyor:', 'Rank estimation running:')} ${job.done}/${job.total}</div>`;
   }
@@ -1207,7 +1259,7 @@ function renderTargets() {
   if (job && job.running) { clearTimeout(renderTargets._p); renderTargets._p = setTimeout(loadTargets, 5000); }
 
   $('#war-title').innerHTML = `${esc(t.faction.name)} <span class="muted">[${t.faction.tag ? esc(t.faction.tag) : t.faction.id}]</span>`;
-  $('#war-sub').textContent = `${t.faction.members} ${tr('üye', 'members')} · ${t.faction.rank?.name ? decode(t.faction.rank.name) + ' · ' : ''}${n0(t.faction.respect)} respect · ${tr('güncellendi', 'updated')} ${new Date(state.targetsAt).toLocaleTimeString('tr-TR')}`;
+  $('#war-sub').textContent = `${t.faction.members} ${tr('üye', 'members')} · ${t.faction.rank?.name ? decode(t.faction.rank.name) + ' · ' : ''}${n0(t.faction.respect)} respect · ${tr('güncellendi', 'updated')} ${new Date(state.targetsAt).toLocaleTimeString(timeLocale())}`;
 
   const all = computeTargets();
   renderRecommendations(all);
@@ -1216,10 +1268,10 @@ function renderTargets() {
   const okay = all.filter((m) => m.status?.state === 'Okay');
   $('#war-kpis').innerHTML = [
     kpi(tr('Üye / Verisi olan', 'Members / With stats'), `${all.length} / ${known.length}`, known.length ? `${known.filter((m) => m.source === 'ffscouter').length} FFScouter` : tr('stat verisi yok', 'no stat data')),
-    kpi(tr('Müsait', 'Okay'), okay.length, tr('hastane/seyahatte değil', 'not in hospital/travel')),
+    kpi(tr('Müsait', 'Okay'), okay.length, tr('hastane/seyahatte değil', 'not in hospital or traveling')),
     kpi(tr('İdeal · Xanaxsız', 'Ideal · No Xanax'), all.filter((m) => m.fitNo === 'ideal').length, `+${all.filter((m) => m.fitNo === 'easy').length} ${tr('kolay', 'easy')}`, 'tq'),
-    (() => { const b = okay.filter((m) => m.exp != null).sort((x, y) => y.exp - x.exp)[0]; return kpi(tr('En iyi puan (müsait)', 'Best points (okay)'), b ? b.exp.toFixed(2) : '—', b ? `${esc(b.name)} · FF ${b.ff.toFixed(2)}` : tr('müsait hedef yok', 'no okay targets'), 'tq'); })(),
-    kpi(tr('Şu an saldırılabilir', 'Attackable now'), okay.filter((m) => m.fit === 'ideal' || m.fit === 'easy').length, state.mode === 'withXanax' ? tr('Xanaxlı moda göre', 'based on With-Xanax') : tr('Xanaxsız moda göre', 'based on No-Xanax'), 'pos'),
+    (() => { const b = okay.filter((m) => m.exp != null).sort((x, y) => y.exp - x.exp)[0]; return kpi(tr('En iyi puan (müsait)', 'Best points (Okay)'), b ? b.exp.toFixed(2) : '—', b ? `${esc(b.name)} · FF ${b.ff.toFixed(2)}` : tr('müsait hedef yok', 'no Okay targets'), 'tq'); })(),
+    kpi(tr('Şu an saldırılabilir', 'Attackable now'), okay.filter((m) => m.fit === 'ideal' || m.fit === 'easy').length, state.mode === 'withXanax' ? tr('Xanaxlı moda göre', 'in With Xanax mode') : tr('Xanaxsız moda göre', 'in No Xanax mode'), 'pos'),
   ].join('');
 
   let rows = all;
@@ -1241,7 +1293,7 @@ function renderTargets() {
   rows = rows.slice().sort((a, b) => cmp(a, b) * dir);
 
   const th = (k, label, cls = '') => `<th class="sortable ${cls} ${key === k ? 'sorted' : ''}" data-sort="${k}">${label}${key === k ? (dir > 0 ? ' ↑' : ' ↓') : ''}</th>`;
-  const head = `<thead><tr>${th('smart', tr('Uygunluk', 'Fit'))}${th('name', tr('Oyuncu', 'Player'))}${th('level', 'Lv', 'num')}${th('status', tr('Durum', 'Status'))}<th>${tr('Son aktivite', 'Last action')}</th>${th('bs', tr('Tahmini BS', 'Est. BS'), 'num')}${th('ratio', tr('Oran', 'Ratio'), 'num')}<th>${tr('Xanaxsız / Xanaxlı', 'No Xan / Xan')}</th>${th('ff', 'FF', 'num')}${th('exp', tr('Puan', 'Points'), 'num')}<th></th></tr></thead>`;
+  const head = `<thead><tr>${th('smart', tr('Uygunluk', 'Fit'))}${th('name', tr('Oyuncu', 'Player'))}${th('level', 'Lv', 'num')}${th('status', tr('Durum', 'Status'))}<th>${tr('Son aktivite', 'Last action')}</th>${th('bs', tr('Tahmini BS', 'Est. BS'), 'num')}${th('ratio', tr('Oran', 'Ratio'), 'num')}<th>${tr('Xanaxsız / Xanaxlı', 'No Xanax / With Xanax')}</th>${th('ff', 'FF', 'num')}${th('exp', tr('Puan', 'Points'), 'num')}<th></th></tr></thead>`;
 
   if (!rows.length) {
     $('#war-table').innerHTML = head + `<tbody><tr><td colspan="11" class="empty-state">${known.length ? tr('Filtreye uyan hedef yok. Filtreleri gevşetmeyi dene.', 'No targets match current filters. Try relaxing the filters.') : tr('Savaş gücü verisi yok – FFScouter kaydı yap veya rank tahmini ile tara.', 'No battle stat data — register on FFScouter or scan with rank estimate.')}</td></tr></tbody>`;
@@ -1261,7 +1313,7 @@ function renderTargets() {
         <td class="num">${r != null ? r.toFixed(2) : '—'}${r != null ? `<span class="ratio-bar"><i style="width:${Math.min(100, (r / 1.5) * 100)}%;background:${fitColor[m.fit]}"></i></span>` : ''}</td>
         <td>${fitBadge(m.fitNo)} ${fitBadge(m.fitX)}</td>
         <td class="num">${m.ff ? m.ff.toFixed(2) : '—'}${m.ffRemote ? `<div class="sub-text">FFS ${Number(m.ffRemote).toFixed(2)}</div>` : ''}</td>
-        <td class="num">${m.exp != null ? `<b class="tq-text">${m.exp.toFixed(2)}</b><div class="sub-text">%${Math.round(m.win * 100)} ${tr('kazanma', 'win')}</div>` : '—'}</td>
+        <td class="num">${m.exp != null ? `<b class="tq-text">${m.exp.toFixed(2)}</b><div class="sub-text">${winPct(m.win)} ${tr('kazanma', 'win')}</div>` : '—'}</td>
         <td><a class="attack-btn" href="https://www.torn.com/page.php?sid=attack&user2ID=${m.id}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M14.5 4.5l5 5L9 20H4v-5zM4 4l4 4"/></svg>${tr('Saldır', 'Attack')}</a></td></tr>`;
     }).join('')}</tbody>`;
   }
@@ -1284,9 +1336,14 @@ async function startEstimate() {
 /* =========================================================
    SETTINGS
    ========================================================= */
+// The server, the main process and the Torn page helpers read the language from config.json
+function syncLangToServer() {
+  api('/api/lang', { method: 'POST', body: JSON.stringify({ lang: state.lang }) }).catch(() => {});
+}
 async function loadConfig() {
   try {
     const c = await api('/api/config'); state.config = c; window.applyFeatures?.();
+    if (c.lang !== state.lang) syncLangToServer();
     $('#s-key-current').textContent = c.hasKey ? `${tr('Kayıtlı', 'Saved')}: ${c.apiKeyMasked}` : tr('Key kayıtlı değil', 'No key saved');
     $('#s-ff-current').textContent = c.ffscouterKeyMasked ? `${tr('Kayıtlı', 'Saved')}: ${c.ffscouterKeyMasked}` : tr('Torn key kullanılıyor', 'Using Torn key');
     $('#s-cover').value = c.coverDays; $('#s-poll').value = c.pollMinutes;
@@ -1310,7 +1367,7 @@ function renderUpdateInfo() {
     <div><span>${tr('Sürüm', 'Version')}</span><span class="mono">v${esc(u.current || c.version || '—')}</span></div>
     <div><span>${tr('Durum', 'Status')}</span><span>${status}</span></div>
     <div><span>${tr('Kaynak', 'Source')}</span><span class="mono">${repo ? `GitHub · ${esc(repo)}` : '—'}</span></div>
-    <div><span>${tr('Kontrol', 'Checks')}</span><span>${feat('app.updates') ? tr('Açılışta ve 6 saatte bir', 'On startup and every 6 hours') : tr('Otomatik kontrol kapalı', 'Automatic check off')}</span></div>
+    <div><span>${tr('Kontrol', 'Checks')}</span><span>${feat('app.updates') ? tr('Açılışta ve 6 saatte bir', 'On startup and every 6 hours') : tr('Otomatik kontrol kapalı', 'Automatic checks off')}</span></div>
     <small class="muted">${tr('Güncellemeler yalnızca resmi sürüm adresinden gelir; bu adres değiştirilemez.', 'Updates come only from the official release address; it cannot be changed.')}</small>`;
 }
 async function postConfig(body, okText) {
@@ -1328,10 +1385,10 @@ $('#settings-form').addEventListener('submit', async (e) => {
   if ($('#s-ff').value.trim()) body.ffscouterKey = $('#s-ff').value.trim();
   const lk = $('#s-log').value.trim();
   if (lk) {
-    if (!/^[A-Za-z0-9]{16}$/.test(lk)) return toast(tr('Log key 16 karakterlik harf/rakam olmalı.', 'The log key must be 16 letters/digits.'));
+    if (!/^[A-Za-z0-9]{16}$/.test(lk)) return toast(tr('Log key 16 karakterlik harf/rakam olmalı.', 'The log key must be 16 letters or digits.'));
     body.logKey = lk;
   }
-  if (!Object.keys(body).length) return toast(tr('Değişiklik yok', 'Nothing changed'));
+  if (!Object.keys(body).length) return toast(tr('Değişiklik yok', 'No changes to save'));
   if (await postConfig(body)) { $('#s-key').value = ''; $('#s-ff').value = ''; $('#s-log').value = ''; refreshAll(true); }
 });
 $('#general-form').addEventListener('submit', async (e) => {
@@ -1463,7 +1520,7 @@ function describeTornUrl(url, customLabel = null) {
   if (/(loader|page)\.php\?sid=attack/i.test(u)) return { icon: '⚔', title: `${tr('Saldırı', 'Attack')} ${tag}`.trim() };
   if (/messages\.php/i.test(u)) return { icon: '✉', title: `${tr('Mesaj', 'Message')} ${tag}`.trim() };
   if (/profiles\.php/i.test(u)) return { icon: '👤', title: tag || tr('Oyuncu Profili', 'Player Profile') };
-  if (/companies\.php/i.test(u)) return { icon: '🏢', title: customLabel || tr('Şirketim (JOB)', 'Company (JOB)') };
+  if (/companies\.php/i.test(u)) return { icon: '🏢', title: customLabel || tr('Şirketim (JOB)', 'My Company (JOB)') };
   if (/factions\.php/i.test(u)) return { icon: '⚔', title: customLabel || 'Faction' };
   if (/travelagency\.php/i.test(u)) return { icon: '✈', title: customLabel || 'Rehab / Travel' };
   if (/ffscouter\.com/i.test(u)) return { icon: '📊', title: customLabel || 'FFScouter' };
@@ -1471,7 +1528,7 @@ function describeTornUrl(url, customLabel = null) {
   try {
     return { icon: '🌐', title: customLabel || new URL(u).hostname };
   } catch {
-    return { icon: '🌐', title: customLabel || 'Tab' };
+    return { icon: '🌐', title: customLabel || tr('Sekme', 'Tab') };
   }
 }
 
@@ -1514,7 +1571,7 @@ function openInTab(url, opts = {}) {
     <h3>${esc(tab.icon)} ${esc(tab.title)}</h3>
     <p class="muted" style="margin:10px 0 16px">${tr('Torn.com güvenlik politikası (X-Frame-Options) nedeniyle normal web tarayıcısında gömülü sekme yerine masaüstü <b>TornTracker.exe</b> uygulaması içinde yerleşik sekme olarak açılır.', 'Torn.com blocks standard browser iframes via X-Frame-Options. Run the <b>TornTracker.exe</b> desktop app to use embedded Torn tabs.')}</p>
     <div class="mono muted" style="font-size:11.5px;margin-bottom:14px;word-break:break-all">${esc(url)}</div>
-    <a class="btn primary" href="${esc(url)}" target="_blank" rel="noopener">↗ ${tr('Yeni Sekmede Aç', 'Open in Browser Tab')}</a>
+    <a class="btn primary" href="${esc(url)}" target="_blank" rel="noopener">↗ ${tr('Yeni Sekmede Aç', 'Open in New Tab')}</a>
   </div>`;
   deck.appendChild(fb);
   tab.wv = fb;
@@ -1685,7 +1742,7 @@ function updateBrowserToolbar() {
       ${status ? statusTimerChip(status, true) : ''}
       <button class="btn sm ghost" data-nav-active="https://www.torn.com/profiles.php?XID=${xid}">👤 ${tr('Profil', 'Profile')}</button>
       <button class="btn sm ghost" data-nav-active="https://www.torn.com/page.php?sid=attack&user2ID=${xid}">⚔ ${tr('Saldır', 'Attack')}</button>
-      ${emp && emp.addiction < 0 ? `<button class="btn sm primary" data-copy-rehab="${emp.id}">📋 ${tr('Rehab Mesajı Kopyala', 'Copy Rehab DM')}</button>` : ''}
+      ${emp && emp.addiction < 0 ? `<button class="btn sm primary" data-copy-rehab="${emp.id}">📋 ${tr('Rehab Mesajı Kopyala', 'Copy Rehab Message')}</button>` : ''}
     `;
     refreshPlayerInfo(xid);
   } else {
@@ -1778,7 +1835,7 @@ function toggleLoginModal(show) {
 }
 $('#b-login-help')?.addEventListener('click', () => toggleLoginModal(true));
 $('#ext-login-btn')?.addEventListener('click', () => {
-  if (!window.electronAPI?.externalLogin) return toast(tr('Bu özellik masaüstü uygulamasında çalışır', 'Desktop app only'));
+  if (!window.electronAPI?.externalLogin) return toast(tr('Bu özellik masaüstü uygulamasında çalışır', 'This feature only works in the desktop app'));
   window.electronAPI.externalLogin();
 });
 window.electronAPI?.onLoginStatus?.((s) => {
@@ -1799,7 +1856,7 @@ $('#cookie-form')?.addEventListener('submit', async (e) => {
   const uid = ($('#c-uid')?.value || '').trim();
   const passOrRaw = ($('#c-pass')?.value || '').trim();
   if (!phpSessId && !passOrRaw) {
-    return toast(tr('Lütfen PHPSESSID veya Cookie metni girin', 'Please enter PHPSESSID or Cookie string'));
+    return toast(tr('Lütfen PHPSESSID veya Cookie metni girin', 'Please enter a PHPSESSID or a cookie string'));
   }
   const isRaw = passOrRaw.includes('=');
   if (window.electronAPI?.setTornCookies) {
@@ -1842,7 +1899,7 @@ function renderUpdateBtn() {
   btn.title = !u ? '' : u.restartOnly ? tr(`v${u.latest} kuruldu ama çalışan sürüm v${u.current} — yeniden başlatmak için tıkla`, `v${u.latest} is installed but v${u.current} is running — click to restart`)
     : u.available ? tr(`Yeni sürüm v${u.latest} — kurmak için tıkla`, `New version v${u.latest} — click to install`)
     : u.error ? tr('Güncelleme kontrolü başarısız: ', 'Update check failed: ') + u.error
-      : u.configured === false ? tr('Güncelleme adresi ayarlı değil (Ayarlar)', 'Update URL not set (Settings)')
+      : u.configured === false ? tr('Güncelleme adresi ayarlı değil', 'No update URL set')
         : tr('En güncel sürüm — tekrar kontrol için tıkla', 'Up to date — click to check again');
 }
 async function checkUpdate(manual, force = false) {
@@ -1855,7 +1912,7 @@ async function checkUpdate(manual, force = false) {
     const u = state.update;
     if (u.configured === false) toast(tr('Bu kurulumda güncelleme adresi yok', 'This build has no update address'));
     else if (u.error) toast(tr('Güncelleme kontrolü başarısız: ', 'Update check failed: ') + u.error);
-    else if (!u.available) toast(tr(`En güncel sürümdesin (v${u.current})`, `You are up to date (v${u.current})`));
+    else if (!u.available) toast(tr(`En güncel sürümdesin (v${u.current})`, `You're on the latest version (v${u.current})`));
   }
 }
 $('#update-btn')?.addEventListener('click', async () => {
@@ -1899,7 +1956,7 @@ $('#tt-open-btn')?.addEventListener('click', async () => {
   if (s.status === 'ready') {
     openInTab(`chrome-extension://${s.id}/options.html`, { activate: true, label: 'TornTools', reuse: true });
   } else if (s.status === 'error') {
-    toast(tr('TornTools yüklenemedi: ', 'TornTools failed: ') + s.error);
+    toast(tr('TornTools yüklenemedi: ', 'TornTools failed to load: ') + s.error);
   } else {
     toast(tr('TornTools indiriliyor, birkaç saniye sonra tekrar dene…', 'TornTools is downloading, try again in a few seconds…'));
   }

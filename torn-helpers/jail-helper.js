@@ -7,6 +7,7 @@
 (() => {
   if (window.__lrxJail) return;
   window.__lrxJail = true;
+  const L = (t, e) => (window.__lrxLang === 'tr' ? t : e);
 
   const style = document.createElement('style');
   style.id = 'lrx-jail-css';
@@ -21,8 +22,9 @@
     .lrx-jail-sum b { margin-right: 10px; }`;
   document.head.appendChild(style);
 
-  const BANDS = [[100, 'kolay'], [250, 'orta'], [460, 'zor'], [Infinity, 'çok zor']];
+  const BANDS = [[100, 'kolay', 'easy'], [250, 'orta', 'medium'], [460, 'zor', 'hard'], [Infinity, 'çok zor', 'very hard']];
   const band = (score) => BANDS.findIndex(([max]) => score < max);
+  const bandName = (k) => L(BANDS[k][1], BANDS[k][2]);
 
   // "1d 2h 30m", "2h 5m", "45m" → saat
   const hoursOf = (text) => {
@@ -57,8 +59,11 @@
       if (b.textContent !== text) b.textContent = text;
       const cls = `lrx-jail k${k}`;
       if (b.className !== cls) b.className = cls;
-      b.title = `LRX · Bust zorluğu ${score} (${BANDS[k][1]}) = seviye ${lvl} × (${h.toFixed(1)} saat + 3). Düşük puan daha kolay.`
-        + ` Tahmini kefalet (indirimsiz) ~${money(100 * h * 60 * lvl)}. Topluluk formülü; Torn resmî oran yayımlamaz.`;
+      const bail = money(100 * h * 60 * lvl);
+      b.title = L(`LRX · Bust zorluğu ${score} (${bandName(k)}) = seviye ${lvl} × (${h.toFixed(1)} saat + 3). Düşük puan daha kolay.`
+        + ` Tahmini kefalet (indirimsiz) ~${bail}. Topluluk formülü; Torn resmî oran yayımlamaz.`,
+      `LRX · Bust difficulty ${score} (${bandName(k)}) = level ${lvl} × (${h.toFixed(1)} h + 3). Lower is easier.`
+        + ` Est. bail (no discount) ~${bail}. Community formula; Torn doesn't publish official success rates.`);
     }
     let sum = document.querySelector('.lrx-jail-sum');
     const total = counts.reduce((a, b) => a + b, 0);
@@ -68,11 +73,11 @@
       sum.className = 'lrx-jail-sum';
       (document.querySelector('.users-list-title') || list).before(sum);
     }
-    const key = counts.join(',');
+    const key = `${counts.join(',')}|${window.__lrxLang}`; // dil değişince özet yazısı da yenilensin
     if (sum.dataset.k !== key) {
       sum.dataset.k = key;
-      sum.innerHTML = `<b>LRX · bust zorluğu</b>`
-        + ['k0', 'k1', 'k2', 'k3'].map((c, i) => `<span class="lrx-jail ${c}">${BANDS[i][1]}: ${counts[i]}</span>`).join('');
+      sum.innerHTML = `<b>LRX · ${L('bust zorluğu', 'bust difficulty')}</b>`
+        + ['k0', 'k1', 'k2', 'k3'].map((c, i) => `<span class="lrx-jail ${c}">${bandName(i)}: ${counts[i]}</span>`).join('');
     }
   };
   const queue = () => { if (!queued) { queued = true; setTimeout(scan, 120); } };

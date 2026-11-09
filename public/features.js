@@ -14,11 +14,11 @@ const FEATURE_DEFS = [
   { group: 'pages', key: 'page.travel', def: true, tr: ['Seyahat Kârı', 'Kâr, stok ve restock zamanları (YATA + Prometheus)'], en: ['Travel Profit', 'Profit, stock and restock times (YATA + Prometheus)'] },
   { group: 'pages', key: 'page.war', def: true, tr: ['Savaş Hedefleri', 'Fair Fight hedef önerileri'], en: ['War Targets', 'Fair Fight target suggestions'] },
   { group: 'pages', key: 'page.crimes', def: true, tr: ['Suç Merkezi', 'Shoplifting güvenliği (API) ve nerve başına kazanç'], en: ['Crime Hub', 'Shoplifting security (API) and money per nerve'] },
-  { group: 'pages', parent: 'page.crimes', key: 'crimes.shoplift', def: true, tr: ["Shoplifting güvenliği", "Mağaza güvenlik durumu ve ★ alarmı"], en: ["Shoplifting security", "Store security status and ★ alarm"] },
+  { group: 'pages', parent: 'page.crimes', key: 'crimes.shoplift', def: true, tr: ["Shoplifting güvenliği", "Mağaza güvenlik durumu ve ★ alarmı"], en: ["Shoplifting security", "Store security status and ★ alerts"] },
   { group: 'pages', parent: 'page.crimes', key: 'crimes.value', def: true, tr: ["Nerve başına kazanç tablosu", "Bütün suçların $/N değerleri (Emforus tablosu)"], en: ["Money per nerve table", "$/N for every crime (Emforus sheet)"] },
   { group: 'pages', parent: 'page.crimes', key: 'crimes.burglary', def: true, tr: ["Burglary hedefleri", "34 hedefin keşif sayısı, nerve ve $/N tablosu"], en: ["Burglary targets", "Casings, nerve and $/N for all 34 targets"] },
   { group: 'pages', parent: 'page.crimes', key: 'crimes.jail', def: true, tr: ["Jail bust takibi", "Son 24 / 72 saatteki bustlar ve tahmini ceza puanı"], en: ["Jail bust tracker", "Busts in the last 24 / 72 hours and estimated penalty score"] },
-  { group: 'pages', key: 'page.faction', def: true, tr: ['Faction', "Kendi OC durumun · OC'ye girmeyenler, geciken OC'ler ve haftalık üye raporu (yalnızca lider, eş lider ve Organised Crimes yetkili pozisyonlar)"], en: ['Faction', 'Your OC status · members outside OCs, delayed OCs and the weekly member report (leader, co-leader and positions with Organised Crimes only)'] },
+  { group: 'pages', key: 'page.faction', def: true, tr: ['Faction', "Kendi OC durumun · OC'ye girmeyenler, geciken OC'ler ve haftalık üye raporu (yalnızca lider, eş lider ve Organised Crimes yetkili pozisyonlar)"], en: ['Faction', 'Your OC status · members not in an OC, delayed OCs and the weekly member report (leader, co-leader and positions with the Organised Crimes permission only)'] },
   { group: 'pages', key: 'page.awards', def: true, tr: ['Merit Takibi', 'Eksik honor / medal\'lar ve ilerlemen'], en: ['Merit Tracker', 'Missing honors / medals and your progress'] },
   { group: 'pages', key: 'page.tools', def: true, tr: ['Araçlar', 'Alış fiyatı koruması, etkinlik takvimi ve rehberi'], en: ['Tools', 'Purchase price protection, event calendar and guide'] },
   { group: 'pages', parent: 'page.tools', key: 'tools.events', def: true, tr: ["Etkinlik takvimi", "Yaklaşan Torn etkinlikleri ve geri sayım"], en: ["Event calendar", "Upcoming Torn events with countdowns"] },
@@ -33,37 +33,37 @@ const FEATURE_DEFS = [
   { group: 'notify', key: 'notify.drug', def: true, tr: ['Drug cooldown bitti', ''], en: ['Drug cooldown over', ''] },
   { group: 'notify', key: 'notify.booster', def: false, tr: ['Booster cooldown bitti', ''], en: ['Booster cooldown over', ''] },
   { group: 'notify', key: 'notify.medical', def: false, tr: ['Medical cooldown bitti', ''], en: ['Medical cooldown over', ''] },
-  { group: 'notify', key: 'notify.education', def: true, tr: ['Eğitim bitti', ''], en: ['Education finished', ''] },
+  { group: 'notify', key: 'notify.education', def: true, tr: ['Eğitim bitti', ''], en: ['Education course finished', ''] },
   { group: 'notify', key: 'notify.travel', def: true, tr: ['Uçak indi', ''], en: ['Plane landed', ''] },
-  { group: 'notify', key: 'notify.hospital', def: true, tr: ['Hastaneden çıktın', ''], en: ['You left hospital', ''] },
+  { group: 'notify', key: 'notify.hospital', def: true, tr: ['Hastaneden çıktın', ''], en: ['Out of hospital', ''] },
   { group: 'notify', key: 'notify.bank', def: true, tr: ['Banka yatırımın bitti', ''], en: ['Bank investment finished', ''] },
   { group: 'notify', key: 'notify.oc', def: true, tr: ["OC: eşyan eksik, planlama bitti ya da OC'n bitti", ''], en: ['OC: your item is missing, planning finished or your OC ended', ''] },
-  { group: 'notify', key: 'notify.factionOc', def: true, tr: ["Faction OC: geciken ya da eşyası eksik OC (lider ve yetkililer)", ''], en: ['Faction OC: delayed or missing-item OCs (leader and authorized)', ''] },
+  { group: 'notify', key: 'notify.factionOc', def: true, tr: ["Faction OC: geciken ya da eşyası eksik OC (lider ve yetkililer)", ''], en: ['Faction OC: delayed OCs or OCs missing an item (leader and authorized positions)', ''] },
   { group: 'notify', key: 'notify.restock', def: true, tr: ['Takip ettiğin ürün (★): kalkış zamanı ve restock', ''], en: ['Watched item (★): departure time and restock', ''] },
   { group: 'notify', key: 'notify.shoplift', def: true, tr: ['Shoplifting: takip ettiğin (★) mağazada bütün güvenlik kapandı', ''], en: ['Shoplifting: all security down at a watched (★) store', ''] },
   { group: 'notify', key: 'notify.events', def: true, tr: ['Etkinlik başladı (Easter, Trick or Treat, Christmas Town)', ''], en: ['Event started (Easter, Trick or Treat, Christmas Town)', ''] },
   { group: 'notify', key: 'notify.targets', def: true, tr: ['Açık sekmedeki oyuncu hastaneden çıktı', ''], en: ['Player in an open tab left hospital', ''] },
 
-  { group: 'torn', key: 'torn.warHelper', def: true, tr: ['Savaş: Attack & hastane sayacı', 'Ranked war sayfasında rakibin yanında Attack, iki tarafta hastane geri sayımı'], en: ['War: Attack & hospital timers', 'Attack button next to enemies and hospital countdowns on the ranked war page'] },
+  { group: 'torn', key: 'torn.warHelper', def: true, tr: ['Savaş: Attack & hastane sayacı', 'Ranked war sayfasında rakibin yanında Attack, iki tarafta hastane geri sayımı'], en: ['War: Attack & hospital timers', 'Attack button next to each enemy and hospital countdowns for both sides on the ranked war page'] },
   { group: 'torn', key: 'torn.crimeHelper', def: true, tr: ['Yankesicilik: XP ve renkler', "Her hedefin yanında Crime XP çarpanı (%100–350) · skill'ine göre en iyi hedef koyu yeşil, riskli olanlar kırmızı"], en: ['Pickpocketing: XP and colors', 'Crime XP multiplier next to each mark (100–350%) · best mark for your skill in dark green, risky ones in red'] },
-  { group: 'torn', key: 'torn.crimeValue', def: true, tr: ['Suçlar: nerve başına kazanç', "Suç merkezinde ve seçeneklerde $/N rozeti (Emforus tablosu) · Disposal'da en iyi yöntem yeşil"], en: ['Crimes: money per nerve', '$/N badges on the crime hub and options (Emforus sheet) · best Disposal method in green'] },
+  { group: 'torn', key: 'torn.crimeValue', def: true, tr: ['Suçlar: nerve başına kazanç', "Suç merkezinde ve seçeneklerde $/N rozeti (Emforus tablosu) · Disposal'da en iyi yöntem yeşil"], en: ['Crimes: money per nerve', '$/N badges on the Torn crimes hub and on each option (Emforus sheet) · best Disposal method in green'] },
   { group: 'torn', key: 'torn.crimeRank', def: true, tr: ['Suçlar: düğme renkleri', "Her seçeneğin sağındaki düğmenin (Search, Shoplift, Disposal yöntemleri…) etrafı $/N sırasına göre: kırmızı en kötü → sarı → yeşil en iyi"], en: ['Crimes: button colors', 'The button on the right of each option (Search, Shoplift, Disposal methods…) is outlined by $/N rank: red worst → yellow → green best'] },
   { group: 'torn', key: 'torn.burglaryHelper', def: true, tr: ['Burglary yardımcısı', 'Her hedefte önerilen keşif (case) sayısı, $/N ve güvenlik notu · satırlar gizlenmez'], en: ['Burglary helper', 'Recommended casings, $/N and safety note for each target · rows are never hidden'] },
-  { group: 'torn', key: 'torn.jailHelper', def: true, tr: ['Jail: bust zorluğu', 'Her mahkûmun yanında zorluk puanı (seviye × (saat+3)) ve renk · onay atlatma yok'], en: ['Jail: bust difficulty', 'Difficulty score (level × (hours+3)) and color next to each inmate · no confirm skipping'] },
-  { group: 'torn', key: 'torn.sellGuard', def: true, tr: ['Alış fiyatı koruması', 'Item Market / bazaar ilanında alış fiyatının altına girersen kırmızı uyarı'], en: ['Purchase price guard', 'Red warning on Item Market / bazaar listings priced below what you paid'] },
+  { group: 'torn', key: 'torn.jailHelper', def: true, tr: ['Jail: bust zorluğu', 'Her mahkûmun yanında zorluk puanı (seviye × (saat+3)) ve renk · onay atlatma yok'], en: ['Jail: bust difficulty', 'Difficulty score (level × (hours+3)) and color next to each inmate · never skips the confirmation'] },
+  { group: 'torn', key: 'torn.sellGuard', def: true, tr: ['Alış fiyatı koruması', 'Item Market / bazaar ilanında alış fiyatının altına girersen kırmızı uyarı'], en: ['Purchase price protection', 'Red warning on Item Market / bazaar listings priced below what you paid'] },
   { group: 'torn', key: 'torn.pokerHelper', def: true, tr: ['Poker oranları', "Hold'em masasında elin adı ve kazanma yüzdesi · tavsiye vermez, oynamaz"], en: ['Poker odds', "Hand name and win chance at the Hold'em table · no advice, never plays"] },
   { group: 'torn', key: 'torn.fastSlots', def: true, tr: ['Hızlı Slot', 'Kumarhane slotunda animasyonsuz spin · her tıklama tek spin'], en: ['Fast Slots', 'Casino slots without the reel animation · one spin per click'] },
-  { group: 'torn', key: 'torn.stockSync', def: true, tr: ['Stok teslim süresini Torn\'dan oku', 'Şirket stok sayfasındaki "Delivered in" sayaçları'], en: ['Read stock delivery from Torn', '"Delivered in" timers on the company stock page'] },
+  { group: 'torn', key: 'torn.stockSync', def: true, tr: ['Stok teslim süresini Torn\'dan oku', 'Şirket stok sayfasındaki "Delivered in" sayaçları'], en: ['Read stock delivery times from Torn', '"Delivered in" timers on the company stock page'] },
 
   { group: 'events', event: 'easter', key: 'torn.eggFinder', def: true, tr: ['Yumurta bulucu', 'Baktığın sayfada yumurta varsa ortada büyütüp kırmızı çerçeveyle gösterir · tıklamaz'], en: ['Egg finder', 'If the page you are viewing has an egg, shows it enlarged in the middle with a red border · never clicks'] },
   { group: 'events', event: 'halloween', key: 'torn.halloweenHelper', def: true, tr: ['Şeker dükkânı işareti', "Sweet Shop'ta şeker toplamak için gereken Halloween Basket'i işaretler · satın almaz"], en: ['Sweet Shop marker', 'Marks the Halloween Basket you need for treats in the Sweet Shop · never buys'] },
   { group: 'events', event: 'christmas', key: 'torn.ctHelper', def: true, tr: ['Christmas Town yardımcısı', 'Hediye, sandık ve anahtarları işaretler, yakındakileri listeler · kombinasyon sandığı çözücü'], en: ['Christmas Town helper', 'Highlights gifts, chests and keys, lists nearby ones · combination chest solver'] },
   { group: 'events', key: 'event.guide', def: true, tr: ['Etkinlik rehberi', "Etkinlik günlerinde Genel Bakış'ta kısa uyarı, Araçlar'da ne alman / ne yapman gerektiği"], en: ['Event guide', 'On event days: a short notice on Overview and what to buy / do on Tools'] },
 
-  { group: 'app', key: 'app.animations', def: true, tr: ['Animasyonlar', 'Geçişler, sayaç animasyonları, kart efektleri'], en: ['Animations', 'Transitions, counters, card effects'] },
+  { group: 'app', key: 'app.animations', def: true, tr: ['Animasyonlar', 'Geçişler, sayaç animasyonları, kart efektleri'], en: ['Animations', 'Transitions, counter animations, card effects'] },
   { group: 'app', key: 'app.splash', def: true, tr: ['Açılış ekranı', 'Uygulama açılırken LRX logosu'], en: ['Splash screen', 'LRX logo on startup'] },
   { group: 'app', key: 'app.torntools', def: true, tr: ['TornTools', 'Yerleşik Torn sekmelerinde TornTools eklentisi (yeniden başlatınca)'], en: ['TornTools', 'TornTools extension in Torn tabs (after restart)'] },
-  { group: 'app', key: 'app.tabSleep', def: true, tr: ['Kullanılmayan sekmeleri uyut', '20 dk açılmayan Torn sekmesi RAM\'den boşaltılır, tıklayınca kaldığı yerden açılır'], en: ['Sleep unused tabs', 'Torn tabs unused for 20 min are unloaded from RAM and reload where you left off'] },
+  { group: 'app', key: 'app.tabSleep', def: true, tr: ['Kullanılmayan sekmeleri uyut', '20 dk açılmayan Torn sekmesi RAM\'den boşaltılır, tıklayınca kaldığı yerden açılır'], en: ['Sleep unused tabs', 'Torn tabs unused for 20 min are unloaded from RAM and reopen where you left off when clicked'] },
   { group: 'app', key: 'app.feedback', def: true, tr: ['Geri bildirim butonu', 'Üst çubukta: istek, öneri ve hatalar e-posta ile geliştiriciye gider'], en: ['Feedback button', 'In the top bar: requests, suggestions and bugs go to the developer by email'] },
   { group: 'app', key: 'app.updates', def: true, tr: ['Otomatik güncelleme kontrolü', 'Açılışta ve 6 saatte bir'], en: ['Automatic update check', 'On startup and every 6 hours'] },
 ];
@@ -229,17 +229,17 @@ function notifyEvents() {
       const b = o.bars?.[k];
       if (b && b.fulltime > 0) ev.push({ type: `notify.${k}`, at: base + b.fulltime * 1000, title: `${emoji} ${name}`, body: tr(`${name} doldu (${b.maximum}/${b.maximum})`, `${name} is full (${b.maximum}/${b.maximum})`) });
     };
-    bar('energy', 'Energy', '⚡');
+    bar('energy', tr('Enerji', 'Energy'), '⚡');
     bar('nerve', 'Nerve', '🧠');
     for (const [k, emoji, label] of [['drug', '💊', 'Drug'], ['booster', '🍬', 'Booster'], ['medical', '🩹', 'Medical']]) {
       const s = o.cooldowns?.[k];
       if (s > 0) ev.push({ type: `notify.${k}`, at: base + s * 1000, title: `${emoji} ${label} cooldown`, body: tr(`${label} cooldown bitti`, `${label} cooldown is over`) });
     }
-    if (o.education?.timeLeft > 0) ev.push({ type: 'notify.education', at: base + o.education.timeLeft * 1000, title: '🎓 Education', body: tr(`${o.education.current || 'Kurs'} tamamlandı`, `${o.education.current || 'Course'} completed`) });
-    if (o.trip?.timeLeft > 0) ev.push({ type: 'notify.travel', at: base + o.trip.timeLeft * 1000, title: '✈ ' + tr('Uçak indi', 'Landed'), body: tr(`${o.trip.destination} vardın`, `Arrived in ${o.trip.destination}`) });
+    if (o.education?.timeLeft > 0) ev.push({ type: 'notify.education', at: base + o.education.timeLeft * 1000, title: '🎓 ' + tr('Eğitim', 'Education'), body: tr(`${o.education.current || 'Kurs'} tamamlandı`, `${o.education.current || 'Course'} completed`) });
+    if (o.trip?.timeLeft > 0) ev.push({ type: 'notify.travel', at: base + o.trip.timeLeft * 1000, title: '✈ ' + tr('Uçak indi', 'Landed'), body: tr(`Vardığın yer: ${o.trip.destination}`, `Arrived in ${o.trip.destination}`) });
     const st = o.player?.status;
     if (st?.state === 'Hospital' && st.until) ev.push({ type: 'notify.hospital', at: st.until * 1000 - state.skew, title: '🏥 ' + tr('Hastaneden çıktın', 'Out of hospital'), body: tr('Artık müsaitsin', 'You are okay now') });
-    if (o.bank?.timeLeft > 0) ev.push({ type: 'notify.bank', at: base + o.bank.timeLeft * 1000, title: '🏦 ' + tr('Banka yatırımın bitti', 'Bank investment finished'), body: tr(`${cmoney(o.bank.amount)} ve faizi çekilebilir`, `${cmoney(o.bank.amount)} plus interest can be withdrawn`), url: 'https://www.torn.com/bank.php' });
+    if (o.bank?.timeLeft > 0) ev.push({ type: 'notify.bank', at: base + o.bank.timeLeft * 1000, title: '🏦 ' + tr('Banka yatırımın bitti', 'Bank investment finished'), body: tr(`${cmoney(o.bank.amount)} ve faizi çekilebilir`, `${cmoney(o.bank.amount)} plus interest is ready to withdraw`), url: 'https://www.torn.com/bank.php' });
   }
   // Açık sekmelerdeki oyuncular
   const seen = new Set();
@@ -374,7 +374,7 @@ function renderJob() {
       <div id="job-ok"></div>
     </article>
     <article class="glass card">
-      <div class="card-head"><h3>${tr('En yakın hedefler', 'Closest next positions')}</h3><span class="muted">${tr('Kırmızı = eksik stat', 'Red = missing stats')}</span></div>
+      <div class="card-head"><h3>${tr('En yakın hedefler', 'Closest positions')}</h3><span class="muted">${tr('Kırmızı = eksik stat', 'Red = missing stats')}</span></div>
       <div id="job-near"></div>
     </article>`;
   const fill = () => {
@@ -415,7 +415,7 @@ function renderGym(d) {
       ${kpi(tr('Xanax (7 gün)', 'Xanax (7 days)'), sumDiff('xantaken', 7) != null ? n0(sumDiff('xantaken', 7)) : '—', `${tr('Refill', 'Refills')}: ${sumDiff('refills', 7) != null ? n0(sumDiff('refills', 7)) : '—'}`)}
     </div>
     <article class="glass card">
-      <div class="card-head"><h3>${tr('Toplam stat geçmişi', 'Total stats history')}</h3><span class="muted">${hist.length} ${tr('gün kayıtlı', 'days recorded')}</span></div>
+      <div class="card-head"><h3>${tr('Toplam stat geçmişi', 'Total stats history')}</h3><span class="muted">${hist.length} ${tr('gün kayıtlı', hist.length === 1 ? 'day recorded' : 'days recorded')}</span></div>
       <div class="chart" id="gym-chart"></div>
     </article>
     ${parts.length ? `<article class="glass card"><div class="card-head"><h3>${tr('Stat dağılımı', 'Stat distribution')}</h3></div>
@@ -432,11 +432,12 @@ function renderGym(d) {
 }
 
 /* ---------- Networth ---------- */
+// [API alanı, TR, EN] — Torn yer adları (Item Market, Bazaar…) iki dilde de İngilizce kalır
 const NW_PARTS = [
-  ['wallet', 'Wallet'], ['bank', 'Bank'], ['cayman', 'Cayman'], ['vault', 'Vault'], ['piggybank', 'Piggy bank'], ['points', 'Points'],
-  ['items', 'Items'], ['displaycase', 'Display case'], ['bazaar', 'Bazaar'], ['itemmarket', 'Item market'], ['trade', 'Trade'],
-  ['auctionhouse', 'Auction house'], ['stockmarket', 'Stock market'], ['properties', 'Properties'], ['company', 'Company'],
-  ['enlistedcars', 'Enlisted cars'], ['bookie', 'Bookie'], ['pending', 'Pending'], ['loan', 'Loan'], ['unpaidfees', 'Unpaid fees'],
+  ['wallet', 'Cüzdan', 'Wallet'], ['bank', 'Banka', 'Bank'], ['cayman', 'Cayman', 'Cayman'], ['vault', 'Vault', 'Vault'], ['piggybank', 'Piggy Bank', 'Piggy Bank'], ['points', 'Points', 'Points'],
+  ['items', 'Eşyalar', 'Items'], ['displaycase', 'Display Case', 'Display Case'], ['bazaar', 'Bazaar', 'Bazaar'], ['itemmarket', 'Item Market', 'Item Market'], ['trade', 'Takas', 'Trade'],
+  ['auctionhouse', 'Auction House', 'Auction House'], ['stockmarket', 'Stock Market', 'Stock Market'], ['properties', 'Mülkler', 'Properties'], ['company', 'Şirket', 'Company'],
+  ['enlistedcars', 'Enlisted Cars', 'Enlisted Cars'], ['bookie', 'Bookie', 'Bookie'], ['pending', 'Bekleyen', 'Pending'], ['loan', 'Kredi', 'Loan'], ['unpaidfees', 'Ödenmemiş ücretler', 'Unpaid fees'],
 ];
 async function loadNetworth(force = false) {
   const el = $('#networth-body');
@@ -448,13 +449,13 @@ function renderNetworth(d) {
   const hist = d.history || [];
   const ago = (n) => hist[hist.length - 1 - n];
   const chg = (n) => (ago(n) ? (cur.total || 0) - ago(n).total : null);
-  const parts = NW_PARTS.map(([k, n]) => [n, Number(cur[k]) || 0, k]).filter(([, v]) => v !== 0).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  const parts = NW_PARTS.map(([k, nTr, nEn]) => [tr(nTr, nEn), Number(cur[k]) || 0, k]).filter(([, v]) => v !== 0).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
   const maxV = Math.max(...parts.map(([, v]) => Math.abs(v)), 1);
   const prev = ago(1);
   $('#networth-body').innerHTML = `
     <div class="grid kpis">
-      ${kpi(tr('Toplam networth', 'Total networth'), money(cur.total), `${tr('güncellendi', 'updated')} ${new Date(d.timestamp * 1000).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}`, 'tq')}
-      ${kpi(tr('Dünden beri', 'Since yesterday'), `<span class="${deltaCls(chg(1))}">${signed(chg(1))}</span>`, chg(1) != null && ago(1).total ? pct(chg(1) / ago(1).total, 2) : tr('dünkü kayıt yok', 'no record yesterday'))}
+      ${kpi(tr('Toplam networth', 'Total networth'), money(cur.total), `${tr('güncellendi', 'updated')} ${new Date(d.timestamp * 1000).toLocaleTimeString(state.lang === 'en' ? 'en-GB' : 'tr-TR', { hour: '2-digit', minute: '2-digit' })}`, 'tq')}
+      ${kpi(tr('Dünden beri', 'Since yesterday'), `<span class="${deltaCls(chg(1))}">${signed(chg(1))}</span>`, chg(1) != null && ago(1).total ? pct(chg(1) / ago(1).total, 2) : tr('dünkü kayıt yok', 'no record from yesterday'))}
       ${kpi(tr('7 günde', 'Last 7 days'), `<span class="${deltaCls(chg(7))}">${signed(chg(7))}</span>`)}
       ${kpi(tr('30 günde', 'Last 30 days'), `<span class="${deltaCls(chg(30))}">${signed(chg(30))}</span>`)}
       ${kpi(tr('Nakit (cüzdan + banka)', 'Cash (wallet + bank)'), money((cur.wallet || 0) + (cur.bank || 0) + (cur.cayman || 0) + (cur.vault || 0) + (cur.piggybank || 0)))}
@@ -465,7 +466,7 @@ function renderNetworth(d) {
           const pv = prev ? Number(prev[k]) || 0 : null; const dv = pv == null ? null : v - pv;
           return `<div class="nw-row"><span>${n}</span><div class="nw-bar"><i style="width:${(Math.abs(v) / maxV) * 100}%;${v < 0 ? 'background:var(--danger)' : ''}"></i></div><span class="mono">${cmoney(v)}</span><span class="mono sub-text ${deltaCls(dv)}">${dv ? signed(dv) : ''}</span></div>`;
         }).join('')}</div></article>
-      <article class="glass card"><div class="card-head"><h3>${tr('Networth geçmişi', 'Networth history')}</h3><span class="muted">${hist.length} ${tr('gün kayıtlı', 'days recorded')}</span></div><div class="chart" id="nw-chart"></div></article>
+      <article class="glass card"><div class="card-head"><h3>${tr('Networth geçmişi', 'Networth history')}</h3><span class="muted">${hist.length} ${tr('gün kayıtlı', hist.length === 1 ? 'day recorded' : 'days recorded')}</span></div><div class="chart" id="nw-chart"></div></article>
     </div>`;
   if (hist.length >= 2) mountChart($('#nw-chart'), (W) => lineChart(hist.map((r) => ({ date: r.date, v: r.total })), W));
   else $('#nw-chart').innerHTML = emptyBox(tr('Geçmiş birikiyor', 'Building history'), tr('Her gün networth kaydı alınır; grafik 2. günden itibaren görünür.', 'Networth is recorded daily; the chart appears from day 2.'));
@@ -500,7 +501,7 @@ const travelMethod = () => {
   const d = travelState.data;
   return travelState.method || (TRAVEL_METHODS[d?.method] ? d.method : 'Standard');
 };
-const hhmm = (sec) => new Date(sec * 1000 - state.skew).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+const hhmm = (sec) => new Date(sec * 1000 - state.skew).toLocaleTimeString(state.lang === 'en' ? 'en-GB' : 'tr-TR', { hour: '2-digit', minute: '2-digit' });
 const mins = (m) => (m == null ? '—' : m >= 60 ? `${Math.floor(m / 60)}${tr('sa', 'h')} ${String(Math.round(m % 60)).padStart(2, '0')}${tr('dk', 'm')}` : `${Math.round(m)}${tr('dk', 'm')}`);
 function tvFmt(s) {
   if (s <= 0) return s > -900 ? tr('şimdi', 'now') : tr(`${Math.round(-s / 60)}dk gecikti`, `${Math.round(-s / 60)}m late`);
@@ -618,7 +619,7 @@ function renderTravel() {
       </div>
       <div class="tv-row tv-filters">
         <label>${tr('Kapasite', 'Capacity')} <input class="input mono" id="tv-cap" type="number" min="1" max="100" value="${t.cap}"></label>
-        <label>${tr('Uçuş', 'Travel')} <select id="tv-method">${Object.keys(TRAVEL_METHODS).map((m) => opt(m, `${m} (×${TRAVEL_METHODS[m]})`, method)).join('')}</select></label>
+        <label>${tr('Uçuş', 'Travel method')} <select id="tv-method">${Object.keys(TRAVEL_METHODS).map((m) => opt(m, `${m} (×${TRAVEL_METHODS[m]})`, method)).join('')}</select></label>
         <label>${tr('Tür', 'Type')} <select id="tv-type">${opt('all', tr('Hepsi', 'All'), t.type)}${types.map((x) => opt(esc(x), esc(x), t.type)).join('')}</select></label>
         <label>${tr('Stok', 'Stock')} <select id="tv-stock">${opt('arrival', tr('Varışta stokta olacak', 'In stock on arrival'), t.stock)}${opt('now', tr('Şu an stokta', 'In stock now'), t.stock)}${opt('all', tr('Hepsi', 'All'), t.stock)}</select></label>
         <label>${tr('Uçuş süresi', 'Flight time')} <select id="tv-maxflight">${opt(0, tr('Hepsi', 'Any'), t.maxFlight)}${[60, 120, 180, 240].map((m) => opt(m, `≤ ${mins(m)}`, t.maxFlight)).join('')}</select></label>
@@ -649,7 +650,7 @@ function renderTravelResults() {
   const star = (r) => `<button class="tv-star ${r.watched ? 'on' : ''}" data-watch="${r.key}" title="${r.watched ? tr('Takipten çıkar', 'Unwatch') : tr('Takip et: restock / kalkış bildirimi', 'Watch: restock / departure alerts')}">${r.watched ? '★' : '☆'}</button>`;
   const stockCell = (r) => {
     const it = r.it;
-    const sub = it.qty > 0 && it.emptyAt ? `<div class="sub-text">≈ ${tvAt(it.emptyAt)} ${tr('sonra biter', 'until empty')}${it.rate ? ` · −${n0(it.rate)}/${tr('dk', 'm')}` : ''}</div>` : '';
+    const sub = it.qty > 0 && it.emptyAt ? `<div class="sub-text">≈ ${tvAt(it.emptyAt)} ${tr('sonra biter', 'until empty')}${it.rate ? ` · −${n0(it.rate)}/${tr('dk', 'min')}` : ''}</div>` : '';
     return `<span class="${it.qty <= 0 ? 'neg' : ''}">${n0(it.qty)}</span>${sub}`;
   };
   const restockCell = (r) => {
@@ -661,17 +662,17 @@ function renderTravelResults() {
   box.innerHTML = `
     <div class="grid travel-best">${best.slice(0, 6).map((r) => `<div class="glass kpi"><div class="label"><span lang="en">${esc(r.c.name)}</span> · ${mins(r.oneWay)}</div><div class="value tq">${cmoney(r.perHour)}<span class="sub-text">/${tr('sa', 'h')}</span></div><div class="hint">${esc(r.it.name)} · ${cmoney(r.trip)} ${tr('sefer başı', 'per trip')}</div></div>`).join('') || emptyBox(tr('Filtreye uyan kârlı ürün yok', 'No profitable items match the filters'), '')}</div>
     <article class="glass card">
-      <div class="card-head"><div><h3>⟳ ${tr('Yaklaşan restocklar', 'Upcoming restocks')}</h3><span class="muted">${tr('Kalkış saati = restock anında inecek şekilde · ★ ile takip edersen kalkış ve stok bildirimi gelir', 'Departure = land right at the restock · ★ an item for departure and restock alerts')}</span></div></div>
+      <div class="card-head"><div><h3>⟳ ${tr('Yaklaşan restocklar', 'Upcoming restocks')}</h3><span class="muted">${tr('Kalkış saati = restock anında inecek şekilde · ★ ile takip edersen kalkış ve stok bildirimi gelir', 'Departure times are set so you land right at the restock · star (★) an item to get departure and restock alerts')}</span></div></div>
       ${upcoming.length ? `<div class="tv-up">${upcoming.map((r) => {
         const depart = r.it.nextRestock - r.oneWay * 60;
         const go = depart > now
           ? `${tr('Kalkış', 'Depart')} <b class="mono">${hhmm(depart)}</b> · ${tvAt(depart)}`
-          : `<b class="pos">${tr('Şimdi kalk', 'Fly now')}</b> · ${tr('varış', 'land')} ${hhmm(now + r.oneWay * 60)}`;
+          : `<b class="pos">${tr('Şimdi kalk', 'Fly now')}</b> · ${tr('varış', 'arrive')} ${hhmm(now + r.oneWay * 60)}`;
         return `<div class="tv-up-row ${r.watched ? 'watched' : ''}">
           ${star(r)}
           <div class="tv-up-time"><b class="mono">${hhmm(r.it.nextRestock)}</b>${tvAt(r.it.nextRestock)}</div>
           <div class="tv-up-item"><b>${esc(r.it.name)}</b><span class="sub-text"><span lang="en">${esc(r.c.name)}</span> · ${mins(r.oneWay)} · ${r.it.restockSrc === 'Prometheus' ? 'Prometheus' : tr('tahmin', 'estimate')}</span></div>
-          <div class="tv-up-profit"><span class="pos mono">${money(r.it.profit)}</span><span class="sub-text">${cmoney(r.trip)} ${tr('sefer', 'trip')}</span></div>
+          <div class="tv-up-profit"><span class="pos mono">${money(r.it.profit)}</span><span class="sub-text">${cmoney(r.trip)} ${tr('sefer', 'per trip')}</span></div>
           <div class="tv-up-go">${go}</div>
         </div>`;
       }).join('')}</div>` : emptyBox(tr('Önümüzdeki 6 saatte beklenen restock yok', 'No restocks expected in the next 6 hours'), tr('Filtreleri genişletmeyi dene.', 'Try widening the filters.'))}
@@ -717,7 +718,7 @@ function renderTravelResults() {
       const k = w.dataset.watch;
       if (travelState.watch.has(k)) travelState.watch.delete(k); else {
         travelState.watch.add(k);
-        if (!feat('notify') || !feat('notify.restock')) toast(tr('Bildirimler kapalı — Ayarlar › Özellikler', 'Notifications are off — Settings › Features'));
+        if (!feat('notify') || !feat('notify.restock')) toast(tr('Bildirimler kapalı — Ayarlar › Bildirimler', 'Notifications are off — Settings › Notifications'));
         else if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
       }
       return changed();
@@ -780,7 +781,7 @@ function levelShell(d) {
   return `
     <article class="glass card">
       <div class="card-head wrap"><h3>🎯 Baldr's Levelling Targets</h3>
-        ${lvl ? `<span class="chip tq">${tr('Seviye', 'Level')} ${lvl} · ${tr(`15'e ${15 - lvl} seviye`, `${15 - lvl} to level 15`)}</span>` : ''}</div>
+        ${lvl ? `<span class="chip tq">${tr('Seviye', 'Level')} ${lvl} · ${tr(`15'e ${15 - lvl} seviye`, `${15 - lvl} ${15 - lvl === 1 ? 'level' : 'levels'} to 15`)}</span>` : ''}</div>
       <p class="muted lv-lead">${tr(
         'Bu listelerde seviyesi yüksek ama statları çok düşük, uzun süredir oynamayan oyuncular var. Seviye 15\'e en hızlı bu hedeflerle çıkılır.',
         'These lists hold long-inactive players with a high level but very low stats. They are the fastest way to reach level 15.')}</p>
@@ -861,7 +862,7 @@ const GUIDE_SECTIONS = [
     ['Gym kazancını enerji, happy (mutluluk) ve gym belirler. Happy bir çarpan gibi çalışır; daha iyi ev, daha yüksek taban happy demektir. İlk ara hedef olarak Mansion iyi bir seçimdir; personel tutmak happy\'yi artırır ama günlük gideri vardır.', 'Gym gains depend on energy, happy and the gym itself. Happy works like a multiplier, and a better property means a higher base happy. A Mansion is a good first milestone; staff raise happy but cost upkeep every day.'],
     ['Antrenmana taban happy ile başlama. Şehirdeki dükkânlardan alınan ucuz bir şeker ya da lolipop bile happy\'yi yükseltir.', 'Never train at base happy. Even a cheap candy or lollipop from a city shop raises it.'],
     ['Enerjini tek seferde harca. Her antrenmandan sonra happy biraz düşer; tüm enerjiyi tek tıkta harcarsan oyun hepsini başlangıçtaki yüksek happy ile hesaplar.', 'Spend all your energy in one go. Happy drops a little after each train; one big train is calculated at your starting, highest happy.'],
-    ['Bulunduğun gym\'de en çok kazanç veren statı çalış. Statları eşit tutmaya çalışmak verimsizdir; geride kalanları ileride dengeli gym\'lerde yakalarsın.', 'Train the stat with the best gain in your current gym. Forcing equal stats is inefficient; you can catch up the lagging ones later in balanced gyms.'],
+    ['Bulunduğun gym\'de en çok kazanç veren statı çalış. Statları eşit tutmaya çalışmak verimsizdir; geride kalanları ileride dengeli gym\'lerde yakalarsın.', 'Train the stat with the best gain in your current gym. Forcing equal stats is inefficient; you can catch up on the lagging ones later in balanced gyms.'],
     ['Yeni gym\'ler belli miktarda enerji harcayınca açılır. Dolu duran enerji barı kayıptır.', 'New gyms unlock after you spend a set amount of energy. A full energy bar sitting idle is wasted progress.'],
     ['300 kuralı: dört stat da yaklaşık 300 olana kadar enerjini gym\'e ver. Sonra enerjiyi saldırılara (Baldr\'s Levelling Targets) çevir ve seviye atla.', 'The 300 rule: train until all four stats are around 300. Then switch your energy to attacks (Baldr\'s Levelling Targets) and level up.'],
     ['Donator Pack en değerli uzun vadeli yatırımlardan biridir: maksimum enerji 150 olur ve daha hızlı dolar. Xanax +250 enerji verir ama uzun cooldown\'u ve bağımlılığı vardır.', 'A Donator Pack is one of the best long-term buys: max energy becomes 150 and refills faster. Xanax gives +250 energy but has a long cooldown and adds addiction.'],
@@ -912,7 +913,7 @@ function guideSteps() {
   if (stats.length && low.length) {
     steps.push({ done: false, text: tr(`Gym: ${low.map(([n, v]) => `${n} ${n0(v)}`).join(', ')} henüz 300'ün altında. Enerjini gym'de harca.`, `Gym: ${low.map(([n, v]) => `${n} ${n0(v)}`).join(', ')} still below 300. Spend your energy in the gym.`) });
   } else if (stats.length) {
-    steps.push({ done: true, text: tr('Dört stat da 300+: enerjini Levelling hedeflerine harca.', 'All four stats are 300+: spend your energy on levelling targets.'), action: `<button class="btn sm" data-goto-view="level">🎯 ${tr('Hedeflere git', 'Open targets')}</button>` });
+    steps.push({ done: true, text: tr('Dört stat da 300+: enerjini Levelling hedeflerine harca.', "All four stats are 300+: spend your energy on Baldr's Levelling Targets."), action: `<button class="btn sm" data-goto-view="level">🎯 ${tr('Hedeflere git', 'Open targets')}</button>` });
   }
   const job = o.player?.job || {};
   if (hasJob()) {
@@ -924,7 +925,7 @@ function guideSteps() {
   const edu = o.education || {};
   const eduBtn = `<button class="btn sm ghost" data-open-url="https://www.torn.com/page.php?sid=education" data-tab-label="${tr('Eğitim', 'Education')}">🎓 ${tr('Eğitim sayfası', 'Education page')}</button>`;
   if (edu.currentId) steps.push({ done: true, text: tr(`Kurs devam ediyor: ${esc(edu.current || '')}`, `Course in progress: ${esc(edu.current || '')}`) });
-  else steps.push({ done: false, text: tr('Şu an kurs okumuyorsun: BIO1340 ile başla, sonra BIO2127 ve Sports Science.', 'You are not studying: start with BIO1340, then BIO2127 and Sports Science.'), action: eduBtn });
+  else steps.push({ done: false, text: tr('Şu an kurs okumuyorsun: BIO1340 ile başla, sonra BIO2127 ve Sports Science.', 'You are not taking a course: start with BIO1340, then BIO2127 and Sports Science.'), action: eduBtn });
   const happy = o.bars?.happy;
   if (happy && happy.maximum) {
     if (happy.current <= happy.maximum) steps.push({ done: false, text: tr(`Happy taban seviyede (${n0(happy.current)}). Antrenmandan önce ucuz bir şekerle yükselt.`, `Happy is at base (${n0(happy.current)}). Raise it with cheap candy before training.`) });

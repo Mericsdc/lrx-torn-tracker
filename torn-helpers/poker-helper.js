@@ -6,6 +6,7 @@
 (() => {
   if (window.__lrxPoker) return;
   window.__lrxPoker = true;
+  const L = (t, e) => (window.__lrxLang === 'tr' ? t : e);
 
   const RANKS = { 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, T: 10, J: 11, Q: 12, K: 13, A: 14 };
   const SUITS = { clubs: 0, diamonds: 1, hearts: 2, spades: 3 };
@@ -133,16 +134,17 @@
     if (hole.length < 2) { lastKey = ''; show(null); return; }
     const board = cardsIn(document.querySelector('[class*="communityCards"]')).filter((c) => !hole.includes(c)).slice(0, 5);
     const opp = activeOpponents();
-    const key = `${hole.join(',')}|${board.join(',')}|${opp}`;
+    const key = `${hole.join(',')}|${board.join(',')}|${opp}|${window.__lrxLang}`; // dil değişince kutu da yenilensin
     if (key === lastKey) return;
     lastKey = key;
     const hand = board.length >= 3 ? NAMES[category(evaluate(hole.concat(board)))] : (hole[0] >> 2) === (hole[1] >> 2) ? NAMES[1] : null;
     const r = simulate(hole, board, opp);
-    show(`<div class="muted">LRX · poker oranları</div>
+    const win = (r.win * 100).toFixed(1), tie = (r.tie * 100).toFixed(1);
+    show(`<div class="muted">LRX · ${L('poker oranları', 'poker odds')}</div>
       <div>${hole.map(cardStr).join(' ')}${board.length ? ` &nbsp;|&nbsp; ${board.map(cardStr).join(' ')}` : ''}</div>
-      ${hand ? `<div>Elin: <b>${hand[0]}</b> <span class="muted">(${hand[1]})</span></div>` : ''}
-      <div>Kazanma: <span class="big">%${(r.win * 100).toFixed(1)}</span> &nbsp;beraberlik %${(r.tie * 100).toFixed(1)}</div>
-      <div class="muted">${opp} rakibe karşı · rakip elleri rastgele varsayılır</div>`);
+      ${hand ? L(`<div>Elin: <b>${hand[0]}</b> <span class="muted">(${hand[1]})</span></div>`, `<div>Your hand: <b>${hand[1]}</b></div>`) : ''}
+      ${L(`<div>Kazanma: <span class="big">%${win}</span> &nbsp;beraberlik %${tie}</div>`, `<div>Win: <span class="big">${win}%</span> &nbsp;tie ${tie}%</div>`)}
+      <div class="muted">${L(`${opp} rakibe karşı · rakip elleri rastgele varsayılır`, `vs ${opp} ${opp === 1 ? 'opponent' : 'opponents'} · opponent hands assumed random`)}</div>`);
   };
   setInterval(tick, 700);
   document.addEventListener('visibilitychange', tick);

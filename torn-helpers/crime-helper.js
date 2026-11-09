@@ -13,6 +13,7 @@
 (() => {
   if (window.__lrxCrimes) return;
   window.__lrxCrimes = true;
+  const L = (t, e) => (window.__lrxLang === 'tr' ? t : e);
   // Uygulama her enjeksiyonda günceller: window.__lrxCrimeOpts = { xp, value, burglary, rank }
   const opt = (k) => (window.__lrxCrimeOpts ? window.__lrxCrimeOpts[k] !== false : true);
 
@@ -173,15 +174,16 @@
     setAttr(row, 'data-lrx-pp', kind);
     setAttr(buildEl, 'data-lrx-bad', badBuild ? '' : null);
     setAttr(actEl, 'data-lrx-bad', badAct ? '' : null);
+    const risk = [badBuild && build, badAct && act].filter(Boolean).join(' + ');
     const why = {
-      ideal: `LRX · Skill'ine göre en çok XP veren grup (${mark.xp}%)`,
-      easy: `LRX · Güvenli, biraz daha az XP (${mark.xp}%)`,
-      low: `LRX · Kolay ama düşük XP (${mark.xp}%)`,
-      hard: `LRX · Skill'in için henüz riskli (bu grup ~${TIERS[mark.tier]} skill'de açılır)`,
-      bad: `LRX · Riskli: ${[badBuild && build, badAct && act].filter(Boolean).join(' + ')} bu hedefte başarısızlık riskini artırır`,
-      neutral: `LRX · Crime XP ${mark.xp}%${skill == null ? ' (skill okunamadı)' : ''}`,
+      ideal: L(`LRX · Skill'ine göre en çok XP veren grup (${mark.xp}%)`, `LRX · Highest-XP group for your skill (${mark.xp}%)`),
+      easy: L(`LRX · Güvenli, biraz daha az XP (${mark.xp}%)`, `LRX · Safe, slightly less XP (${mark.xp}%)`),
+      low: L(`LRX · Kolay ama düşük XP (${mark.xp}%)`, `LRX · Easy but low XP (${mark.xp}%)`),
+      hard: L(`LRX · Skill'in için henüz riskli (bu grup ~${TIERS[mark.tier]} skill'de açılır)`, `LRX · Still risky for your skill (this group unlocks at ~${TIERS[mark.tier]} skill)`),
+      bad: L(`LRX · Riskli: ${risk} bu hedefte başarısızlık riskini artırır`, `LRX · Risky: ${risk} raises the chance of failure on this target`),
+      neutral: `LRX · Crime XP ${mark.xp}%${skill == null ? L(' (skill okunamadı)', " (couldn't read skill)") : ''}`,
     }[kind];
-    setAttr(row.querySelector('[class*="commitButtonSection"]'), 'title', why + (val != null ? ` · maks. skill'de ~${money(val)}/nerve` : ''));
+    setAttr(row.querySelector('[class*="commitButtonSection"]'), 'title', why + (val != null ? L(` · maks. skill'de ~${money(val)}/nerve`, ` · ~${money(val)}/nerve at max skill`) : ''));
   };
 
   /* ---------------- $/N rozetleri ---------------- */
@@ -222,7 +224,7 @@
       if (!t) continue;
       const c = data && opt('value') ? data[clean(t.textContent).replace(/\s*\$.*$/, '')] : null;
       setAttr(t, 'data-lrx-cvt', c?.best != null ? perN(c.best) : null);
-      setAttr(t, 'title', c?.best != null ? `LRX · En iyi seçenekte maks. skill'de ~${money(c.best)}/nerve (Emforus tablosu)` : null);
+      setAttr(t, 'title', c?.best != null ? L(`LRX · En iyi seçenekte maks. skill'de ~${money(c.best)}/nerve (Emforus tablosu)`, `LRX · Best option: ~${money(c.best)}/nerve at max skill (Emforus table)`) : null);
     }
   };
 
@@ -274,18 +276,25 @@
       const ranks = rankBuckets(vals);
       items.forEach(({ row, lab, hit }, i) => {
         const v = vals[i];
-        ring(commitBtns(row), showR && v != null ? ranks[i] : null, v != null ? `LRX · ${place(vals, v)} en iyi · normal keşifle ~${money(v)}/nerve (maks. skill)` : null);
+        ring(commitBtns(row), showR && v != null ? ranks[i] : null, v != null ? L(`LRX · ${place(vals, v)} en iyi · normal keşifle ~${money(v)}/nerve (maks. skill)`, `LRX · rank ${place(vals, v)} · ~${money(v)}/nerve with normal casing (max skill)`) : null);
         if (!lab) return;
         if (!hit || (!opt('burglary') && !showV)) { badge(lab, null); return; }
         const b = hit.v; const info = BURG[hit.key];
         const parts = [];
         if (showV && b.v != null) parts.push(perN(b.v));
-        if (opt('burglary') && b.c != null) parts.push(`${b.c} case`);
+        if (opt('burglary') && b.c != null) parts.push(`${b.c} ${L('case', b.c === 1 ? 'case' : 'cases')}`);
         const low = b.v != null && b.v < 2500;
-        const tip = `LRX · ${b.d || ''} · önerilen keşif (case): ${b.c ?? '?'}, tahmini toplam nerve ${b.n ?? '?'}`
-          + ` · normal keşif ${b.v != null ? money(b.v) : '?'}/N, focused ${b.f != null ? money(b.f) : '?'}/N`
-          + (info ? ` · topluluk notu: ${SAFETY_TR[info[1]] || info[1]}, ~${info[0]} skill'de açılır` : '')
-          + ' (maks. skill varsayımı)';
+        const vN = b.v != null ? money(b.v) : '?';
+        const fN = b.f != null ? money(b.f) : '?';
+        const tip = L(
+          `LRX · ${b.d || ''} · önerilen keşif (case): ${b.c ?? '?'}, tahmini toplam nerve ${b.n ?? '?'}`
+            + ` · normal keşif ${vN}/N, focused ${fN}/N`
+            + (info ? ` · topluluk notu: ${SAFETY_TR[info[1]] || info[1]}, ~${info[0]} skill'de açılır` : '')
+            + ' (maks. skill varsayımı)',
+          `LRX · ${b.d || ''} · recommended cases: ${b.c ?? '?'}, est. total Nerve ${b.n ?? '?'}`
+            + ` · normal casing ${vN}/N, focused ${fN}/N`
+            + (info ? ` · community rating: ${info[1]}, unlocks at ~${info[0]} skill` : '')
+            + ' (assumes max skill)');
         badge(lab, parts.join(' · '), low ? 'low' : '', tip);
       });
       return;
@@ -304,14 +313,14 @@
         let best = null;
         btns.forEach((btn, i) => {
           const v = vals[i];
-          setAttr(btn, 'title', v != null && (showV || showR) ? `LRX · ${place(vals, v)} en iyi · ${money(v)}/nerve (maks. skill)` : null);
+          setAttr(btn, 'title', v != null && (showV || showR) ? L(`LRX · ${place(vals, v)} en iyi · ${money(v)}/nerve (maks. skill)`, `LRX · rank ${place(vals, v)} · ${money(v)}/nerve (max skill)`) : null);
           setAttr(btn, 'data-lrx-rank', showR && v != null ? String(ranks[i]) : null);
           setAttr(btn, 'data-lrx-neg', !showR && showV && v != null && v < 0 ? '' : null);
           setAttr(btn, 'data-lrx-best', null);
           if (v != null && (!best || v > best.v)) best = { btn, v };
         });
         if (!showR && showV && best && best.v > 0) setAttr(best.btn, 'data-lrx-best', '');
-        badge(lab, showV && best ? perN(best.v) : null, best && best.v < 0 ? 'neg' : '', best ? 'LRX · Bu işteki en iyi yöntemin nerve başına kazancı' : null);
+        badge(lab, showV && best ? perN(best.v) : null, best && best.v < 0 ? 'neg' : '', best ? L('LRX · Bu işteki en iyi yöntemin nerve başına kazancı', "LRX · Profit per Nerve of this job's best method") : null);
       }
       return;
     }
@@ -321,10 +330,10 @@
     const ranks = rankBuckets(vals);
     const top = Math.max(...vals.map((v) => v ?? -Infinity));
     hits.forEach(({ row, lab, hit }, i) => {
-      ring(commitBtns(row), showR && hit ? ranks[i] : null, hit ? `LRX · ${place(vals, hit.v)} en iyi · maks. skill'de ~${money(hit.v)}/nerve` : null);
+      ring(commitBtns(row), showR && hit ? ranks[i] : null, hit ? L(`LRX · ${place(vals, hit.v)} en iyi · maks. skill'de ~${money(hit.v)}/nerve`, `LRX · rank ${place(vals, hit.v)} · ~${money(hit.v)}/nerve at max skill`) : null);
       if (!lab) return;
       if (!hit || !showV) { badge(lab, null); return; }
-      badge(lab, perN(hit.v), hit.v < 0 ? 'neg' : hit.v === top && hits.length > 1 ? 'top' : '', `LRX · maks. skill'de ~${money(hit.v)}/nerve (Emforus tablosu)`);
+      badge(lab, perN(hit.v), hit.v < 0 ? 'neg' : hit.v === top && hits.length > 1 ? 'top' : '', L(`LRX · maks. skill'de ~${money(hit.v)}/nerve (Emforus tablosu)`, `LRX · ~${money(hit.v)}/nerve at max skill (Emforus table)`));
     });
   };
 

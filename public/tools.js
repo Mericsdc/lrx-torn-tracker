@@ -33,7 +33,7 @@ function purchaseCard() {
   if (!d) return `<article class="glass card">${head}${toolState.purErr ? errorBox(toolState.purErr) : loadingBox()}</article>`;
   const srcName = { manual: tr('elle', 'manual'), market: 'Item Market', bazaar: 'bazaar', shop: tr('mağaza', 'shop'), abroad: tr('yurt dışı', 'abroad') };
   const logLine = d.logAccess
-    ? `<span class="chip green">✓ ${tr('Torn log\'u okunuyor', 'Reading your Torn log')}</span> <span class="muted">${tr('Item Market, bazaar, mağaza ve yurt dışı alışların otomatik kaydedilir.', 'Item Market, bazaar, shop and abroad buys are recorded automatically.')}</span>`
+    ? `<span class="chip green">✓ ${tr('Torn log\'u okunuyor', 'Reading your Torn log')}</span> <span class="muted">${tr('Item Market, bazaar, mağaza ve yurt dışı alışların otomatik kaydedilir.', 'Your Item Market, bazaar, shop and abroad purchases are recorded automatically.')}</span>`
     : `<span class="chip warn">${tr('Log erişimi yok', 'No log access')}</span> <span class="muted">${d.logError === 'ACCESS'
       ? tr('Key\'in Limited seviyesinde; Torn log\'u yalnızca Full ya da "log" izinli özel key ile okunur. Böyle bir key\'i Ayarlar → Hesap\'tan ekleyebilir ya da alış fiyatını elle girebilirsin.', 'Your key is Limited; the Torn log can only be read with a Full key or a custom key with "log" access. Add one in Settings → Account, or enter purchase prices manually.')
       : esc(d.logError || '')}</span>`;
@@ -42,8 +42,8 @@ function purchaseCard() {
     return `<tr><td><b>${esc(it.name)}</b></td><td class="num">${money(it.cost)}</td>
       <td class="num muted">${it.market ? money(it.market) : '—'}</td>
       <td class="num ${diff == null ? '' : diff < 0 ? 'neg' : 'pos'}">${diff == null ? '—' : `${diff < 0 ? '' : '+'}${money(diff)}`}</td>
-      <td class="muted">${srcName[it.src] || esc(it.src)}${it.n > 1 ? ` · ${it.n} ${tr('alış ort.', 'buys avg.')}` : ''}</td>
-      <td class="muted">${new Date(it.at).toLocaleDateString()}</td>
+      <td class="muted">${srcName[it.src] || esc(it.src)}${it.n > 1 ? ` · ${tr(`${it.n} alış ort.`, `avg. of ${it.n} buys`)}` : ''}</td>
+      <td class="muted">${new Date(it.at).toLocaleDateString(state.lang === 'en' ? 'en-GB' : 'tr-TR')}</td>
       <td>${it.src === 'manual' ? `<button class="btn sm ghost" data-pur-del="${it.id}" title="${tr('Elle girileni sil', 'Remove manual price')}">✕</button>` : ''}</td></tr>`;
   }).join('');
   return `<article class="glass card">${head}
@@ -59,19 +59,19 @@ function purchaseCard() {
     ${rows ? `<div class="tbl-wrap"><table class="tbl compact">
       <thead><tr><th>${tr('Eşya', 'Item')}</th><th class="num">${tr('Alış', 'Cost')}</th><th class="num">${tr('Piyasa', 'Market')}</th><th class="num">${tr('Fark', 'Diff')}</th><th>${tr('Kaynak', 'Source')}</th><th>${tr('Tarih', 'Date')}</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div>` : `<div class="muted">${tr('Henüz kayıtlı alış fiyatı yok.', 'No purchase prices recorded yet.')}</div>`}
-    <p class="muted" style="margin:10px 0 0">🔑 ${d.logKeyMasked ? tr('Log key kayıtlı', 'Log key saved') : tr('Alışları otomatik kaydetmek için log izinli key ekleyebilirsin', 'You can add a key with log access to record buys automatically')}
+    <p class="muted" style="margin:10px 0 0">🔑 ${d.logKeyMasked ? tr('Log key kayıtlı', 'Log key saved') : tr('Alışları otomatik kaydetmek için log izinli key ekleyebilirsin', 'You can add a key with log access to record purchases automatically')}
       <button class="btn sm ghost" data-set-go="account">${tr('Ayarlar → Hesap', 'Settings → Account')}</button></p>
     <p class="muted sl-note">${tr(
       'Item Market\'te ilan eklerken ya da bazaar\'a koyarken, alış fiyatını bildiğin eşyanın altında "alış · başa baş" yazar; girdiğin fiyat başa başın altındaysa (Item Market\'te %5 komisyon dahil) kırmızı uyarı çıkar. Uyarı yalnızca bilgi verir; ilanı engellemez.',
-      'When you add an Item Market listing or put items in your bazaar, items with a known cost show "cost · break-even"; a price below break-even (including the 5% Item Market fee) shows a red warning. The warning is informational only and never blocks the listing.')}</p>
+      'When you add an Item Market listing or put items in your bazaar, items with a known cost show "bought at · break-even"; a price below break-even (including the 5% Item Market fee) shows a red warning. The warning is informational only and never blocks the listing.')}</p>
   </article>`;
 }
 
 /* ---------- Etkinlikler ---------- */
-const tsDate = (s) => new Date(s * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+const tsDate = (s) => new Date(s * 1000).toLocaleDateString(state.lang === 'en' ? 'en-GB' : 'tr-TR', { day: 'numeric', month: 'short' });
 const leftText = (sec) => {
   const s = Math.max(0, sec); const d = Math.floor(s / 86400); const h = Math.floor((s % 86400) / 3600);
-  return d ? `${d}${tr('g', 'd')} ${h}${tr('s', 'h')}` : `${h}${tr('s', 'h')} ${Math.floor((s % 3600) / 60)}${tr('dk', 'm')}`;
+  return d ? `${d}${tr('g', 'd')} ${h}${tr('sa', 'h')}` : `${h}${tr('sa', 'h')} ${Math.floor((s % 3600) / 60)}${tr('dk', 'm')}`;
 };
 function eventsCard() {
   const head = `<div class="card-head wrap"><h3>📅 ${tr('Etkinlikler', 'Events')}</h3>
@@ -119,7 +119,7 @@ function helpersCard() {
     }).join('')}</div>
     <p class="muted sl-note">${tr(
       'Torn kuralları gereği bu yardımcılar yalnızca açıp baktığın sayfayı okur ve boyar; Torn\'a fazladan istek atmaz, senin yerine tıklamaz ya da onay ekranlarını atlatmaz. Arka plandaki sekmeden uyarı vermez.',
-      'Following Torn\'s rules, these helpers only read and paint the page you are looking at; they make no extra requests to Torn, never click for you and never skip confirmation screens. They never alert from a background tab.')}</p>
+      'To follow Torn\'s rules, these helpers only read and paint the page you are looking at; they make no extra requests to Torn, never click for you and never skip confirmation screens. They never send alerts from a background tab.')}</p>
   </article>`;
 }
 

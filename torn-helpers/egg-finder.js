@@ -6,6 +6,7 @@
 (() => {
   if (window.__lrxEgg) return;
   window.__lrxEgg = true;
+  const L = (t, e) => (window.__lrxLang === 'tr' ? t : e);
 
   const style = document.createElement('style');
   style.id = 'lrx-egg-css';
@@ -33,7 +34,8 @@
     if (!shown && !document.getElementById('lrx-egg-banner')) {
       const bar = document.createElement('div');
       bar.id = 'lrx-egg-banner';
-      bar.textContent = '🥚 LRX · Bu sayfada yumurta var! Ortadaki kırmızı çerçevede (toplamak için kendin tıkla)';
+      bar.textContent = L('🥚 LRX · Bu sayfada yumurta var! Ortadaki kırmızı çerçevede (toplamak için kendin tıkla)',
+        "🥚 LRX · There's an egg on this page! It's in the red frame in the center (click it yourself to collect it)");
       document.body.appendChild(bar);
       shown = true;
       setTimeout(() => bar.remove(), 15000);

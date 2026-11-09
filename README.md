@@ -17,6 +17,7 @@
 - **Tools and events**: the Torn calendar with your personal start times, yearly event guides (Easter Egg Hunt, Trick or Treat, Christmas Town) and a purchase price guard.
 - **Torn page helpers** (they only add colors and labels to the page you are viewing and never click anything): crime XP and $/N badges, crime buttons colored from worst to best, burglary notes, jail bust difficulty, poker odds, a below-cost listing warning and event helpers.
 - **Settings**: every page, notification and helper can be turned on or off.
+- **Languages**: English by default, Turkish optional (EN / TR switch in the top bar). The switch also applies to the Torn page helpers.
 - **Feedback**: the 💬 button in the top bar sends a request, a suggestion or a bug report to the developer by email. Only the form fields and the app version are sent, never your API key.
 - **Built-in Torn browser**: tabs you can drag to reorder, a context bar (Profile / Attack), and Google sign-in through your own Chrome or Edge.
 - **TornTools**: the Chrome Web Store extension is downloaded and loaded inside the app.
