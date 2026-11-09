@@ -131,8 +131,8 @@ const I18N = {
   ],
   'login.m1Title': ['Yöntem 1 · Google ile Giriş (Chrome/Edge üzerinden) — Önerilen', 'Method 1 · Sign in with Google (via Chrome/Edge) — Recommended'],
   'login.m1Body': [
-    `Butona bas → Chrome (yoksa Edge) TornTracker'a özel ayrı bir pencerede Torn'u açar → orada <b>Google ile giriş</b> yap. Giriş algılanınca oturum buraya aktarılır ve o pencere kendiliğinden kapanır. Torn'daki Google (G) butonuna basınca da bu akış otomatik başlar.`,
-    `Press the button → Chrome (or Edge if Chrome isn't installed) opens Torn in a separate window just for TornTracker → <b>sign in with Google</b> there. Once the login is detected, the session is imported here and that window closes by itself. Pressing the Google (G) button on Torn also starts this flow automatically.`,
+    `Butona bas → Chrome (yoksa Edge) TornTracker'a özel ayrı bir pencerede Torn'u açar → orada <b>Google ile giriş</b> yap → Torn ana sayfan açılınca <b>o pencereyi kapat</b>. Pencere kapanınca oturum buraya aktarılır. Torn'daki Google (G) butonuna basınca da bu akış otomatik başlar.`,
+    `Press the button → Chrome (or Edge if Chrome isn't installed) opens Torn in a separate window just for TornTracker → <b>sign in with Google</b> there → once your Torn home page appears, <b>close that window</b>. When it closes, the session is imported here. Pressing the Google (G) button on Torn also starts this flow automatically.`,
   ],
   'login.m1Btn': ['🔐 Google ile Giriş Yap', '🔐 Sign in with Google'],
   'login.m2Title': ['Yöntem 2 · Torn E-posta & Şifre', 'Method 2 · Torn Email & Password'],

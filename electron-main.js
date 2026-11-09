@@ -321,9 +321,11 @@ function main() {
   async function syncStockDeliveries(wc) {
     const names = stockProductNames();
     if (!names.length) return;
-    const rows = await wc.executeJavaScript(`${helperSrc('company-stock')}(${JSON.stringify(names)})`, true);
+    const res = await wc.executeJavaScript(`${helperSrc('company-stock')}(${JSON.stringify(names)})`, true);
+    // { shipments: [{ name, amount, secs }], deliveryHours: { ürün: saat } } · eski biçim: yalnızca dizi
+    const rows = Array.isArray(res) ? res : res?.shipments;
     if (!Array.isArray(rows)) return;
-    const count = ingestStockDeliveries(rows, Date.now());
+    const count = ingestStockDeliveries(rows, Date.now(), Array.isArray(res) ? null : res.deliveryHours);
     sendToRenderer('torn-data', { type: 'stock-deliveries', count });
   }
 

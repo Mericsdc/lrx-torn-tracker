@@ -539,8 +539,11 @@ function buildCompanyReport(c) {
   const now = Date.now();
   const nextResetMs = next18TctMs(now);
   const recent = history.days.slice(-7);
-  // Ölçülmüş gerçek teslim süresi varsa tahminlerde onu kullan
-  const estHours = history.learnedDeliveryHours || deliveryHours;
+  // Teslim süresi tahmini: önce Torn stok sayfasındaki "Delivery: 24 hours", sonra ölçülen süre, en son ayar
+  const tornHours = Object.fromEntries(Object.entries(history.tornDeliveryHours || {})
+    .filter(([, h]) => Number.isFinite(h) && h > 0));
+  const tornVals = Object.values(tornHours);
+  const estHours = (tornVals.length ? Math.max(...tornVals) : 0) || history.learnedDeliveryHours || deliveryHours;
   const shipments = (history.stockDeliveries?.items || [])
     .filter((x) => x.deliverAt > now - 120_000)
     .sort((a, b) => a.deliverAt - b.deliverAt);
@@ -580,14 +583,15 @@ function buildCompanyReport(c) {
         };
       } else {
         const orderedAt = ord?.orderedAt || now;
-        const totalMs = estHours * 3600_000;
+        const prodHours = tornHours[name] || estHours;
+        const totalMs = prodHours * 3600_000;
         const byHoursEta = orderedAt + totalMs;
         const etaMs = deliveryMode === '18tct' ? nextResetMs : (byHoursEta > now ? byHoursEta : nextResetMs);
         const modeUsed = deliveryMode === '18tct' || byHoursEta <= now ? '18tct' : 'hours';
         orderDelivery = {
           amount: s.on_order, orderedAt, exact: !!ord?.exact, source: 'estimate', etaMs, nextResetMs,
-          cycleTotalMs: modeUsed === '18tct' ? 24 * 3600_000 : totalMs, mode: modeUsed, deliveryHours: estHours,
-          learned: !!history.learnedDeliveryHours, safeUntilDelivery: safe(etaMs),
+          cycleTotalMs: modeUsed === '18tct' ? 24 * 3600_000 : totalMs, mode: modeUsed, deliveryHours: prodHours,
+          learned: !!(tornHours[name] || history.learnedDeliveryHours), safeUntilDelivery: safe(etaMs),
         };
       }
     }
@@ -1998,8 +2002,17 @@ function stockProductNames() {
   return Object.keys(history.days[history.days.length - 1]?.stock || {});
 }
 
-function ingestStockDeliveries(rows, at = Date.now()) {
+function ingestStockDeliveries(rows, at = Date.now(), deliveryHours = null) {
   const names = new Set(stockProductNames());
+  // Torn stok tablosundaki ürün başına teslim süresi ("Delivery: 24 hours")
+  if (deliveryHours && typeof deliveryHours === 'object') {
+    const hours = {};
+    for (const [n, h] of Object.entries(deliveryHours)) {
+      const v = Number(h);
+      if (names.has(n) && Number.isFinite(v) && v >= 1 && v <= 240) hours[n] = v;
+    }
+    if (Object.keys(hours).length) history.tornDeliveryHours = { ...(history.tornDeliveryHours || {}), ...hours };
+  }
   const items = [];
   for (const r of Array.isArray(rows) ? rows : []) {
     const name = String(r?.name || '');

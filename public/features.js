@@ -11,7 +11,7 @@ const FEATURE_DEFS = [
   { group: 'pages', key: 'page.job', def: true, tr: ['İş Asistanı', 'Uygun şirket pozisyonları · bir işin varken gizlenir'], en: ['Job Assistant', 'Positions that fit your working stats · hidden while you have a job'] },
   { group: 'pages', key: 'page.gym', def: true, tr: ['Gym & Statlar', 'Battle stat geçmişi ve günlük artış'], en: ['Gym & Stats', 'Battle stat history and daily gains'] },
   { group: 'pages', key: 'page.networth', def: true, tr: ['Networth', 'Servet dökümü ve günlük değişim'], en: ['Networth', 'Wealth breakdown and daily change'] },
-  { group: 'pages', key: 'page.travel', def: true, tr: ['Seyahat Kârı', 'Kâr, stok ve restock zamanları (YATA + Prometheus)'], en: ['Travel Profit', 'Profit, stock and restock times (YATA + Prometheus)'] },
+  { group: 'pages', key: 'page.travel', def: true, tr: ['Seyahat Kârı', "Kâr, stok ve restock zamanları (YATA + Prometheus) · seviye 15'ten itibaren görünür"], en: ['Travel Profit', 'Profit, stock and restock times (YATA + Prometheus) · shown from level 15'] },
   { group: 'pages', key: 'page.war', def: true, tr: ['Savaş Hedefleri', 'Fair Fight hedef önerileri'], en: ['War Targets', 'Fair Fight target suggestions'] },
   { group: 'pages', key: 'page.crimes', def: true, tr: ['Suç Merkezi', 'Shoplifting güvenliği (API) ve nerve başına kazanç'], en: ['Crime Hub', 'Shoplifting security (API) and money per nerve'] },
   { group: 'pages', parent: 'page.crimes', key: 'crimes.shoplift', def: true, tr: ["Shoplifting güvenliği", "Mağaza güvenlik durumu ve ★ alarmı"], en: ["Shoplifting security", "Store security status and ★ alerts"] },
@@ -96,6 +96,8 @@ const underLevel15 = () => myLevel() > 0 && myLevel() < 15;
 function viewHidden(v) {
   if (v === 'job' && hasJob()) return true;
   if (LEVELLING_VIEWS.includes(v) && !underLevel15()) return true;
+  // Seyahat Kârı seviye 15 altındaki oyunculara gösterilmez (o dönemde Başlangıç Rehberi ve Levelling Targets var)
+  if (v === 'travel' && underLevel15()) return true;
   // Faction sayfası yalnızca bir faction'dayken
   if (v === 'faction' && state.overview?.player?.faction && !Number(state.overview.player.faction.faction_id)) return true;
   if (EXTRA_VIEWS[v] && !feat(EXTRA_VIEWS[v])) return true;
@@ -738,7 +740,7 @@ setInterval(() => {
   $$('[data-tv-at]').forEach((el) => { const s = Number(el.dataset.tvAt) - now; el.textContent = tvFmt(s); el.classList.toggle('due', s <= 0); });
 }, 1000);
 setInterval(() => {
-  const bg = travelState.watch.size && feat('page.travel') && feat('notify') && feat('notify.restock');
+  const bg = travelState.watch.size && !viewHidden('travel') && feat('notify') && feat('notify.restock');
   if (state.view !== 'travel' && !bg) return;
   fetchTravel().then(() => { if (state.view === 'travel') renderTravelResults(); }).catch(() => {});
 }, 120_000);
