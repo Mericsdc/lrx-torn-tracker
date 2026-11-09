@@ -178,6 +178,7 @@
           <div class="clock glass-pill" title="Torn City Time (UTC)">
             <span class="dot pulse"></span><span class="mono" id="tct-clock">--:--:--</span><small>TCT</small>
           </div>
+          <button class="btn glass-pill" id="feedback-btn" type="button" title="İstek, öneri ya da hata gönder">💬 <span id="feedback-label">Geri bildirim</span></button>
           <button class="btn glass-pill update-btn" id="update-btn" title="Güncellemeleri denetle">
             <span class="update-dot" id="update-dot" hidden></span>⬆ <span id="update-label">v—</span>
           </button>
@@ -490,6 +491,9 @@
     <div class="webview-deck" id="webview-deck"></div>
   </section>
 
+  <!-- Geri bildirim formu (feedback.js doldurur) -->
+  <div class="modal-backdrop" id="feedback-modal" hidden></div>
+
   <!-- Google Sign-In & Cookie Import Modal -->
   <div class="modal-backdrop" id="login-modal" hidden>
     <div class="glass card modal-card">
@@ -558,5 +562,6 @@
   <script src="/tools.js"></script>
   <script src="/events.js"></script>
   <script src="/faction.js"></script>
+  <script src="/feedback.js"></script>
 </body>
 </html>

@@ -17,6 +17,7 @@
 - **Tools and events**: the Torn calendar with your personal start times, yearly event guides (Easter Egg Hunt, Trick or Treat, Christmas Town) and a purchase price guard.
 - **Torn page helpers** (they only add colors and labels to the page you are viewing and never click anything): crime XP and $/N badges, crime buttons colored from worst to best, burglary notes, jail bust difficulty, poker odds, a below-cost listing warning and event helpers.
 - **Settings**: every page, notification and helper can be turned on or off.
+- **Feedback**: the 💬 button in the top bar sends a request, a suggestion or a bug report to the developer by email. Only the form fields and the app version are sent, never your API key.
 - **Built-in Torn browser**: tabs you can drag to reorder, a context bar (Profile / Attack), and Google sign-in through your own Chrome or Edge.
 - **TornTools**: the Chrome Web Store extension is downloaded and loaded inside the app.
 - **Updates**: the update button downloads the newest GitHub release, checks its SHA-256 and installs it.
@@ -29,7 +30,7 @@
    - To create a key: Torn → Preferences → API Keys → Add new key → choose **Limited Access**.
    - The "Limited API key oluştur →" link on the login screen opens this page with the fields already filled in.
 
-> 🔒 Your API key is stored only in `data/config.json` next to the app on your own computer, and it is sent only to `api.torn.com` (and to `ffscouter.com` for war estimates). Use **Settings → Çıkış Yap** to remove the key.
+> 🔒 Your API key is stored only in `data/config.json` next to the app on your own computer, and it is sent only to `api.torn.com` (and to `ffscouter.com` for war estimates). Feedback messages go through `formsubmit.co` and contain only what you type in the form. Use **Settings → Çıkış Yap** to remove the key.
 
 ## Development
 

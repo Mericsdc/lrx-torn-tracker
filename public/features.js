@@ -64,6 +64,7 @@ const FEATURE_DEFS = [
   { group: 'app', key: 'app.splash', def: true, tr: ['Açılış ekranı', 'Uygulama açılırken LRX logosu'], en: ['Splash screen', 'LRX logo on startup'] },
   { group: 'app', key: 'app.torntools', def: true, tr: ['TornTools', 'Yerleşik Torn sekmelerinde TornTools eklentisi (yeniden başlatınca)'], en: ['TornTools', 'TornTools extension in Torn tabs (after restart)'] },
   { group: 'app', key: 'app.tabSleep', def: true, tr: ['Kullanılmayan sekmeleri uyut', '20 dk açılmayan Torn sekmesi RAM\'den boşaltılır, tıklayınca kaldığı yerden açılır'], en: ['Sleep unused tabs', 'Torn tabs unused for 20 min are unloaded from RAM and reload where you left off'] },
+  { group: 'app', key: 'app.feedback', def: true, tr: ['Geri bildirim butonu', 'Üst çubukta: istek, öneri ve hatalar e-posta ile geliştiriciye gider'], en: ['Feedback button', 'In the top bar: requests, suggestions and bugs go to the developer by email'] },
   { group: 'app', key: 'app.updates', def: true, tr: ['Otomatik güncelleme kontrolü', 'Açılışta ve 6 saatte bir'], en: ['Automatic update check', 'On startup and every 6 hours'] },
 ];
 const FEATURE_DEF_MAP = Object.fromEntries(FEATURE_DEFS.map((f) => [f.key, f]));

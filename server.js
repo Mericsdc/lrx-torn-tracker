@@ -1684,6 +1684,42 @@ async function getFactionReport(start = false) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Geri bildirim: istek, öneri ve hatalar e-posta ile geliştiriciye      */
+/* ------------------------------------------------------------------ */
+// E-posta FormSubmit (formsubmit.co) üzerinden gider: sunucu şifresi ya da SMTP bilgisi gerekmez.
+// Yalnızca formdaki alanlar ve uygulama sürümü gönderilir; API key ve başka kişisel veri asla eklenmez.
+// FormSubmit takma adı: e-posta adresi açık kaynak kodda görünmesin diye adres yerine bu kod kullanılır.
+const FEEDBACK_TO = process.env.LRX_FEEDBACK_TO || '4d5de3d49afa4bc275628b52f5a9c39d';
+const FEEDBACK_KINDS = { oneri: 'Öneri', istek: 'İstek', hata: 'Hata', diger: 'Diğer' };
+let feedbackLast = 0;
+async function sendFeedback(b) {
+  const kind = FEEDBACK_KINDS[b.kind] ? b.kind : 'diger';
+  const message = String(b.message || '').trim().slice(0, 4000);
+  const name = String(b.name || '').trim().slice(0, 80);
+  const contact = String(b.contact || '').trim().slice(0, 120);
+  if (message.length < 5) throw new ApiError('Mesaj çok kısa.', 'FEEDBACK_SHORT');
+  const wait = 60_000 - (Date.now() - feedbackLast);
+  if (wait > 0) throw new ApiError(`Bir dakikada bir mesaj gönderilebilir (${Math.ceil(wait / 1000)} sn).`, 'FEEDBACK_RATE');
+  const payload = {
+    _subject: `LRX Torn Tracker · ${FEEDBACK_KINDS[kind]}${name ? ` · ${name}` : ''}`,
+    _template: 'table', _captcha: 'false',
+    Kategori: FEEDBACK_KINDS[kind], Mesaj: message,
+    Gonderen: name || '(belirtilmedi)', Iletisim: contact || '(belirtilmedi)',
+    Surum: APP_VERSION || '?', Dil: b.lang === 'en' ? 'EN' : 'TR',
+  };
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contact)) payload._replyto = contact; // e-postaya "Yanıtla" ile dönülebilsin
+  const res = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(FEEDBACK_TO)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', Referer: 'https://github.com/Mericsdc/lrx-torn-tracker', 'User-Agent': 'LRX-Torn-Tracker' },
+    body: JSON.stringify(payload),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || String(j.success) !== 'true') throw new ApiError(j.message || `Gönderilemedi (HTTP ${res.status})`, 'FEEDBACK_FAIL');
+  feedbackLast = Date.now();
+  return { ok: true };
+}
+
+/* ------------------------------------------------------------------ */
 /* Arka plan poller                                                    */
 /* ------------------------------------------------------------------ */
 let pollTimer = null;
@@ -1758,6 +1794,10 @@ async function handleApi(req, res, url) {
       return send(res, 200, { access, myOc, oc, at: Date.now() });
     }
     if (p === '/api/faction/report') return send(res, 200, await getFactionReport(req.method === 'POST'));
+    if (p === '/api/feedback' && req.method === 'POST') {
+      try { return send(res, 200, await sendFeedback(await readBody(req))); }
+      catch (e) { return send(res, e.code === 'FEEDBACK_RATE' ? 429 : e.code === 'FEEDBACK_SHORT' ? 400 : 502, { error: e.message, code: e.code }); }
+    }
     if (p === '/api/purchases' && req.method === 'GET') return send(res, 200, await getPurchases());
     if (p === '/api/purchases' && req.method === 'POST') {
       const b = await readBody(req);
