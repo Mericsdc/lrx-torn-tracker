@@ -8,6 +8,13 @@
 
 ## Features
 
+### Version 1.6.7
+
+- Redesigned the update window to use the same card surfaces, fonts and buttons as the main interface in all five themes.
+- Current and latest versions appear together; release notes render headings, lists, bold text and code without accepting upstream HTML.
+- Long notes scroll inside the window, keeping actions visible down to 480×400. Download progress and recoverable errors stay in the same dialog.
+- The top update button and Settings → Updates open the same screen, including an up-to-date state. Keyboard navigation includes the notes area and restores focus when the window closes.
+
 ### Version 1.6.6
 
 - FF Scouter now automatically uses the saved FFScouter key, falling back to the saved Torn API key. Its Torn API calls use the main Torn key. Changes and logout take effect for subsequent requests without entering another key.

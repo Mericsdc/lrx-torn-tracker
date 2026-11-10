@@ -575,13 +575,27 @@
 
   <div class="toast" id="toast"></div>
   <div class="modal-backdrop" id="update-modal" hidden>
-    <section class="glass card modal-card" role="dialog" aria-modal="true" aria-labelledby="update-dialog-title">
-      <div class="card-head"><h3 id="update-dialog-title"></h3><button class="btn sm ghost" id="update-dialog-close" type="button" aria-label="Close">✕</button></div>
+    <section class="glass card modal-card" role="dialog" aria-modal="true" aria-labelledby="update-dialog-title" aria-describedby="update-dialog-description">
+      <header class="update-dialog-header">
+        <img src="/logo-64.png" width="38" height="38" alt="" />
+        <div class="update-dialog-heading"><span class="update-dialog-brand">LRX Torn Tracker</span><h3 id="update-dialog-title"></h3></div>
+        <button class="btn sm ghost" id="update-dialog-close" type="button" aria-label="Close">✕</button>
+      </header>
+      <div class="update-dialog-versions">
+        <div><span id="update-dialog-current-label"></span><strong class="mono" id="update-dialog-current"></strong></div>
+        <span class="update-dialog-arrow" aria-hidden="true">→</span>
+        <div class="update-dialog-new-version"><span id="update-dialog-latest-label"></span><strong class="mono" id="update-dialog-latest"></strong></div>
+      </div>
       <p id="update-dialog-description"></p>
-      <p id="update-dialog-notes"></p>
-      <p id="update-dialog-status" role="status"></p>
-      <progress id="update-dialog-progress" max="5" value="0" hidden></progress>
-      <div class="settings-actions"><button class="btn ghost" id="update-dialog-cancel" type="button"></button><button class="btn primary" id="update-dialog-install" type="button"></button></div>
+      <section class="update-dialog-release" id="update-dialog-release" aria-labelledby="update-dialog-notes-label">
+        <h4 id="update-dialog-notes-label"></h4>
+        <div id="update-dialog-notes" tabindex="0" role="region" aria-labelledby="update-dialog-notes-label"></div>
+      </section>
+      <div class="update-dialog-feedback" id="update-dialog-feedback" hidden>
+        <p id="update-dialog-status" role="status" aria-live="polite"></p>
+        <progress id="update-dialog-progress" max="5" value="0" hidden></progress>
+      </div>
+      <footer class="settings-actions update-dialog-actions"><button class="btn ghost" id="update-dialog-cancel" type="button"></button><button class="btn primary" id="update-dialog-install" type="button"></button></footer>
     </section>
   </div>
   <script src="/shape-waves.js"></script>

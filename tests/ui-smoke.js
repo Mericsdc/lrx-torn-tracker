@@ -16,6 +16,9 @@ let browser;
   const base = 'http://127.0.0.1:' + port;
   browser = await chromium.launch({ executablePath: process.env.CHROME_EXE || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: ['clipboard-read', 'clipboard-write'] });
+  await context.addInitScript(() => {
+    window.electronAPI = { onUpdateProgress: (callback) => { window.qaUpdateProgress = callback; } };
+  });
   const page = await context.newPage();
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
   let signedIn = false, sentKeys = [];
@@ -112,19 +115,67 @@ let browser;
   await page.evaluate(() => { document.body.classList.remove('no-anim'); openInTab('https://weav3r.dev/', { activate: false }); openInTab('https://www.torn.com/index.php', { activate: false }); });
   assert.ok(await page.locator('#workspace-shortcuts').evaluate((e) => parseFloat(getComputedStyle(e).transitionDuration) > 0));
   assert.deepEqual(errors, []);
-  await page.evaluate(() => {
-    window.electronAPI = { updateApply: async () => ({ ok: false, error: 'QA download failure' }) };
-    state.update = { available: true, current: '1.6.4', latest: '1.6.5', notes: 'Fixture release notes' };
+  const releaseNotes = "## What's new\n\n- **FF Scouter** uses the saved key.\n- Added `Weav3r` and target groups.\n\n## Fixes\n\n" + Array.from({ length: 12 }, (_, i) => '- Update improvement ' + (i + 1)).join('\n') + '\n\n<img src=x onerror="window.qaUnsafeNotes = true">';
+  await page.evaluate((notes) => {
+    window.electronAPI = {
+      updateApply: () => new Promise((resolve) => { window.qaFinishUpdate = resolve; }),
+      updateCheck: async () => state.update,
+    };
+    state.update = { available: true, current: '1.6.6', latest: '1.6.7', notes };
     document.querySelector('#update-btn').hidden = false;
-  });
+  }, releaseNotes);
   await page.locator('#update-btn').click();
   await page.locator('#update-modal').waitFor({ state: 'visible' });
-  assert.equal(await page.locator('#update-dialog-notes').textContent(), 'Fixture release notes');
-  await page.screenshot({ path: path.join(output, 'update-dialog-light.png') });
+  assert.equal(await page.locator('#update-dialog-notes h4').count(), 2);
+  assert.equal(await page.locator('#update-dialog-notes strong').textContent(), 'FF Scouter');
+  assert.equal(await page.locator('#update-dialog-notes code').textContent(), 'Weav3r');
+  assert.equal(await page.locator('#update-dialog-notes img').count(), 0);
+  assert.equal(await page.evaluate(() => window.qaUnsafeNotes), undefined);
+  for (const theme of ['obsidian', 'ocean', 'forest', 'amethyst', 'light']) {
+    await page.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, theme);
+    const colors = await page.locator('#update-modal [role="dialog"]').evaluate((el) => {
+      const card = document.querySelector('.sidebar.glass');
+      return { dialog: getComputedStyle(el).backgroundImage, app: getComputedStyle(card).backgroundImage, font: getComputedStyle(el).fontFamily, appFont: getComputedStyle(card).fontFamily };
+    });
+    assert.equal(colors.dialog, colors.app, theme + ' uses the normal card surface');
+    assert.equal(colors.font, colors.appFont);
+    await page.screenshot({ path: path.join(output, 'update-dialog-' + theme + '.png') });
+  }
+  await page.setViewportSize({ width: 480, height: 400 });
+  const fits = await page.locator('#update-modal [role="dialog"]').evaluate((el) => {
+    const card = el.getBoundingClientRect(), footer = el.querySelector('footer').getBoundingClientRect(), notes = document.querySelector('#update-dialog-notes');
+    return card.left >= 0 && card.top >= 0 && card.right <= innerWidth && card.bottom <= innerHeight && footer.bottom <= card.bottom && notes.scrollHeight > notes.clientHeight;
+  });
+  assert.ok(fits, '480x400 keeps actions visible and scrolls long notes');
+  await page.screenshot({ path: path.join(output, 'update-dialog-compact.png') });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.locator('#update-dialog-install').press('Tab');
+  assert.equal(await page.locator('#update-dialog-close').evaluate((el) => el === document.activeElement), true);
+  await page.locator('#update-dialog-close').press('Tab');
+  assert.equal(await page.locator('#update-dialog-notes').evaluate((el) => el === document.activeElement), true);
   await page.locator('#update-dialog-install').click();
+  await page.evaluate(() => window.qaUpdateProgress({ step: 'download', message: 'Downloading update…' }));
+  assert.equal(await page.locator('#update-dialog-progress').evaluate((el) => el.value), 1);
+  assert.equal(await page.locator('#update-dialog-install').isDisabled(), true);
+  await page.locator('#update-dialog-notes').press('Escape');
+  assert.equal(await page.locator('#update-modal').isVisible(), true);
+  await page.evaluate(() => window.qaFinishUpdate({ ok: false, error: 'QA download failure' }));
   await page.waitForFunction(() => document.querySelector('#update-dialog-status').textContent.includes('QA download failure'));
+  assert.ok(await page.locator('#update-dialog-feedback').evaluate((el) => el.classList.contains('is-error')));
+  assert.equal(await page.locator('#update-dialog-install').isEnabled(), true);
   await page.locator('#update-dialog-cancel').click();
   await page.locator('#update-modal').waitFor({ state: 'hidden' });
+  await page.locator('[data-view="settings"]').click();
+  await page.locator('[data-set-tab="general"]').click();
+  await page.locator('#set-update-check').click();
+  await page.locator('#update-modal').waitFor({ state: 'visible' });
+  await page.locator('#update-dialog-close').press('Escape');
+  assert.equal(await page.locator('#set-update-check').evaluate((el) => el === document.activeElement), true);
+  await page.evaluate(() => { state.update.available = false; state.update.current = state.update.latest; });
+  await page.locator('#set-update-check').click();
+  assert.equal(await page.locator('#update-dialog-title').textContent(), "You're up to date");
+  assert.equal(await page.locator('#update-dialog-install').isVisible(), false);
+  await page.locator('#update-dialog-cancel').click();
   const guard = await context.newPage();
   const guardRequests = [];
   await context.addCookies([{ name: 'rfc_v', value: 'fresh-token', domain: 'www.torn.com', path: '/', secure: true }]);

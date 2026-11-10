@@ -1923,58 +1923,126 @@ async function checkUpdate(manual, force = false) {
     const u = state.update;
     if (u.configured === false) toast(tr('Bu kurulumda güncelleme adresi yok', 'This build has no update address'));
     else if (u.error) toast(tr('Güncelleme kontrolü başarısız: ', 'Update check failed: ') + u.error);
-    else if (!u.available) toast(tr(`En güncel sürümdesin (v${u.current})`, `You're on the latest version (v${u.current})`));
+    else openUpdateDialog();
   }
 }
 let updateInstalling = false;
+let updateReturnFocus = null;
+// Only render the release-note formatting we display; all upstream text stays text nodes.
+function renderUpdateNotes(notes) {
+  const container = $('#update-dialog-notes');
+  container.replaceChildren();
+  function inline(parent, text) {
+    for (const part of text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g)) {
+      const tag = part.startsWith('**') && part.endsWith('**') ? 'strong' : part.startsWith('`') && part.endsWith('`') ? 'code' : null;
+      if (!tag) { parent.append(document.createTextNode(part)); continue; }
+      const node = document.createElement(tag);
+      node.textContent = tag === 'strong' ? part.slice(2, -2) : part.slice(1, -1);
+      parent.append(node);
+    }
+  }
+  let paragraph = null, list = null, item = null;
+  for (const line of String(notes || '').replace(/\r\n?/g, '\n').split('\n')) {
+    const text = line.trim();
+    if (!text) { paragraph = list = item = null; continue; }
+    const heading = text.match(/^(#{1,6})\s+(.+?)\s*#*$/);
+    const bullet = text.match(/^(?:[-*+]\s+|\d+[.)]\s+)(.+)$/);
+    if (heading) {
+      paragraph = list = item = null;
+      const node = document.createElement(heading[1].length > 2 ? 'h5' : 'h4');
+      inline(node, heading[2]); container.append(node);
+    } else if (bullet) {
+      paragraph = null;
+      const kind = /^\d/.test(text) ? 'OL' : 'UL';
+      if (!list || list.tagName !== kind) { list = document.createElement(kind.toLowerCase()); container.append(list); }
+      item = document.createElement('li'); inline(item, bullet[1]); list.append(item);
+    } else if (item) {
+      item.append(document.createTextNode(' ')); inline(item, text);
+    } else {
+      if (!paragraph) { paragraph = document.createElement('p'); container.append(paragraph); }
+      else paragraph.append(document.createTextNode(' '));
+      inline(paragraph, text);
+    }
+  }
+  $('#update-dialog-release').hidden = !container.childElementCount;
+  container.scrollTop = 0;
+}
 function closeUpdateDialog() {
   if (updateInstalling) return;
   $('#update-modal').hidden = true;
   window.electronAPI?.setViewVisibility?.(true);
-  $('#update-btn').focus();
+  (updateReturnFocus?.isConnected ? updateReturnFocus : $('#update-btn')).focus();
 }
-$('#update-btn')?.addEventListener('click', () => {
+function openUpdateDialog() {
   const u = state.update;
-  if (!u?.available) return checkUpdate(true);
-  $('#update-dialog-title').textContent = u.restartOnly ? tr('Yeniden başlat', 'Restart application') : tr('Uygulamayı güncelle', 'Update application');
-  $('#update-dialog-description').textContent = 'v' + u.latest + ' · ' + tr('Kurulumdan sonra uygulama tamamen kapanıp tekrar açılacak.', 'The app will fully close and reopen after installation.');
-  $('#update-dialog-notes').textContent = u.notes || '';
+  if (!u || u.error || u.configured === false && !u.restartOnly || updateInstalling) return;
+  if ($('#update-modal').hidden) updateReturnFocus = document.activeElement;
+  $('#update-dialog-title').textContent = u.restartOnly ? tr('Yeniden başlatmaya hazır', 'Ready to restart')
+    : u.available ? tr('Yeni sürüm hazır', 'An update is ready') : tr('Uygulaman güncel', "You're up to date");
+  $('#update-dialog-current-label').textContent = tr('Çalışan sürüm', 'Current version');
+  $('#update-dialog-latest-label').textContent = u.restartOnly ? tr('Kurulu sürüm', 'Installed version') : tr('Son sürüm', 'Latest version');
+  $('#update-dialog-current').textContent = 'v' + u.current;
+  $('#update-dialog-latest').textContent = 'v' + (u.latest || u.current);
+  $('#update-dialog-description').textContent = u.restartOnly
+    ? tr('Güncelleme kuruldu. Yeni sürümü açmak için uygulama yeniden başlatılacak.', 'The update is installed. Restart the app to open the new version.')
+    : u.available ? tr('Güncelleme kurulduktan sonra uygulama kapanıp yeniden açılacak. Ayarların ve kayıtlı verilerin korunacak.', 'The app will close and reopen after installation. Your settings and saved data will be kept.')
+      : tr('LRX Torn Tracker’ın son sürümünü kullanıyorsun.', 'You are running the latest version of LRX Torn Tracker.');
+  $('#update-dialog-notes-label').textContent = tr('Sürüm notları', 'Release notes');
+  renderUpdateNotes(u.notes);
+  $('#update-dialog-close').setAttribute('aria-label', tr('Kapat', 'Close'));
   $('#update-dialog-status').textContent = '';
+  $('#update-dialog-feedback').hidden = true;
+  $('#update-dialog-feedback').classList.remove('is-error');
   $('#update-dialog-progress').hidden = true;
-  $('#update-dialog-cancel').textContent = tr('Vazgeç', 'Cancel');
+  $('#update-dialog-progress').value = 0;
+  $('#update-dialog-progress').setAttribute('aria-label', tr('Güncelleme ilerlemesi', 'Update progress'));
+  $('#update-dialog-cancel').textContent = u.available ? tr('Vazgeç', 'Cancel') : tr('Kapat', 'Close');
+  $('#update-dialog-install').hidden = !u.available;
   $('#update-dialog-install').textContent = u.restartOnly ? tr('Yeniden başlat', 'Restart') : tr('Kur ve yeniden başlat', 'Install and restart');
   $('#update-modal').hidden = false;
   window.electronAPI?.setViewVisibility?.(false);
-  $('#update-dialog-install').focus();
+  $(u.available ? '#update-dialog-install' : '#update-dialog-cancel').focus();
+}
+$('#update-btn')?.addEventListener('click', () => {
+  if (state.update?.available) openUpdateDialog();
+  else checkUpdate(true);
 });
 $('#update-dialog-close').addEventListener('click', closeUpdateDialog);
 $('#update-dialog-cancel').addEventListener('click', closeUpdateDialog);
 $('#update-modal').addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { e.preventDefault(); closeUpdateDialog(); }
   if (e.key === 'Tab') {
-    const buttons = [...$('#update-modal').querySelectorAll('button:not(:disabled)')];
-    if (!buttons.length) return e.preventDefault();
-    const i = buttons.indexOf(document.activeElement);
-    if (e.shiftKey && i <= 0) { e.preventDefault(); buttons.at(-1).focus(); }
-    else if (!e.shiftKey && i === buttons.length - 1) { e.preventDefault(); buttons[0].focus(); }
+    const controls = [...$('#update-modal').querySelectorAll('button:not(:disabled),[tabindex="0"]')].filter((el) => el.getClientRects().length);
+    if (!controls.length) return e.preventDefault();
+    const i = controls.indexOf(document.activeElement);
+    if (e.shiftKey && i <= 0) { e.preventDefault(); controls.at(-1).focus(); }
+    else if (!e.shiftKey && (i === -1 || i === controls.length - 1)) { e.preventDefault(); controls[0].focus(); }
   }
 });
 $('#update-dialog-install').addEventListener('click', async () => {
   if (updateInstalling) return;
   updateInstalling = true;
+  $('#update-modal [role="dialog"]').setAttribute('aria-busy', 'true');
   $$('#update-modal button').forEach((b) => b.disabled = true);
+  $('#update-dialog-feedback').hidden = false;
+  $('#update-dialog-feedback').classList.remove('is-error');
   $('#update-dialog-status').textContent = tr('Hazırlanıyor…', 'Preparing…');
   try {
     const result = await window.electronAPI.updateApply();
     if (!result.ok) throw new Error(result.error);
   } catch (error) {
     updateInstalling = false;
+    $('#update-modal [role="dialog"]').removeAttribute('aria-busy');
+    $('#update-dialog-feedback').classList.add('is-error');
+    $('#update-dialog-progress').hidden = true;
     $('#update-dialog-status').textContent = tr('Güncelleme başarısız: ', 'Update failed: ') + error.message;
     $$('#update-modal button').forEach((b) => b.disabled = false);
+    $('#update-dialog-install').focus();
   }
 });
 window.electronAPI?.onUpdateProgress?.((p) => {
   $('#update-label').textContent = p.message;
+  $('#update-dialog-feedback').hidden = false;
   $('#update-dialog-status').textContent = p.message;
   const progress = $('#update-dialog-progress'); progress.hidden = false;
   progress.value = ({ download: 1, extract: 2, install: 3, done: 4, restart: 5 })[p.step] || 0;

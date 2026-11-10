@@ -1,7 +1,7 @@
 {
   "name": "torn-tracker",
   "productName": "TornTracker",
-  "version": "1.6.6",
+  "version": "1.6.7",
   "description": "LRX Torn Tracker – Torn City masaüstü takip uygulaması: şirket stoku, günlük rapor, çalışanlar, gelir tablosu, sayaçlar, Fair Fight savaş hedef önerileri, TornTools ve yerleşik Torn tarayıcısı.",
   "main": "electron-main.js",
   "scripts": {
