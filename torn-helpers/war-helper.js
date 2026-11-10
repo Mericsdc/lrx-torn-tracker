@@ -13,7 +13,7 @@
   const ATTACK = '.attack, [class*="attack___"]';
   const SOON_MS = 60_000;
 
-  const data = { st: {} }; // oyuncuId -> { s: state, u: until(sn), d: açıklama }
+  const data = { st: {}, groups: {} }; // oyuncuId -> status / local group label
 
   const style = document.createElement('style');
   style.id = 'lrx-war-css';
@@ -86,6 +86,17 @@
     if (document.hidden) return;
     const rows = document.querySelectorAll(ROW);
     for (const row of rows) {
+      const group = data.groups[idOf(row)];
+      let badge = row.querySelector('.lrx-group-badge');
+      if (group) {
+        if (!badge) {
+          badge = document.createElement('span'); badge.className = 'lrx-group-badge';
+          badge.style.cssText = 'display:inline-block;margin:2px 5px;padding:2px 5px;border:1px solid #69c8ff77;border-radius:4px;font:11px Arial;color:#69c8ff;background:#102b40;max-width:140px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle';
+          row.querySelector('a[href*="profiles.php"]')?.parentElement?.appendChild(badge);
+        }
+        if (badge.textContent !== group) badge.textContent = group;
+        badge.title = L('LRX hedef grubu: ', 'LRX target group: ') + group;
+      } else badge?.remove();
       const statusCell = row.querySelector(STATUS);
       const st = stateOf(row, statusCell);
       if (statusCell) {
@@ -117,8 +128,9 @@
       return { active: !!document.querySelector(ROW), factionIds: [...new Set(factionIds)].slice(0, 6) };
     },
     // Ana süreç: { oyuncuId: { s, u, d } }
-    update(statuses) {
+    update(statuses, groups) {
       if (statuses && typeof statuses === 'object') data.st = statuses;
+      data.groups = groups || {};
       tick();
     },
   };

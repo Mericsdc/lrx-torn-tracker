@@ -304,7 +304,7 @@ function setAlert(key, html, type = 'danger') {
 }
 
 async function api(path, opts = {}) {
-  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(60_000), ...opts });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) { const e = new Error(json.error || `HTTP ${res.status}`); e.status = res.status; e.code = json.code; throw e; }
   return json;
@@ -350,7 +350,7 @@ function showView(v) {
   $('#view-title').textContent = vm[0];
   $('#view-sub').textContent = vm[1];
   location.hash = v;
-  if (v === 'war') { if (!state.wars) loadWars(); if (state.factionId && !state.targets) loadTargets(); }
+  if (v === 'war') { if (!state.wars) loadWars(); if (state.factionId && !state.targets) loadTargets(); window.loadWarGroups?.(); }
   if (v === 'settings') loadConfig();
   window.onViewShown?.(v);
 }
@@ -447,7 +447,7 @@ function renderOverview() {
     <div class="bs-total warn"><small>${tr('Xanaxlı (efektif)', 'With Xanax (effective)')}</small><strong>${compact(t.withXanax)}</strong></div>`;
   const names = { strength: 'Strength', defense: 'Defense', speed: 'Speed', dexterity: 'Dexterity' };
   $('#bs-table').innerHTML = `<thead><tr><th>Stat</th><th class="num">${tr('Ham', 'Base')}</th><th class="num">Mod</th><th class="num">${tr('Xanaxsız', 'No Xanax')}</th><th class="num">${tr('Xanaxlı', 'With Xanax')}</th></tr></thead><tbody>${
-    Object.entries(bt.stats).map(([k, s]) => `<tr title="${esc(s.info.map((i) => i.text).join('\n'))}"><td>${names[k]}</td><td class="num">${n0(s.base)}</td><td class="num ${s.modifier >= 0 ? 'pos' : 'neg'}">${s.modifier >= 0 ? '+' : ''}${s.modifier}%</td><td class="num tq-text">${n0(s.noXanax)}</td><td class="num" style="color:var(--warn)">${n0(s.withXanax)}</td></tr>`).join('')
+    Object.entries(bt.stats).map(([k, s]) => `<tr title="${esc(s.info.map((i) => i.text).join('\n'))}"><td>${names[k]}</td><td class="num">${n0(s.base)}</td><td class="num ${s.modifier >= 0 ? 'pos' : 'neg'}" title="${tr('API mevcut modifier (aktif etkiler dahil)', 'Current API modifier (includes active effects)')}">${s.modifier >= 0 ? '+' : ''}${s.modifier}%</td><td class="num tq-text" title="${s.noXanaxModifier ?? '—'}%">${n0(s.noXanax)}</td><td class="num" style="color:var(--warn)" title="${s.withXanaxModifier ?? '—'}%">${n0(s.withXanax)}</td></tr>`).join('')
   }</tbody>`;
 
   // drug max memory for ring
@@ -1114,16 +1114,24 @@ $('#f-fit').addEventListener('change', renderTargets);
 let targetsLoading = false;
 async function loadTargets() {
   if (!state.factionId || targetsLoading) return;
+  const factionId = state.factionId;
+  window.loadWarGroups?.();
   localStorage.setItem('tt.faction', state.factionId);
   targetsLoading = true;
   if (!state.targets) $('#war-table').innerHTML = `<tbody><tr><td class="empty-state">${tr('Rakip üyeler ve savaş güçleri yükleniyor…', 'Loading opponent members and battle stats…')}</td></tr></tbody>`;
   try {
-    state.targets = await api('/api/targets?faction=' + state.factionId);
+    const targets = await api('/api/targets?faction=' + factionId);
+    if (state.factionId !== factionId) return;
+    state.targets = targets;
     state.targetsAt = Date.now();
     renderTargets();
   } catch (e) {
+    if (state.factionId !== factionId) return;
     $('#war-table').innerHTML = `<tbody><tr><td class="empty-state">${tr('Hata:', 'Error:')} ${esc(e.message)}</td></tr></tbody>`;
-  } finally { targetsLoading = false; }
+  } finally {
+    targetsLoading = false;
+    if (state.factionId !== factionId) loadTargets();
+  }
 }
 
 function renderWarMe() {
@@ -1161,7 +1169,7 @@ function computeTargets() {
   const t = state.targets; if (!t) return [];
   const mineNo = t.me.totals.noXanax, mineXan = t.me.totals.withXanax;
   return t.members.map((m) => {
-    const rNo = m.bs ? m.bs / mineNo : null, rX = m.bs ? m.bs / mineXan : null;
+    const rNo = m.bs && mineNo > 0 ? m.bs / mineNo : null, rX = m.bs && mineXan > 0 ? m.bs / mineXan : null;
     const r = state.mode === 'withXanax' ? rX : rNo;
     const ff = ffOf(r), win = winOf(r);
     // Beklenen puan = kazanma ihtimali × FF (Leave/Hosp ile, mug yapmadan)
@@ -1262,7 +1270,8 @@ function renderTargets() {
   $('#war-sub').textContent = `${t.faction.members} ${tr('üye', 'members')} · ${t.faction.rank?.name ? decode(t.faction.rank.name) + ' · ' : ''}${n0(t.faction.respect)} respect · ${tr('güncellendi', 'updated')} ${new Date(state.targetsAt).toLocaleTimeString(timeLocale())}`;
 
   const all = computeTargets();
-  renderRecommendations(all);
+  const groupedTargets = window.filterWarTargets ? window.filterWarTargets(all) : all;
+  renderRecommendations(groupedTargets);
   requestAnimationFrame(() => animateNumbers($('#view-war')));
   const known = all.filter((m) => m.bs);
   const okay = all.filter((m) => m.status?.state === 'Okay');
@@ -1274,7 +1283,7 @@ function renderTargets() {
     kpi(tr('Şu an saldırılabilir', 'Attackable now'), okay.filter((m) => m.fit === 'ideal' || m.fit === 'easy').length, state.mode === 'withXanax' ? tr('Xanaxlı moda göre', 'in With Xanax mode') : tr('Xanaxsız moda göre', 'in No Xanax mode'), 'pos'),
   ].join('');
 
-  let rows = all;
+  let rows = groupedTargets;
   if ($('#f-okay').checked) rows = rows.filter((m) => m.status?.state === 'Okay');
   if ($('#f-fit').checked) rows = rows.filter((m) => m.fit === 'ideal' || m.fit === 'easy');
 
@@ -1322,6 +1331,7 @@ function renderTargets() {
     state.sort = state.sort.key === k ? { key: k, dir: -state.sort.dir } : { key: k, dir: k === 'smart' || k === 'name' || k === 'status' || k === 'ratio' ? 1 : -1 };
     renderTargets();
   }));
+  window.decorateWarGroups?.(rows);
   tick();
 }
 
@@ -1701,6 +1711,7 @@ const seenWsTabs = new Set();
 function renderBrowserTabs() {
   const wrap = $('#browser-tabs');
   if (!wrap) return;
+  window.updateWorkspaceShortcuts?.();
   // Sürükleme sırasında yeniden çizmek sürüklemeyi iptal eder → bitince çiz
   if (tabDrag.id) { tabDrag.pendingRender = true; return; }
   wrap.innerHTML = state.browserTabs.map((t) => `
@@ -1915,19 +1926,59 @@ async function checkUpdate(manual, force = false) {
     else if (!u.available) toast(tr(`En güncel sürümdesin (v${u.current})`, `You're on the latest version (v${u.current})`));
   }
 }
-$('#update-btn')?.addEventListener('click', async () => {
+let updateInstalling = false;
+function closeUpdateDialog() {
+  if (updateInstalling) return;
+  $('#update-modal').hidden = true;
+  window.electronAPI?.setViewVisibility?.(true);
+  $('#update-btn').focus();
+}
+$('#update-btn')?.addEventListener('click', () => {
   const u = state.update;
   if (!u?.available) return checkUpdate(true);
-  const notes = u.notes ? `\n\n${u.notes}` : '';
-  const ask = u.restartOnly
-    ? tr(`v${u.latest} kuruldu. Yeni sürümün açılması için uygulama yeniden başlatılsın mı?`, `v${u.latest} is installed. Restart the app to load it?`)
-    : tr(`TornTracker v${u.latest} kurulsun mu? Uygulama yeniden başlayacak.${notes}`, `Install TornTracker v${u.latest}? The app will restart.${notes}`);
-  if (!confirm(ask)) return;
-  $('#update-label').textContent = u.restartOnly ? tr('Yeniden başlatılıyor…', 'Restarting…') : tr('Kuruluyor…', 'Installing…');
-  const r = await window.electronAPI.updateApply();
-  if (!r.ok) { toast(tr('Güncelleme başarısız: ', 'Update failed: ') + r.error); renderUpdateBtn(); }
+  $('#update-dialog-title').textContent = u.restartOnly ? tr('Yeniden başlat', 'Restart application') : tr('Uygulamayı güncelle', 'Update application');
+  $('#update-dialog-description').textContent = 'v' + u.latest + ' · ' + tr('Kurulumdan sonra uygulama tamamen kapanıp tekrar açılacak.', 'The app will fully close and reopen after installation.');
+  $('#update-dialog-notes').textContent = u.notes || '';
+  $('#update-dialog-status').textContent = '';
+  $('#update-dialog-progress').hidden = true;
+  $('#update-dialog-cancel').textContent = tr('Vazgeç', 'Cancel');
+  $('#update-dialog-install').textContent = u.restartOnly ? tr('Yeniden başlat', 'Restart') : tr('Kur ve yeniden başlat', 'Install and restart');
+  $('#update-modal').hidden = false;
+  window.electronAPI?.setViewVisibility?.(false);
+  $('#update-dialog-install').focus();
 });
-window.electronAPI?.onUpdateProgress?.((p) => { $('#update-label').textContent = p.message; });
+$('#update-dialog-close').addEventListener('click', closeUpdateDialog);
+$('#update-dialog-cancel').addEventListener('click', closeUpdateDialog);
+$('#update-modal').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { e.preventDefault(); closeUpdateDialog(); }
+  if (e.key === 'Tab') {
+    const buttons = [...$('#update-modal').querySelectorAll('button:not(:disabled)')];
+    if (!buttons.length) return e.preventDefault();
+    const i = buttons.indexOf(document.activeElement);
+    if (e.shiftKey && i <= 0) { e.preventDefault(); buttons.at(-1).focus(); }
+    else if (!e.shiftKey && i === buttons.length - 1) { e.preventDefault(); buttons[0].focus(); }
+  }
+});
+$('#update-dialog-install').addEventListener('click', async () => {
+  if (updateInstalling) return;
+  updateInstalling = true;
+  $$('#update-modal button').forEach((b) => b.disabled = true);
+  $('#update-dialog-status').textContent = tr('Hazırlanıyor…', 'Preparing…');
+  try {
+    const result = await window.electronAPI.updateApply();
+    if (!result.ok) throw new Error(result.error);
+  } catch (error) {
+    updateInstalling = false;
+    $('#update-dialog-status').textContent = tr('Güncelleme başarısız: ', 'Update failed: ') + error.message;
+    $$('#update-modal button').forEach((b) => b.disabled = false);
+  }
+});
+window.electronAPI?.onUpdateProgress?.((p) => {
+  $('#update-label').textContent = p.message;
+  $('#update-dialog-status').textContent = p.message;
+  const progress = $('#update-dialog-progress'); progress.hidden = false;
+  progress.value = ({ download: 1, extract: 2, install: 3, done: 4, restart: 5 })[p.step] || 0;
+});
 window.electronAPI?.onUpdatePending?.(() => checkUpdate(false, true)); // kurulu ama çalışmayan sürüm: ayar kapalı olsa da göster
 setTimeout(() => checkUpdate(false), 2500); // config yüklensin (app.updates ayarı)
 setInterval(() => checkUpdate(false), 6 * 3600_000);
@@ -1987,6 +2038,7 @@ if (window.electronAPI?.onOpenTab) {
 // Torn sekmesinden gelen veriler (ör. şirket stok sayfasındaki gerçek teslim sayaçları)
 if (window.electronAPI?.onTornData) {
   window.electronAPI.onTornData((data) => {
+    if (data.type === 'navigation-loop-stopped') toast(tr('Hızlı gezinme döngüsü durduruldu. İstediğin sayfayı tekrar açabilirsin.', 'Rapid navigation loop stopped. You can reopen the page.'));
     if (data?.type !== 'stock-deliveries') return;
     loadCompany(false).catch(() => {});
     toast(data.count
@@ -2080,9 +2132,25 @@ $('#auth-credit')?.addEventListener('click', (e) => {
   else window.open(url, '_blank', 'noopener');
 });
 $('#auth-key')?.addEventListener('input', (e) => {
-  e.target.value = e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 16);
+  // Preserve typing, cursor position and case. Never silently truncate or rewrite a key.
+  const key = e.target.value.trim();
+  $('#auth-key-count').textContent = `${key.length} / 16`;
+  e.target.setAttribute('aria-invalid', String(key.length > 0 && !/^[A-Za-z0-9]{16}$/.test(key)));
   $('#auth-error').textContent = '';
   $('#auth-card').classList.remove('shake');
+});
+$('#auth-key')?.addEventListener('keydown', (e) => {
+  const caps = $('#auth-caps');
+  caps.hidden = !e.getModifierState('CapsLock');
+  caps.textContent = tr('Caps Lock açık · API anahtarı büyük/küçük harfe duyarlıdır.', 'Caps Lock is on · API keys are case-sensitive.');
+});
+$('#auth-paste')?.addEventListener('click', async () => {
+  try {
+    const value = window.electronAPI?.readClipboard ? await window.electronAPI.readClipboard() : await navigator.clipboard.readText();
+    $('#auth-key').value = String(value).trim();
+    $('#auth-key').dispatchEvent(new Event('input', { bubbles: true }));
+    $('#auth-key').focus();
+  } catch { $('#auth-error').textContent = tr('Ctrl+V veya sağ tık → Yapıştır kullan.', 'Use Ctrl+V or right-click → Paste.'); }
 });
 function shakeAuth() {
   const card = $('#auth-card');
@@ -2092,8 +2160,8 @@ $('#auth-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const key = $('#auth-key').value.trim();
   const btn = $('#auth-submit'), err = $('#auth-error'), card = $('#auth-card');
-  if (key.length !== 16) {
-    err.textContent = tr('API key 16 karakter olmalı.', 'API key must be 16 characters.');
+  if (!/^[A-Za-z0-9]{16}$/.test(key)) {
+    err.textContent = tr('API key tam 16 harf/rakam olmalı. Büyük/küçük harfleri kontrol et.', 'API key must be exactly 16 letters or digits. Check uppercase and lowercase letters.');
     return shakeAuth();
   }
   btn.classList.add('loading'); btn.disabled = true;
@@ -2107,7 +2175,9 @@ $('#auth-form')?.addEventListener('submit', async (e) => {
     await hideAuth(prefersReducedMotion() ? 0 : 1300);
     card.classList.remove('success');
   } catch (ex) {
-    err.textContent = ex.message;
+    err.textContent = ex.name === 'TimeoutError'
+      ? tr('Bağlantı zaman aşımına uğradı. Tekrar dene.', 'Connection timed out. Please try again.')
+      : ex.message;
     shakeAuth();
   } finally {
     btn.classList.remove('loading'); btn.disabled = false;
@@ -2176,7 +2246,7 @@ function startApp(b, fresh = false) {
   if (!fresh) {
     try {
       const cachedOv = JSON.parse(localStorage.getItem('tt.cache.overview') || 'null');
-      if (cachedOv?.data) {
+      if (cachedOv?.data?.battle?.calculationVersion === 2) {
         state.overview = cachedOv.data;
         state.overviewAt = cachedOv.at || Date.now();
         renderOverview();
@@ -2224,6 +2294,7 @@ function startApp(b, fresh = false) {
   applyLang();
   let b = null;
   try { b = await api('/api/bootstrap'); } catch {}
+  if (b?.config) { state.config = b.config; window.applyFeatures?.(); }
   if (b?.config && !b.config.hasKey) {
     showAuth('login');
     return;

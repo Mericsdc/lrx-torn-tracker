@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LRX Torn Tracker</title>
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/themes.css" />
+  <script src="/theme-init.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
@@ -32,9 +34,12 @@
         <p class="auth-sub" data-i18n-html="auth.sub">Enter your Torn <b>Limited Access</b> API key to continue.</p>
         <form id="auth-form" autocomplete="off">
           <div class="auth-field">
-            <input id="auth-key" class="mono" type="password" maxlength="16" spellcheck="false" placeholder="••••••••••••••••" aria-label="Torn API key" />
+            <input id="auth-key" class="mono" type="password" spellcheck="false" autocapitalize="none" autocorrect="off" placeholder="••••••••••••••••" aria-label="Torn API key" aria-describedby="auth-key-help auth-key-count auth-caps" />
             <button type="button" class="auth-eye" id="auth-eye" title="Show / hide" data-i18n-title="auth.showHide">◉</button>
           </div>
+          <div class="auth-input-actions"><button class="btn sm" id="auth-paste" type="button" data-i18n="auth.paste">Paste</button><span id="auth-key-count" aria-live="polite">0 / 16</span></div>
+          <small id="auth-key-help" class="muted" data-i18n="auth.keyHelp">16 characters · Ctrl+V or right-click → Paste</small>
+          <div id="auth-caps" class="auth-input-actions" role="status" hidden></div>
           <button class="auth-btn" id="auth-submit" type="submit"><span data-i18n="auth.login">Log In</span></button>
           <div class="auth-error" id="auth-error" role="alert"></div>
         </form>
@@ -71,7 +76,8 @@
       <div class="ws-dynamic-tabs" id="browser-tabs"></div>
       <button class="ws-new-tab" id="new-tab-btn" title="Open a new Torn tab (Torn Home)" data-i18n-title="ws.newTab">＋</button>
     </div>
-    <div class="ws-quick">
+    <button class="ws-quick-btn" id="quick-toggle" type="button" aria-controls="workspace-shortcuts" aria-expanded="true" title="Shortcuts">☷</button>
+    <div class="ws-quick" id="workspace-shortcuts">
       <button class="ws-quick-btn" data-open-url="https://www.torn.com/index.php" data-tab-label="Torn City">
         <span>🌐</span><span data-i18n="ws.tornHome">Torn Home</span>
       </button>
@@ -86,6 +92,9 @@
       </button>
       <button class="ws-quick-btn" id="tt-open-btn" title="TornTools">
         <span>🧰</span><span>TornTools</span><small class="tt-state" id="tt-open-state">…</small>
+      </button>
+      <button class="ws-quick-btn" data-open-url="https://weav3r.dev/" data-tab-label="Weav3r" title="Weav3r · TornW3B">
+        <span>🌐</span><span>Weav3r</span>
       </button>
     </div>
   </header>
@@ -363,6 +372,7 @@
             </div>
           </div>
           <div class="grid kpis small" id="war-kpis"></div>
+          <div id="war-groups" class="war-groups"></div>
           <div class="tbl-wrap"><table class="tbl" id="war-table"></table></div>
           <p class="footnote" id="war-footnote"></p>
         </article>
@@ -385,6 +395,7 @@
         <nav class="set-tabs" id="set-tabs" role="tablist">
           <button class="set-tab active" type="button" role="tab" data-set-tab="account">👤 <span data-i18n="set.tab.account">Account</span></button>
           <button class="set-tab" type="button" role="tab" data-set-tab="general">⚙️ <span data-i18n="set.tab.general">General</span></button>
+          <button class="set-tab" type="button" role="tab" data-set-tab="appearance">🎨 <span data-i18n="set.tab.appearance">Appearance</span></button>
           <button class="set-tab" type="button" role="tab" data-set-tab="pages">🗂️ <span data-i18n="set.tab.pages">Pages</span></button>
           <button class="set-tab" type="button" role="tab" data-set-tab="notify">🔔 <span data-i18n="set.tab.notify">Notifications</span></button>
           <button class="set-tab" type="button" role="tab" data-set-tab="torn">🧩 <span data-i18n="set.tab.torn">Torn helpers</span></button>
@@ -398,11 +409,11 @@
               <div class="card-head"><h3 data-i18n="set.keysTitle">API keys</h3></div>
               <form class="form" id="settings-form">
                 <label><span data-i18n="set.apiKeyLabel">Torn API Key (Limited)</span>
-                  <input class="input mono" id="s-key" placeholder="Enter a new key to change it" data-i18n-placeholder="set.keyPh" autocomplete="off" />
+                  <input class="input mono" id="s-key" type="password" spellcheck="false" autocapitalize="none" placeholder="Enter a new key to change it" data-i18n-placeholder="set.keyPh" autocomplete="off" />
                   <small class="muted" id="s-key-current">—</small>
                 </label>
                 <label><span data-i18n="set.ffKeyLabel">FFScouter Key (uses the Torn key if blank)</span>
-                  <input class="input mono" id="s-ff" placeholder="Optional" data-i18n-placeholder="set.optionalPh" autocomplete="off" />
+                  <input class="input mono" id="s-ff" type="password" spellcheck="false" autocapitalize="none" placeholder="Optional" data-i18n-placeholder="set.optionalPh" autocomplete="off" />
                   <small class="muted" id="s-ff-current">—</small>
                 </label>
                 <label><span data-i18n="set.logKeyLabel">Log key (optional)</span>
@@ -452,6 +463,14 @@
           <article class="glass card"><div class="card-head"><h3 data-i18n="set.appTitle">App</h3></div><div class="feat-list" id="set-feat-app"></div></article>
         </div>
 
+        <div class="set-panel" data-set-panel="appearance">
+          <article class="glass card">
+            <div class="card-head"><h3 data-i18n="set.themes">Themes</h3></div>
+            <p class="muted" data-i18n="set.themeHint">Choose a theme for the tracker and browser toolbar.</p>
+            <div class="theme-grid" id="theme-options"></div>
+            <p class="muted" id="theme-save-status" role="status"></p>
+          </article>
+        </div>
         <div class="set-panel" data-set-panel="pages">
           <article class="glass card"><div class="card-head wrap"><h3 data-i18n="set.tab.pages">Pages</h3><span class="muted" data-i18n="set.pagesHint">Pages you turn off are removed from the menu; sub-options show or hide cards on that page</span></div>
             <div class="feat-cols" id="set-feat-pages"></div></article>
@@ -555,9 +574,21 @@
   </div>
 
   <div class="toast" id="toast"></div>
+  <div class="modal-backdrop" id="update-modal" hidden>
+    <section class="glass card modal-card" role="dialog" aria-modal="true" aria-labelledby="update-dialog-title">
+      <div class="card-head"><h3 id="update-dialog-title"></h3><button class="btn sm ghost" id="update-dialog-close" type="button" aria-label="Close">✕</button></div>
+      <p id="update-dialog-description"></p>
+      <p id="update-dialog-notes"></p>
+      <p id="update-dialog-status" role="status"></p>
+      <progress id="update-dialog-progress" max="5" value="0" hidden></progress>
+      <div class="settings-actions"><button class="btn ghost" id="update-dialog-cancel" type="button"></button><button class="btn primary" id="update-dialog-install" type="button"></button></div>
+    </section>
+  </div>
   <script src="/shape-waves.js"></script>
   <script src="/app.js"></script>
   <script src="/features.js"></script>
+  <script src="/workspace.js"></script>
+  <script src="/war-groups-ui.js"></script>
   <script src="/extras.js"></script>
   <script src="/tools.js"></script>
   <script src="/events.js"></script>

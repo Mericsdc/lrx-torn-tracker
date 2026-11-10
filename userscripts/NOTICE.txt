@@ -1,0 +1,42 @@
+Bundled third-party sources (original files are preserved, with their metadata):
+
+FF Scouter V2 3.4
+Copyright 2026 xentac. Authors: xentac [3354782], MAVRI [2402357],
+rDacted [2670953], Weav3r [1853324], Glasnost [1844049].
+License: GPL version 3. See GPL-3.0.txt and the original .user.js header.
+https://greasyfork.org/en/scripts/535292-ff-scouter-v2/code
+
+Bazaars in Item Market Powered by TornW3B 4.1.8
+Author: Weav3r. License: MIT.
+https://greasyfork.org/en/scripts/527616-bazaars-in-item-market-powered-by-tornw3b/code
+
+React / React DOM 19.2.0 (dependency declared by FF Scouter)
+Copyright (c) Meta Platforms, Inc. and affiliates. License: MIT.
+The exact Torn-hosted dependency is recorded in sources.json.
+
+MIT License:
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+The local adapter is supplied as source in ../userscripts.js,
+../userscript-extension/ and ../torn-helpers/session-guard.js.
+FF Scouter's generated extension wrapper is distributed under GPL-3.0.
+SHA-256 hashes and pinned upstream source versions are in sources.json.
+These scripts have their own display settings. FF Scouter automatically uses
+the tracker's saved FFScouter key, falling back to its Torn API key. Requests
+use an authenticated local proxy; the saved key is not copied into the page.
+TornW3B synchronizes viewed auction listings to weav3r.dev, as described by
+the upstream script. Each integration can be disabled in Settings / Torn helpers.

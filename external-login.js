@@ -17,6 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { replaceTornCookies } = require('./torn-session');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -168,25 +169,8 @@ async function externalGoogleLogin({ profileDir, targetSession, onStatus, log = 
       throw new Error(T('Torn oturumu bulunamadı. Pencereyi kapatmadan önce Torn\'a giriş yaptığından emin ol. Olmazsa Yöntem 2 (e-posta ve şifre) ya da Yöntem 3\'ü (PHPSESSID) kullan.',
         'No Torn session was found. Make sure you are signed in to Torn before closing the window. If it still fails, use Method 2 (email and password) or Method 3 (PHPSESSID).'));
     }
-    let count = 0;
-    for (const c of tornCookies) {
-      const host = c.domain.replace(/^\./, '');
-      const details = {
-        url: `https://${host}${c.path || '/'}`,
-        name: c.name,
-        value: c.value,
-        path: c.path || '/',
-        secure: !!c.secure,
-        httpOnly: !!c.httpOnly,
-      };
-      if (c.domain.startsWith('.')) details.domain = c.domain;
-      if (!c.session && c.expires > 0) details.expirationDate = c.expires;
-      const ss = String(c.sameSite || '').toLowerCase();
-      if (ss === 'lax' || ss === 'strict') details.sameSite = ss;
-      else if (ss === 'none') details.sameSite = 'no_restriction';
-      try { await targetSession.cookies.set(details); count++; } catch (e) { log('cookie set err', c.name, e.message); }
-    }
-    try { await targetSession.cookies.flushStore(); } catch {}
+    const count = await replaceTornCookies(targetSession, tornCookies);
+    await require('./torn-session').normalizeTornSession(targetSession);
     if (!count) throw new Error(T('Torn çerezi aktarılamadı.', 'Could not copy the Torn cookies.'));
     onStatus({ state: 'done', browser: browser.name, message: T(`Google girişi aktarıldı ✓ (${count} çerez)`, `Google sign-in imported ✓ (${count} ${count === 1 ? 'cookie' : 'cookies'})`) });
     log('external login imported cookies:', count);

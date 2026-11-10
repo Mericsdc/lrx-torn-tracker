@@ -8,6 +8,32 @@
 
 ## Features
 
+### Version 1.6.6
+
+- FF Scouter now automatically uses the saved FFScouter key, falling back to the saved Torn API key. Its Torn API calls use the main Torn key. Changes and logout take effect for subsequent requests without entering another key.
+- Keys are added by an authenticated local proxy; the upstream script receives an opaque marker. The original vendor source is preserved, and its generated adapter displays a read-only managed-key field.
+- Verified on real Torn profile and active ranked-war pages: displayed Fair Fight scores and stat estimates match live FFScouter responses.
+
+### Version 1.6.5
+
+- Torn sidebar navigation is handled once per click, with a navigation-loop limit. Cookie imports replace old session/RFC cookies; duplicate cookies are normalized before opening Torn. The guard updates existing RFC tokens on outgoing Torn requests and forms without retrying failed actions.
+- Updates use a dialog styled with the selected app theme. After installation, storage is flushed, native views and windows are destroyed, the old process exits and Electron relaunches the app.
+- FF Scouter V2 3.4 and TornW3B Bazaars 4.1.8 are bundled from the requested upstream sources. Switches are under Settings → Torn helpers; restart after changing them. FF Scouter uses the app's saved key automatically. Its React dependency is isolated from Torn's React globals. Scripts, hashes and licenses are under `userscripts/`.
+- This release also includes all of the 1.6.4 changes below.
+
+### Version 1.6.4
+
+- Weav3r opens in a built-in tab from the top shortcuts. Opening a second browser tab collapses the shortcuts with an animation; the menu button restores them.
+- War Targets supports named groups for each faction, individual or bulk assignment, filtering, renaming and removal. Groups are saved locally in `data/war-groups.json`; assigned labels also appear on the viewed Torn war roster.
+- Settings → Appearance offers Obsidian, Ocean, Forest, Amethyst and Light themes, saved across restarts.
+- Settings → Torn helpers → Live fight analysis shows both players' life and observed life loss/recovery on the attack page. It pauses while the page is not focused. It uses the viewed page or Torn responses already requested by that page, and makes no game actions or additional requests. Values are health changes, not attributed hit damage or win predictions. Real combat verification remains outstanding; DOM/schema changes may require an adapter update.
+- API-key entry preserves case, cursor position and every typed character. The login has a character counter, Caps Lock warning, Paste button and native editing context menu. Network/time-out errors are distinguished from invalid keys.
+- Windows can be resized down to 480×400 and start within the current display's work area.
+- Active Xanax is removed from the current modifier once before calculating both scenarios from base stats. Generic Drugs descriptions and the active Xanax icon are supported; addiction remains in the calculation.
+- Fixed stale faction responses, zero-stat ratios, malformed local requests, cross-origin local writes, sleeping-tab titles, modal view visibility on resize and duplicate initialization when a port is occupied.
+
+Validation: `npm test` runs isolated server and calculation tests. `tests/ui-smoke.js` and `tests/electron-smoke.js` use Playwright (set `PLAYWRIGHT_MODULE` to the installed module path). They use temporary profiles and fixture data, not the installed account. Restart the app after updating these files.
+
 - **Overview**: Xanax/drug cooldown, education, end-of-day timers, bars, and battle stats with and without Xanax.
 - **Company**: stock levels with a target cover (days), daily report, employee addiction alerts, and an income statement.
 - **War targets**: FFScouter estimates, a hospital-release countdown next to each name, and a **Fair Fight payout** ranking (`expected points = win chance × FF`). The best Ideal, Easy and Risky targets are highlighted.

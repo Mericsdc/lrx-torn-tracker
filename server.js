@@ -17,9 +17,11 @@ const PUBLIC = path.join(ROOT, 'public');
 const DATA = process.env.TORN_DATA_DIR || path.join(ROOT, 'data');
 const CONFIG_FILE = path.join(DATA, 'config.json');
 const HISTORY_FILE = path.join(DATA, 'history.json');
-const XANAX_PENALTY = 35; // Xanax: tüm savaş statlarına -%35
+const { buildBattleStats } = require('./battle-stats');
 
 if (!fs.existsSync(DATA)) fs.mkdirSync(DATA, { recursive: true });
+const warGroups = require('./war-groups').createWarGroups(DATA);
+const THEMES = new Set(['obsidian', 'ocean', 'forest', 'amethyst', 'light']);
 
 /* ------------------------------------------------------------------ */
 /* Config & history                                                    */
@@ -27,7 +29,7 @@ if (!fs.existsSync(DATA)) fs.mkdirSync(DATA, { recursive: true });
 const PKG = (() => { try { return require('./package.json'); } catch { return {}; } })();
 const DEFAULT_UPDATE_URL = PKG.updateUrl || ''; // sabit: resmi GitHub sürüm adresi
 const APP_VERSION = PKG.version || '';
-const DEFAULT_CONFIG = { apiKey: process.env.TORN_API_KEY || '', ffscouterKey: '', coverDays: 3, pollMinutes: 15, deliveryHours: 6, deliveryMode: 'hours', features: {} };
+const DEFAULT_CONFIG = { apiKey: process.env.TORN_API_KEY || '', ffscouterKey: '', coverDays: 3, pollMinutes: 15, deliveryHours: 6, deliveryMode: 'hours', theme: 'obsidian', features: {} };
 
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
@@ -39,12 +41,24 @@ function writeJson(file, obj, pretty = false) {
 }
 
 let config = { ...DEFAULT_CONFIG, ...readJson(CONFIG_FILE, {}) };
+const ffScriptProxy = require('./ff-script-proxy').createFFScriptProxy(() => config, undefined, throttle);
 // Language of user-facing server messages: English by default, Turkish when the app is set to TR
 const T = (trStr, enStr) => (config.lang === 'tr' ? trStr : enStr);
 delete config.updateUrl; // eski sürümlerde ayarlanabiliyordu; artık hep sabit adres kullanılır
 let history = readJson(HISTORY_FILE, { days: [], addiction: {}, user: {}, stockOrders: {} });
 history.days ||= []; history.addiction ||= {}; history.user ||= {}; history.stockOrders ||= {};
 history.stockDeliveries ||= { at: 0, items: [] };
+// Rebuild the saved bootstrap snapshot after the Xanax calculation fix.
+if (history.lastOverview?.battle && history.lastOverview.battle.calculationVersion !== 2) {
+  const old = history.lastOverview;
+  const input = { icons: { drug: old.drug?.icon || '' }, cooldowns: old.cooldowns || { drug: old.drug?.cooldown || 0 } };
+  for (const [key, stat] of Object.entries(old.battle.stats || {})) {
+    input[key] = stat.base; input[key + '_modifier'] = stat.modifier;
+    input[key + '_info'] = (stat.info || []).map((i) => i.text);
+  }
+  old.battle = buildBattleStats(input);
+  if (old.drug) old.drug.xanaxActive = old.battle.xanaxActive;
+}
 
 const saveConfig = () => writeJson(CONFIG_FILE, config, true);
 // Geçmiş her yenilemede değil, 10 sn içindeki değişiklikler toplanıp tek seferde yazılır
@@ -108,7 +122,7 @@ async function tornRaw(pathq) {
   await throttle();
   const sep = pathq.includes('?') ? '&' : '?';
   const url = `https://api.torn.com/${pathq}${sep}key=${encodeURIComponent(config.apiKey)}&comment=TornTracker`;
-  const res = await fetch(url, { headers: { 'User-Agent': 'TornTracker/1.0' } });
+  const res = await fetch(url, { headers: { 'User-Agent': 'TornTracker/1.0' }, signal: AbortSignal.timeout(20_000) });
   const text = await res.text();
   let json;
   try { json = JSON.parse(text); } catch { throw new ApiError(T(`Torn API yanıtı okunamadı (HTTP ${res.status})`, `Could not read the Torn API response (HTTP ${res.status})`), 'BAD_RESPONSE'); }
@@ -120,41 +134,6 @@ const torn = (pathq, ttl = 30_000) => cached('torn:' + pathq, ttl, () => tornRaw
 /* ------------------------------------------------------------------ */
 /* Battle stats helpers                                                */
 /* ------------------------------------------------------------------ */
-const STATS = ['strength', 'defense', 'speed', 'dexterity'];
-
-function parseInfo(lines = []) {
-  return lines.map((l) => {
-    const m = String(l).match(/([+-]?\d+(?:\.\d+)?)%/);
-    return { text: l, pct: m ? Number(m[1]) : 0, xanax: /xanax/i.test(l) };
-  });
-}
-
-function buildBattleStats(u) {
-  const out = { stats: {}, totals: {} };
-  let base = 0, current = 0, noXan = 0, withXan = 0;
-  for (const s of STATS) {
-    const raw = Number(u[s]) || 0;
-    const info = parseInfo(u[`${s}_info`]);
-    const modCurrent = Number(u[`${s}_modifier`]) || 0;
-    const xanInModifier = info.filter((i) => i.xanax).reduce((a, i) => a + i.pct, 0);
-    const modNoXan = modCurrent - xanInModifier; // Xanax etkisini çıkar
-    const modXan = modNoXan - XANAX_PENALTY;
-    const st = {
-      base: raw,
-      modifier: modCurrent,
-      info,
-      current: Math.round(raw * (1 + modCurrent / 100)),
-      noXanax: Math.round(raw * (1 + modNoXan / 100)),
-      withXanax: Math.round(raw * (1 + modXan / 100)),
-    };
-    out.stats[s] = st;
-    base += raw; current += st.current; noXan += st.noXanax; withXan += st.withXanax;
-  }
-  out.totals = { base, current, noXanax: noXan, withXanax: withXan };
-  out.xanaxActive = STATS.some((s) => out.stats[s].info.some((i) => i.xanax));
-  return out;
-}
-
 /* ------------------------------------------------------------------ */
 /* Overview (user)                                                     */
 /* ------------------------------------------------------------------ */
@@ -206,7 +185,7 @@ async function getOverview(force = false) {
     drug: {
       cooldown: u.cooldowns?.drug || 0,
       icon: drugIcon,
-      xanaxActive: bs.xanaxActive || xanaxFromIcon,
+      xanaxActive: bs.xanaxActive,
       xantaken,
       xanToday: xantaken != null ? xantaken - history.user[today].xanStart : null,
       refills: u.personalstats?.refills ?? null,
@@ -720,7 +699,7 @@ async function ffscouterStats(ids) {
       const url = `https://ffscouter.com/api/v1/get-stats?key=${encodeURIComponent(ffKey())}&targets=${chunk.join(',')}`;
       let res, body;
       try {
-        res = await fetch(url, { headers: { 'User-Agent': 'TornTracker/1.0' } });
+        res = await fetch(url, { headers: { 'User-Agent': 'TornTracker/1.0' }, signal: AbortSignal.timeout(20_000) });
         body = await res.text();
       } catch (e) {
         ffStatus = { ok: false, error: T('FFScouter erişilemedi: ', 'Could not reach FFScouter: ') + e.message, checkedAt: Date.now() };
@@ -853,7 +832,7 @@ const plainNum = (v) => Number(String(v ?? '').replace(/[^\d.]/g, '')) || 0;
 
 function getLevelLists() {
   return cached('level-lists', 6 * 3600_000, async () => {
-    const r = await fetch(LEVEL_LISTS_URL, { headers: { 'User-Agent': 'TornTracker' } });
+    const r = await fetch(LEVEL_LISTS_URL, { headers: { 'User-Agent': 'TornTracker' }, signal: AbortSignal.timeout(20_000) });
     if (!r.ok) throw new ApiError(T(`Hedef listesi alınamadı (HTTP ${r.status})`, `Could not get the target list (HTTP ${r.status})`), 'LIST_HTTP', 'levelling');
     const lists = {};
     for (const [name, rows] of Object.entries((await r.json()) || {})) {
@@ -1222,7 +1201,7 @@ async function tornLogRaw(pathq) {
   const key = config.logKey || config.apiKey;
   if (!key) throw new ApiError(T('API key ayarlanmamış.', 'API key not set.'), 'NO_KEY');
   await throttle();
-  const res = await fetch(`https://api.torn.com/${pathq}&key=${encodeURIComponent(key)}&comment=TornTracker`, { headers: { 'User-Agent': 'TornTracker/1.0' } });
+  const res = await fetch(`https://api.torn.com/${pathq}&key=${encodeURIComponent(key)}&comment=TornTracker`, { headers: { 'User-Agent': 'TornTracker/1.0' }, signal: AbortSignal.timeout(20_000) });
   const json = await res.json().catch(() => ({ error: { code: 0, error: `HTTP ${res.status}` } }));
   if (json.error) throw new ApiError(`Torn API: ${json.error.error}`, json.error.code);
   return json;
@@ -1738,7 +1717,7 @@ function schedulePoll() {
     fetchCompany(true).catch((e) => console.warn('[poll] company:', e.message));
     getOverview().catch(() => {});
     if (config.features?.['page.networth'] !== false) getNetworth().catch(() => {});
-  }, mins * 60_000);
+  }, mins * 60_000).unref();
 }
 // Yurt dışı stok geçmişi sürekli birikmeli (restock / tükenme tahmini için)
 const pollStocks = () => { if (config.features?.['page.travel'] !== false) fetchStocks().catch((e) => console.warn('[poll] travel:', e.message)); };
@@ -1756,10 +1735,21 @@ function send(res, status, obj) {
   res.end(body);
 }
 function readBody(req) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', (c) => { data += c; if (data.length > 1e5) req.destroy(); });
-    req.on('end', () => { try { resolve(JSON.parse(data || '{}')); } catch { resolve({}); } });
+    let size = 0;
+    const bad = (message, status = 400) => reject(Object.assign(new Error(message), { status }));
+    req.on('data', (c) => { size += c.length; if (size > 1e5) bad('Request body too large', 413); else data += c; });
+    req.on('error', reject);
+    req.on('aborted', () => bad('Request aborted'));
+    req.on('end', () => {
+      if (size > 1e5) return;
+      try {
+        const value = JSON.parse(data || '{}');
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return bad('Expected a JSON object');
+        resolve(value);
+      } catch { bad('Invalid JSON'); }
+    });
   });
 }
 const maskKey = (k) => (k ? k.slice(0, 3) + '•'.repeat(Math.max(0, k.length - 6)) + k.slice(-3) : '');
@@ -1767,6 +1757,9 @@ const maskKey = (k) => (k ? k.slice(0, 3) + '•'.repeat(Math.max(0, k.length - 
 async function handleApi(req, res, url) {
   const p = url.pathname;
   try {
+    if (p === '/api/ff-script-request' && req.method === 'POST') {
+      return send(res, 200, await ffScriptProxy.run(await readBody(req)));
+    }
     if (p === '/api/config' && req.method === 'GET') {
       return send(res, 200, {
         hasKey: !!config.apiKey, apiKeyMasked: maskKey(config.apiKey), ffscouterKeyMasked: maskKey(config.ffscouterKey), logKeyMasked: maskKey(config.logKey),
@@ -1775,6 +1768,7 @@ async function handleApi(req, res, url) {
         updateUrl: DEFAULT_UPDATE_URL, version: APP_VERSION,
         features: config.features || {},
         lang: config.lang === 'tr' ? 'tr' : 'en',
+        theme: THEMES.has(config.theme) ? config.theme : 'obsidian',
       });
     }
     if (p === '/api/lang' && req.method === 'POST') {
@@ -1827,7 +1821,17 @@ async function handleApi(req, res, url) {
     }
     if (p === '/api/config' && req.method === 'POST') {
       const b = await readBody(req);
-      if (typeof b.apiKey === 'string' && b.apiKey.trim()) { config.apiKey = b.apiKey.trim(); cache.clear(); }
+      // Validate the entire request before changing the in-memory config.
+      for (const key of ['apiKey', 'ffscouterKey', 'logKey']) {
+        if (b[key] != null && (typeof b[key] !== 'string' || (b[key].trim() && !/^[A-Za-z0-9]{16}$/.test(b[key].trim())))) {
+          return send(res, 400, { error: T('API key 16 karakterlik harf/rakam olmalı.', 'API keys must be 16 letters or digits.') });
+        }
+      }
+      if (b.theme != null && !THEMES.has(b.theme)) return send(res, 400, { error: 'Invalid theme' });
+      if (typeof b.apiKey === 'string' && b.apiKey.trim()) {
+        config.apiKey = b.apiKey.trim(); cache.clear(); ffCache.clear(); estCache.clear();
+        ffStatus = { ok: null, error: null, checkedAt: 0 };
+      }
       if (typeof b.ffscouterKey === 'string') { config.ffscouterKey = b.ffscouterKey.trim(); ffCache.clear(); ffStatus = { ok: null, error: null, checkedAt: 0 }; }
       if (typeof b.logKey === 'string') {
         const k = b.logKey.trim();
@@ -1838,6 +1842,7 @@ async function handleApi(req, res, url) {
       if (b.pollMinutes != null) config.pollMinutes = Math.min(120, Math.max(5, Number(b.pollMinutes) || 15));
       if (b.deliveryHours != null) config.deliveryHours = Math.min(48, Math.max(1, Number(b.deliveryHours) || 6));
       if (b.deliveryMode === 'hours' || b.deliveryMode === '18tct') config.deliveryMode = b.deliveryMode;
+      if (b.theme != null) config.theme = b.theme;
       saveConfig(); schedulePoll();
       return send(res, 200, { ok: true });
     }
@@ -1847,14 +1852,16 @@ async function handleApi(req, res, url) {
       if (!/^[A-Za-z0-9]{16}$/.test(key)) return send(res, 400, { error: T('API key 16 karakterlik harf/rakam olmalı.', 'The API key must be 16 letters and digits.') });
       const call = async (q) => {
         await throttle();
-        const r = await fetch(`https://api.torn.com/${q}&key=${encodeURIComponent(key)}&comment=TornTracker`, { headers: { 'User-Agent': 'TornTracker/1.0' } });
+        const r = await fetch(`https://api.torn.com/${q}&key=${encodeURIComponent(key)}&comment=TornTracker`, { headers: { 'User-Agent': 'TornTracker/1.0' }, signal: AbortSignal.timeout(20_000) });
         const j = await r.json().catch(() => ({ error: { error: `HTTP ${r.status}` } }));
         if (j.error) throw new ApiError(j.error.code === 2 ? T('API key geçersiz.', 'Invalid API key.') : `Torn API: ${j.error.error}`, j.error.code);
         return j;
       };
-      const [info, user] = await Promise.all([call('key/?selections=info'), call('user/?selections=basic')]);
+      const [keyResponse, user] = await Promise.all([call('key/?selections=info'), call('user/?selections=basic')]);
+      const info = keyResponse.info || keyResponse;
       const level = Number(info.access_level) || 0;
-      if (level < 3) {
+      const customAccess = info.access_type === 'Custom' && ['profile', 'battlestats', 'bars', 'cooldowns'].every((s) => info.selections?.user?.includes(s));
+      if (level < 3 && !customAccess) {
         const accessType = info.access_type || 'Public';
         return send(res, 403, { error: T(`Bu key "${accessType}" seviyesinde. Şirket ve faction verileri için en az "Limited Access" key gerekli.`,
           `This key has "${accessType}" access. Company and faction data need at least a "Limited Access" key.`) });
@@ -1910,6 +1917,8 @@ async function handleApi(req, res, url) {
           deliveryHours: config.deliveryHours || 6,
           deliveryMode: config.deliveryMode || 'hours',
           features: config.features || {},
+          theme: THEMES.has(config.theme) ? config.theme : 'obsidian',
+          lang: config.lang === 'tr' ? 'tr' : 'en',
         },
         overview: history.lastOverview || null,
         overviewAt: history.lastOverviewAt || 0,
@@ -1923,6 +1932,12 @@ async function handleApi(req, res, url) {
       return send(res, 200, buildCompanyReport(c));
     }
     if (p === '/api/wars') return send(res, 200, await getMyWars());
+    if (p === '/api/war-groups') {
+      const fid = Number(url.searchParams.get('faction'));
+      if (req.method === 'GET') return send(res, 200, warGroups.get(fid));
+      if (req.method === 'POST') return send(res, 200, warGroups.mutate(fid, await readBody(req)));
+      return send(res, 405, { error: 'Method not allowed' });
+    }
     if (p === '/api/player') {
       const id = Number(url.searchParams.get('id'));
       if (!id) return send(res, 400, { error: T('id parametresi gerekli', 'The id parameter is required') });
@@ -1945,23 +1960,38 @@ async function handleApi(req, res, url) {
       return send(res, 200, startEstimateJob(fid, ids));
     }
     if (p === '/api/ffscouter/check') {
-      const r = await fetch(`https://ffscouter.com/api/v1/check-key?key=${encodeURIComponent(ffKey())}`);
+      const r = await fetch(`https://ffscouter.com/api/v1/check-key?key=${encodeURIComponent(ffKey())}`, { signal: AbortSignal.timeout(20_000) });
       const j = await r.json().catch(() => ({}));
       return send(res, 200, { registered: !!j.is_registered, premium: !!j.is_premium, raw: { registered_at: j.registered_at, last_used: j.last_used } });
     }
     return send(res, 404, { error: T('Bulunamadı', 'Not found') });
   } catch (e) {
+    if (e.name === 'TimeoutError' || e.name === 'AbortError') return send(res, 504, { error: T('Torn bağlantısı zaman aşımına uğradı. Tekrar deneyin.', 'The Torn connection timed out. Please try again.'), code: 'TIMEOUT' });
+    if (e instanceof TypeError && e.message === 'fetch failed') return send(res, 502, { error: T('Torn API bağlantısı kurulamadı. İnternet bağlantısını kontrol edin.', 'Could not connect to the Torn API. Check your internet connection.'), code: 'NETWORK' });
     console.warn('[api]', p, e.message);
-    return send(res, e.code === 'NO_KEY' ? 412 : 502, { error: e.message, code: e.code });
+    return send(res, e.status || (e.code === 'NO_KEY' ? 412 : 502), { error: e.message, code: e.code });
   }
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/i.test(req.headers.host || '')) return send(res, 403, { error: 'Invalid local host' });
+  let url, pathname;
+  try { url = new URL(req.url, 'http://127.0.0.1'); pathname = decodeURIComponent(url.pathname); }
+  catch { res.writeHead(400); return res.end('Invalid URL'); }
+  if (url.pathname === '/api/ff-script-request') {
+    if (req.headers.authorization !== 'Bearer ' + ffScriptProxy.token) return send(res, 403, { error: 'FF Scouter bridge access denied' });
+    return handleApi(req, res, url);
+  }
+  // Local APIs must not be writable by an unrelated web page.
+  if (url.pathname.startsWith('/api/') && req.headers.origin) {
+    const expected = `http://${req.headers.host}`;
+    if (req.headers.origin !== expected) return send(res, 403, { error: 'Cross-origin requests are not allowed' });
+  }
   if (url.pathname.startsWith('/api/')) return handleApi(req, res, url);
 
-  let file = path.normalize(path.join(PUBLIC, decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname)));
-  if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
+  const file = path.resolve(PUBLIC, '.' + (pathname === '/' ? '/index.html' : pathname));
+  const relative = path.relative(PUBLIC, file);
+  if (relative.startsWith('..') || path.isAbsolute(relative) || pathname.includes('\0')) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, buf) => {
     if (err) { res.writeHead(404); return res.end('Not found'); }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
@@ -1981,15 +2011,16 @@ function startServer(preferredPort = PORT) {
       }
       resolve(actualPort);
     };
+    server.once('listening', onListen);
     // Port doluysa önce yakın portları dene: arayüz origin'i (ve localStorage ayarları) sabit kalsın.
     let attempt = 0;
     const tryListen = () => {
       const port = attempt <= 10 ? preferredPort + attempt : 0;
       server.once('error', (err) => {
         if (err.code === 'EADDRINUSE' && port !== 0) { attempt++; tryListen(); }
-        else reject(err);
+        else { server.removeListener('listening', onListen); reject(err); }
       });
-      server.listen(port, '127.0.0.1', () => { server.removeAllListeners('error'); onListen(); });
+      server.listen(port, '127.0.0.1');
     };
     tryListen();
   });
@@ -2070,4 +2101,4 @@ process.on('exit', flushData);
 // API key sahibinin oyuncu numarası (Torn sekmesindeki `uid` çerezini doğrulamak için)
 const myPlayerId = () => { const id = Number(history.lastOverview?.player?.id); return Number.isInteger(id) && id > 0 ? String(id) : null; };
 
-module.exports = { startServer, server, stockProductNames, ingestStockDeliveries, warMemberStatuses, flushData, myPlayerId, getCrimeValue, crimeValueForPage, purchaseCostsForPage, seasonalActive, seasonalList, halloweenForPage };
+module.exports = { startServer, server, stockProductNames, ingestStockDeliveries, warMemberStatuses, warGroupLabels: warGroups.labels, flushData, myPlayerId, getCrimeValue, crimeValueForPage, purchaseCostsForPage, seasonalActive, seasonalList, halloweenForPage, ffScriptBridge: () => ({ url: `http://127.0.0.1:${server.address().port}/api/ff-script-request`, token: ffScriptProxy.token }) };

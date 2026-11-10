@@ -45,6 +45,9 @@ const FEATURE_DEFS = [
   { group: 'notify', key: 'notify.targets', def: true, tr: ['Açık sekmedeki oyuncu hastaneden çıktı', ''], en: ['Player in an open tab left hospital', ''] },
 
   { group: 'torn', key: 'torn.warHelper', def: true, tr: ['Savaş: Attack & hastane sayacı', 'Ranked war sayfasında rakibin yanında Attack, iki tarafta hastane geri sayımı'], en: ['War: Attack & hospital timers', 'Attack button next to each enemy and hospital countdowns for both sides on the ranked war page'] },
+  { group: 'torn', key: 'torn.liveFight', def: true, tr: ['Canlı savaş analizi', 'Saldırı ekranında iki tarafın canı, gözlenen can kaybı ve iyileşme'], en: ['Live fight analysis', 'Both players’ life, observed life loss and recovery on the attack page'] },
+  { group: 'torn', key: 'torn.ffScouterScript', def: true, tr: ['FF Scouter V2 · 3.4', 'Kayıtlı FFScouter anahtarını, yoksa Torn API anahtarını otomatik kullanır · yeniden başlatınca uygulanır'], en: ['FF Scouter V2 · 3.4', 'Automatically uses your saved FFScouter key, or your Torn API key · restart to apply'] },
+  { group: 'torn', key: 'torn.tornw3bScript', def: true, tr: ['TornW3B Bazaar · 4.1.8', 'Item Market içinde bazaar teklifleri · açık artırma ilanlarını Weav3r’a senkronlar · yeniden başlatınca uygulanır'], en: ['TornW3B Bazaar · 4.1.8', 'Bazaar offers in Item Market · syncs auction listings to Weav3r · restart to apply'] },
   { group: 'torn', key: 'torn.crimeHelper', def: true, tr: ['Yankesicilik: XP ve renkler', "Her hedefin yanında Crime XP çarpanı (%100–350) · skill'ine göre en iyi hedef koyu yeşil, riskli olanlar kırmızı"], en: ['Pickpocketing: XP and colors', 'Crime XP multiplier next to each mark (100–350%) · best mark for your skill in dark green, risky ones in red'] },
   { group: 'torn', key: 'torn.crimeValue', def: true, tr: ['Suçlar: nerve başına kazanç', "Suç merkezinde ve seçeneklerde $/N rozeti (Emforus tablosu) · Disposal'da en iyi yöntem yeşil"], en: ['Crimes: money per nerve', '$/N badges on the Torn crimes hub and on each option (Emforus sheet) · best Disposal method in green'] },
   { group: 'torn', key: 'torn.crimeRank', def: true, tr: ['Suçlar: düğme renkleri', "Her seçeneğin sağındaki düğmenin (Search, Shoplift, Disposal yöntemleri…) etrafı $/N sırasına göre: kırmızı en kötü → sarı → yeşil en iyi"], en: ['Crimes: button colors', 'The button on the right of each option (Search, Shoplift, Disposal methods…) is outlined by $/N rank: red worst → yellow → green best'] },
@@ -148,7 +151,7 @@ function featRow(f, disabled = false) {
       <span class="switch"><input type="checkbox" data-feature="${f.key}" ${feat(f.key) ? 'checked' : ''} ${disabled ? 'disabled' : ''}><i></i></span>
     </label>`;
 }
-const SET_TABS = ['account', 'general', 'pages', 'notify', 'torn', 'events'];
+const SET_TABS = ['account', 'general', 'appearance', 'pages', 'notify', 'torn', 'events'];
 function showSettingsTab(t) {
   if (!SET_TABS.includes(t)) t = 'account';
   for (const b of document.querySelectorAll('.set-tab')) { const on = b.dataset.setTab === t; b.classList.toggle('active', on); b.setAttribute('aria-selected', on); }

@@ -1,0 +1,3 @@
+# Preserve pinned upstream bytes so userscripts/sources.json hashes stay valid.
+userscripts/*.user.js -text
+userscripts/react-dom.19.2.0.js -text

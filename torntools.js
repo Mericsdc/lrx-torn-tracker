@@ -142,7 +142,7 @@ async function ensureTornTools({ baseDir, log = () => {}, force = false }) {
 
   let tmp = null;
   try {
-    const res = await fetch(crxUrl(), { redirect: 'follow', headers: { 'User-Agent': `Mozilla/5.0 Chrome/${process.versions.chrome}` } });
+    const res = await fetch(crxUrl(), { redirect: 'follow', signal: AbortSignal.timeout(15000), headers: { 'User-Agent': `Mozilla/5.0 Chrome/${process.versions.chrome}` } });
     if (!res.ok) throw new Error(`Chrome Web Store HTTP ${res.status}`);
     const buf = Buffer.from(await res.arrayBuffer());
     const { zip, key } = parseCrx(buf);

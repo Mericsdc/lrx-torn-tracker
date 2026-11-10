@@ -41,7 +41,7 @@ const currentVersion = () => {
 
 async function fetchManifest(manifestUrl) {
   if (!/^https:\/\//i.test(String(manifestUrl || ''))) throw new Error(T('Güncelleme adresi https:// ile başlamalı.', 'The update URL must start with https://.'));
-  const res = await fetch(manifestUrl, { headers: { 'Cache-Control': 'no-cache', 'User-Agent': 'TornTracker-Updater' }, redirect: 'follow' });
+  const res = await fetch(manifestUrl, { headers: { 'Cache-Control': 'no-cache', 'User-Agent': 'TornTracker-Updater' }, redirect: 'follow', signal: AbortSignal.timeout(20000) });
   if (!res.ok) throw new Error(T(`Güncelleme bilgisi alınamadı (HTTP ${res.status})`, `Could not get update info (HTTP ${res.status})`));
   const m = await res.json();
   if (!m.version || !m.url || !/^[a-f0-9]{64}$/i.test(m.sha256 || '')) throw new Error(T('Güncelleme manifesti eksik/hatalı (version, url, sha256 gerekli).', 'The update manifest is incomplete or invalid (version, url and sha256 are required).'));
@@ -73,7 +73,7 @@ async function applyUpdate(manifestUrl, onProgress = () => {}) {
   const m = await fetchManifest(manifestUrl);
   if (cmpVersion(m.version, currentVersion()) <= 0) throw new Error(T('Zaten en güncel sürümdesin.', 'You already have the latest version.'));
   onProgress({ step: 'download', message: T(`v${m.version} indiriliyor…`, `Downloading v${m.version}…`) });
-  const res = await fetch(m.url, { redirect: 'follow', headers: { 'User-Agent': 'TornTracker-Updater' } });
+  const res = await fetch(m.url, { redirect: 'follow', headers: { 'User-Agent': 'TornTracker-Updater' }, signal: AbortSignal.timeout(120000) });
   if (!res.ok) throw new Error(T(`Paket indirilemedi (HTTP ${res.status})`, `Could not download the package (HTTP ${res.status})`));
   const buf = Buffer.from(await res.arrayBuffer());
   const hash = crypto.createHash('sha256').update(buf).digest('hex');

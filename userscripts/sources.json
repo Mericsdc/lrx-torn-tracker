@@ -1,0 +1,23 @@
+[
+  {
+    "file": "ff-scouter.user.js",
+    "version": "3.4",
+    "license": "GPL-3.0",
+    "source": "https://greasyfork.org/en/scripts/535292-ff-scouter-v2/code",
+    "sha256": "073404d46da97e0a6ce000e80926ea9e8582048ecefffcd87d57d5e9a7d67a5e"
+  },
+  {
+    "file": "tornw3b-bazaars.user.js",
+    "version": "4.1.8",
+    "license": "MIT",
+    "source": "https://greasyfork.org/en/scripts/527616-bazaars-in-item-market-powered-by-tornw3b/code",
+    "sha256": "a79dff6154b2f763da34bae61696dd34f56f34391d1330325b6b7d9744f03d69"
+  },
+  {
+    "file": "react-dom.19.2.0.js",
+    "version": "19.2.0",
+    "license": "MIT",
+    "source": "https://www.torn.com/builds/react-umd/react-dom.19.2.0.93c06d8e.production.js",
+    "sha256": "8a481ec1e26aed5c1d911fde81f6288f281fa0cd86dc843db11498f85b78fa17"
+  }
+]

@@ -4,6 +4,7 @@ data/
 
 # Bağımlılıklar / derleme çıktıları
 node_modules/
+.fallow/
 dist/
 out/
 

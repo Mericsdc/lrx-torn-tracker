@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, session, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, WebContentsView, session, shell, ipcMain, clipboard, Menu, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -22,7 +22,7 @@ if (process.platform === 'win32') app.setAppUserModelId('com.lrx.torntracker');
 const exeDir = path.dirname(process.execPath);
 const bundledDataDir = path.join(__dirname, 'data');
 const persistentDataDir = process.env.TT_DATA_DIR || (isPackaged ? path.join(exeDir, 'data') : bundledDataDir);
-const logFile = path.join(isPackaged ? exeDir : __dirname, 'startup.log');
+const logFile = process.env.TT_LOG_FILE || path.join(isPackaged ? exeDir : __dirname, 'startup.log');
 
 function log(...args) {
   try {
@@ -55,26 +55,31 @@ function main() {
   }
   process.env.TORN_DATA_DIR = persistentDataDir;
 
-  const { startServer, stockProductNames, ingestStockDeliveries, warMemberStatuses, flushData, myPlayerId, getCrimeValue, crimeValueForPage, purchaseCostsForPage, seasonalActive, halloweenForPage } = require('./server');
+  const { startServer, stockProductNames, ingestStockDeliveries, warMemberStatuses, warGroupLabels, flushData, myPlayerId, getCrimeValue, crimeValueForPage, purchaseCostsForPage, seasonalActive, halloweenForPage, ffScriptBridge } = require('./server');
   app.on('will-quit', () => { try { flushData(); } catch {} });
   const { ensureTornTools } = require('./torntools');
   const { externalGoogleLogin } = require('./external-login');
   const updater = require('./updater');
+  const { normalizeTornSession, replaceTornCookies } = require('./torn-session');
+  const { buildUserscriptExtension } = require('./userscripts');
   const serverPromise = startServer(3737);
 
   const PARTITION = 'persist:torn_v2';
   const TOP_BAR_HEIGHT = 88; // 44px workspace-bar + 44px browser-toolbar
 
   let mainWindow = null;
+  let tornRuntimeReady = Promise.resolve();
   const tabs = new Map(); // tabId -> { id, view, url, loggedIn }
+  const pendingTabCreates = new Set();
   let activeTabId = 'tracker';
+  let viewsVisible = true;
   const tornTools = { status: 'loading', id: null, version: null, error: null };
 
   function layoutViews() {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const [width, height] = mainWindow.getContentSize();
     for (const [id, t] of tabs.entries()) {
-      if (activeTabId === id) {
+      if (viewsVisible && activeTabId === id) {
         t.view.setVisible(true);
         t.view.setBounds({
           x: 0,
@@ -95,8 +100,8 @@ function main() {
     if (wc.isDestroyed()) return;
     mainWindow.webContents.send('tab-updated', {
       id,
-      url: wc.getURL() || t.url,
-      title: wc.getTitle() || '',
+      url: t.sleptUrl || wc.getURL() || t.url,
+      title: t.sleptUrl ? t.sleptTitle || '' : wc.getTitle() || '',
       loading: wc.isLoading(),
       loggedIn: t.loggedIn,
     });
@@ -152,7 +157,11 @@ function main() {
       if (!r) return;
       const real = pickRealUid(r, t.loggedIn === true);
       if (!real) return; // giriş yapılmamış ya da numara belirsiz
-      if (r.uids.length && r.uids.every((u) => u === real)) return; // sağlıklı
+      // Never reload here. Repair uid only when the logged-in page identifies
+      // its owner explicitly; leave RFC/session cookies to Torn itself.
+      if (r.uids.length && r.uids.every((u) => u === real)) return;
+      if (t.loggedIn !== true || !r.real || t.uidRepairBusy) return;
+      t.uidRepairBusy = true;
       const ses = wc.session;
       const urls = new Set((await ses.cookies.get({ name: 'uid' }))
         .filter((c) => /(^|\.)torn\.com$/i.test(c.domain))
@@ -164,9 +173,8 @@ function main() {
       });
       try { await ses.cookies.flushStore(); } catch {}
       log('uid çerezi onarıldı:', `[${r.uids.map(uidShape).join(', ') || 'yok'}] → ${uidShape(real)}`);
-      // Hata veren sayfa çerezi yüklenirken okuduğu için bir kez yenile
-      if (!t.uidRepaired) { t.uidRepaired = true; wc.reload(); }
     } catch (e) { log('uid onarım hatası:', e.message); }
+    finally { t.uidRepairBusy = false; }
   }
 
   function sendToRenderer(channel, payload) {
@@ -277,6 +285,7 @@ function main() {
   const TORN_HELPERS = [
     { name: 'fast-slots', feature: 'torn.fastSlots', match: /^https:\/\/www\.torn\.com\/page\.php\?(.*&)?sid=slots(&|#|$)/i },
     { name: 'war-helper', feature: 'torn.warHelper', match: /^https:\/\/www\.torn\.com\/factions\.php/i, after: (id) => warTick(id) },
+    { name: 'fight-helper', feature: 'torn.liveFight', needsFocus: true, match: /^https:\/\/www\.torn\.com\/(loader|page)\.php\?(.*&)?sid=attack(&|#|$)/i },
     { name: 'company-stock', feature: 'torn.stockSync', needsFocus: true, match: /^https:\/\/www\.torn\.com\/companies\.php/i, run: syncStockDeliveries },
     // Suçlar: XP renkleri + $/N rozetleri + burglary notları (her biri ayrı ayardan açılıp kapanır)
     { name: 'crime-helper', feature: ['torn.crimeHelper', 'torn.crimeValue', 'torn.crimeRank', 'torn.burglaryHelper'], match: /^https:\/\/www\.torn\.com\/page\.php\?(.*&)?sid=crimes(&|#|$)/i,
@@ -340,7 +349,7 @@ function main() {
       const info = await wc.executeJavaScript('window.__lrxWar ? window.__lrxWar.scan() : null', true);
       if (!info?.active) return;
       const statuses = await warMemberStatuses(info.factionIds || []);
-      if (!wc.isDestroyed()) await wc.executeJavaScript(`window.__lrxWar && window.__lrxWar.update(${JSON.stringify(statuses)})`, true);
+      if (!wc.isDestroyed() && tabViewed(id)) await wc.executeJavaScript(`window.__lrxWar && window.__lrxWar.update(${JSON.stringify(statuses)}, ${JSON.stringify(warGroupLabels(info.factionIds || []))})`, true);
     } catch {} finally { t.warBusy = false; }
   }
   setInterval(() => {
@@ -395,8 +404,18 @@ function main() {
       await shell.openExternal(url);
     }
   });
+  ipcMain.handle('clipboard-read', (event) => {
+    if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error('Clipboard access denied');
+    return clipboard.readText();
+  });
 
   ipcMain.handle('tab-create', async (_event, { id, url, activate = true }) => {
+    if (typeof id !== 'string' || tabs.has(id) || pendingTabCreates.has(id)) return;
+    pendingTabCreates.add(id);
+    if (activate) markActive(id);
+    await tornRuntimeReady;
+    if (!pendingTabCreates.delete(id)) return;
+    activate = activate && activeTabId === id;
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const view = new WebContentsView({
       webPreferences: {
@@ -419,8 +438,8 @@ function main() {
     view.setBounds({
       x: 0,
       y: TOP_BAR_HEIGHT,
-      width: Math.max(800, width),
-      height: Math.max(500, height - TOP_BAR_HEIGHT),
+      width: Math.max(100, width),
+      height: Math.max(100, height - TOP_BAR_HEIGHT),
     });
     layoutViews();
 
@@ -442,6 +461,17 @@ function main() {
       win.webContents.setWindowOpenHandler(openHandler);
     });
     guardGoogleNavigation(wc);
+    const navigations = [];
+    wc.on('will-navigate', (event) => {
+      const now = Date.now();
+      while (navigations.length && now - navigations[0] > 2500) navigations.shift();
+      navigations.push(now);
+      if (navigations.length > 6) {
+        event.preventDefault();
+        sendToRenderer('torn-data', { type: 'navigation-loop-stopped' });
+        log('Torn navigation loop stopped:', id);
+      }
+    });
 
     wc.on('did-start-loading', () => sendTabUpdate(id));
     // Torn Crimes'a hem tam yüklemeyle hem de sayfa içi (SPA) geçişle gelinebilir; ikisini de izle
@@ -453,6 +483,9 @@ function main() {
       else t.crimesDiag?.stop(); // Crimes'tan çıkıldı
     });
     wc.on('did-stop-loading', () => { sendTabUpdate(id); checkTornLogin(id); repairUidCookie(id); injectTornHelpers(id); });
+    wc.on('dom-ready', () => {
+      if (/\/(loader|page)\.php\?(.*&)?sid=attack(&|#|$)/i.test(wc.getURL())) injectTornHelpers(id);
+    });
     // F12 / Ctrl+Shift+I → Torn sekmesinin geliştirici araçları (sorun teşhisi için)
     wc.on('before-input-event', (e, input) => {
       if (input.type !== 'keyDown') return;
@@ -486,6 +519,7 @@ function main() {
     const url = wc.getURL();
     if (!/^https?:\/\//i.test(url)) return;
     t.sleptUrl = url;
+    t.sleptTitle = wc.getTitle();
     wc.loadURL('about:blank').catch(() => {});
     log('sekme uyutuldu:', t.id);
   }
@@ -520,6 +554,7 @@ function main() {
   });
 
   ipcMain.handle('tab-close', async (_event, tabId) => {
+    pendingTabCreates.delete(tabId);
     const t = tabs.get(tabId);
     if (!t) return;
     tabs.delete(tabId);
@@ -624,6 +659,7 @@ function main() {
   });
 
   ipcMain.handle('set-view-visibility', async (_event, visible) => {
+    viewsVisible = Boolean(visible);
     if (!visible) {
       for (const t of tabs.values()) t.view.setVisible(false);
     } else {
@@ -641,7 +677,15 @@ function main() {
   // ya da dosyalar uygulama açıkken değişti) yeniden başlatmak gerekir; bunu ayrıca bildiriyoruz.
   const runningVersion = updater.currentVersion();
   const restartPending = () => updater.cmpVersion(updater.currentVersion(), runningVersion) > 0;
-  const relaunch = () => setTimeout(() => { try { flushData(); } catch {} app.relaunch(); app.exit(0); }, 800);
+  const { restartApplication } = require('./restart');
+  const relaunch = () => setTimeout(async () => {
+    try {
+      flushData();
+      await session.fromPartition(PARTITION).cookies.flushStore();
+      await session.fromPartition(PARTITION).flushStorageData();
+      restartApplication({ app, windows: BrowserWindow.getAllWindows(), log });
+    } catch (e) { log('restart error:', e.message); app.relaunch(); app.exit(0); }
+  }, 350);
   ipcMain.handle('app-version', async () => runningVersion);
   ipcMain.handle('update-check', async () => {
     const url = updateUrl();
@@ -677,8 +721,9 @@ function main() {
       return { ok: true };
     } catch (e) {
       log('update err:', e.message);
+      updating = false;
       return { ok: false, error: e.message };
-    } finally { updating = false; }
+    }
   });
 
   ipcMain.handle('set-torn-cookies', async (_event, { phpSessId, uid, pass, raw }) => {
@@ -698,18 +743,8 @@ function main() {
         }
       }
     }
-    for (const [name, value] of pairs) {
-      await tornSession.cookies.set({
-        url: 'https://www.torn.com',
-        domain: '.torn.com',
-        path: '/',
-        name,
-        value,
-        secure: true,
-        sameSite: 'lax',
-        expirationDate: exp,
-      });
-    }
+    if (!pairs.some(([name]) => name === 'PHPSESSID')) throw new Error(T('PHPSESSID gerekli.', 'PHPSESSID is required.'));
+    await replaceTornCookies(tornSession, [...new Map(pairs)].map(([name, value]) => ({ name, value, domain: '.torn.com', path: '/', secure: true, sameSite: 'lax', expirationDate: exp })));
     for (const t of tabs.values()) {
       try { t.view.webContents.reload(); } catch {}
     }
@@ -759,10 +794,7 @@ function main() {
       ping();
       setInterval(ping, 20_000);
 
-      // Eklenti yüklenmeden açılmış Torn sekmelerini yenile ki içerik betikleri çalışsın
-      for (const t of tabs.values()) {
-        try { if (isTornUrl(t.view.webContents.getURL())) t.view.webContents.reload(); } catch {}
-      }
+      // Tabs wait for extension registration before their first load.
     } catch (e) {
       Object.assign(tornTools, { status: 'error', error: e.message });
       log('TornTools yüklenemedi:', e);
@@ -774,15 +806,29 @@ function main() {
     try {
       const tornSession = session.fromPartition(PARTITION);
       setupTornSession(tornSession);
-      setupTornTools(tornSession);
+      tornRuntimeReady = (async () => {
+        await normalizeTornSession(tornSession);
+        await setupTornTools(tornSession);
+        let features = {};
+        try { features = JSON.parse(fs.readFileSync(path.join(persistentDataDir, 'config.json'), 'utf8')).features || {}; } catch {}
+        await serverPromise;
+        const dir = buildUserscriptExtension(persistentDataDir, features, ffScriptBridge());
+        const loader = tornSession.extensions || tornSession;
+        await loader.loadExtension(dir, { allowFileAccess: false });
+        log('LRX userscripts loaded');
+      })().catch((e) => log('Torn runtime:', e.message));
 
       const port = await serverPromise;
+      const workArea = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+      const width = Math.min(1360, Math.round(workArea.width * 0.9));
+      const height = Math.min(900, Math.round(workArea.height * 0.9));
 
       mainWindow = new BrowserWindow({
-        width: 1560,
-        height: 960,
-        minWidth: 1120,
-        minHeight: 720,
+        width, height,
+        x: workArea.x + Math.round((workArea.width - width) / 2),
+        y: workArea.y + Math.round((workArea.height - height) / 2),
+        minWidth: 480,
+        minHeight: 400,
         show: true,
         title: 'LRX Torn Tracker',
         icon: APP_ICON,
@@ -794,6 +840,13 @@ function main() {
           nodeIntegration: false,
           spellcheck: false,
         },
+      });
+      mainWindow.webContents.on('context-menu', (_event, params) => {
+        if (!params.isEditable) return;
+        Menu.buildFromTemplate([
+          { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+          { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
+        ]).popup({ window: mainWindow });
       });
 
       mainWindow.on('resize', layoutViews);
