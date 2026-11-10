@@ -662,6 +662,7 @@ function main() {
     viewsVisible = Boolean(visible);
     if (!visible) {
       for (const t of tabs.values()) t.view.setVisible(false);
+      if (mainWindow.isFocused()) mainWindow.webContents.focus();
     } else {
       layoutViews();
     }

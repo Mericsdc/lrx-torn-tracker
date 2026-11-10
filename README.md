@@ -8,6 +8,13 @@
 
 ## Features
 
+### Version 1.6.8
+
+- Checks for updates on startup, including the first launch before entering an API key, and every minute while the app is running.
+- A newly available version opens the themed "Update released — would you like to update now?" dialog once per release in each app session. Choosing Later leaves the update button pulsing until installation, including in the workspace bar while a Torn tab is active; reduced-motion and disabled-animation preferences use a static indicator.
+- Checks resume after returning to the app or regaining connectivity. Hidden windows and other open dialogs defer the prompt. Concurrent checks share one request, and temporary network failures preserve an already-known update.
+- Installation still requires the user's choice; the existing automatic-check setting is respected. Foreground native Torn tabs hand keyboard focus to the update dialog when it opens.
+
 ### Version 1.6.7
 
 - Redesigned the update window to use the same card surfaces, fonts and buttons as the main interface in all five themes.

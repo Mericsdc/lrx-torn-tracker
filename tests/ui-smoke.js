@@ -11,6 +11,152 @@ const child = fork(path.join(__dirname, 'preview-server.js'), { env: { ...proces
 const output = process.env.QA_OUTPUT || path.join(os.tmpdir(), 'lrx-qa');
 fs.mkdirSync(output, { recursive: true });
 let browser;
+async function checkUpdateNotifications(browser, base, output) {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'no-preference' });
+  await context.addInitScript(() => {
+    window.qaUpdateChecks = 0;
+    window.qaUpdateInstalls = 0;
+    window.qaUpdateReply = { configured: true, current: '1.6.7', latest: '1.6.8', available: true, notes: '## Update notifications\n\n- Notify on startup and while using the app.' };
+    if (new URL(location.href).searchParams.get('qaUpdate') === 'none') window.qaUpdateReply = { configured: true, current: '1.6.7', latest: '1.6.7', available: false };
+    window.electronAPI = {
+      updateCheck: async () => { window.qaUpdateChecks++; return { ...window.qaUpdateReply }; },
+      updateApply: async () => { window.qaUpdateInstalls++; return { ok: true }; },
+    };
+  });
+  await context.route('**/*', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.origin !== base) return route.abort();
+    if (url.pathname === '/api/bootstrap') {
+      const response = await route.fetch(), data = await response.json();
+      data.config.hasKey = false;
+      data.config.features = { ...data.config.features, 'app.updates': true, 'app.animations': true };
+      return route.fulfill({ json: data });
+    }
+    return route.continue();
+  });
+  const page = await context.newPage();
+  const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+  const time = new Date('2026-11-10T12:00:00Z');
+  await page.clock.install({ time });
+  await page.clock.pauseAt(time);
+  await page.goto(base);
+  await page.locator('#auth-key').waitFor({ state: 'visible' });
+  await page.clock.runFor(1001);
+  await page.locator('#update-modal').waitFor({ state: 'visible' });
+  assert.equal(await page.evaluate(() => window.qaUpdateChecks), 1);
+  assert.equal(await page.locator('#update-dialog-title').textContent(), 'Update released');
+  assert.ok((await page.locator('#update-dialog-description').textContent()).includes('Would you like to update now?'));
+  assert.ok(await page.locator('#update-modal').evaluate((el) => Number(getComputedStyle(el).zIndex) > Number(getComputedStyle(document.querySelector('#auth-screen')).zIndex)));
+  assert.equal(await page.evaluate(() => window.qaUpdateInstalls), 0);
+  await page.screenshot({ path: path.join(output, 'update-notification-first-launch.png') });
+  await page.locator('#update-dialog-cancel').click();
+  assert.equal(await page.locator('#auth-key').evaluate((el) => document.activeElement === el), true);
+  await page.clock.runFor(60_000);
+  assert.equal(await page.evaluate(() => window.qaUpdateChecks), 2);
+  assert.equal(await page.locator('#update-modal').isVisible(), false, 'Later does not repeat the same prompt');
+  assert.ok(await page.locator('#update-btn').evaluate((el) => el.classList.contains('update-attention')));
+  await page.evaluate(() => document.body.classList.remove('no-anim'));
+  assert.equal(await page.locator('#update-btn').evaluate((el) => getComputedStyle(el).animationName), 'update-attention');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  assert.equal(await page.locator('#update-btn').evaluate((el) => getComputedStyle(el).animationName), 'none');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+  // The attention button remains reachable while a Torn browser tab is active.
+  await page.evaluate(() => {
+    document.querySelector('#auth-screen').hidden = true;
+    document.body.classList.remove('auth-open');
+    openInTab('https://www.torn.com/index.php', { activate: true });
+  });
+  assert.equal(await page.locator('#workspace-update-btn').isVisible(), true);
+  assert.equal(await page.locator('#workspace-update-btn').evaluate((el) => getComputedStyle(el).animationName), 'update-attention');
+  await page.locator('#workspace-update-btn').click();
+  await page.locator('#update-modal').waitFor({ state: 'visible' });
+  await page.locator('#update-dialog-cancel').click();
+  assert.equal(await page.locator('#workspace-update-btn').evaluate((el) => document.activeElement === el), true);
+  await page.evaluate(() => activateWorkspaceTab('tracker'));
+  assert.equal(await page.locator('#workspace-update-btn').isVisible(), false);
+
+  // A release arriving during use is announced after the current dialog closes.
+  await page.evaluate(() => { window.qaUpdateReply.latest = '1.6.9'; document.querySelector('#login-modal').hidden = false; });
+  await page.clock.runFor(60_000);
+  assert.equal(await page.locator('#update-modal').isVisible(), false);
+  await page.evaluate(() => { document.querySelector('#login-modal').hidden = true; });
+  await page.clock.runFor(1001);
+  await page.locator('#update-modal').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('#update-dialog-latest').textContent(), 'v1.6.9');
+  await page.locator('#update-dialog-cancel').click();
+
+  // A minimized/hidden window waits until the user returns.
+  await page.evaluate(() => {
+    window.qaVisibility = 'hidden';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => window.qaVisibility });
+    window.qaUpdateReply.latest = '1.6.10';
+  });
+  await page.clock.runFor(60_000);
+  assert.equal(await page.locator('#update-modal').isVisible(), false);
+  await page.evaluate(() => { window.qaVisibility = 'visible'; document.dispatchEvent(new Event('visibilitychange')); });
+  await page.locator('#update-modal').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('#update-dialog-latest').textContent(), 'v1.6.10');
+  await page.locator('#update-dialog-cancel').click();
+
+  // Network failures retain the pending release and its attention indicator.
+  await page.evaluate(async () => { window.qaUpdateReply = { error: 'Fixture offline' }; await checkUpdate(false); });
+  assert.equal(await page.evaluate(() => state.update.latest), '1.6.10');
+  assert.ok(await page.locator('#update-btn').evaluate((el) => el.classList.contains('update-attention')));
+  assert.equal(await page.locator('#update-modal').isVisible(), false);
+
+  // Concurrent checks share one request, then clear the indicator when up to date.
+  const checks = await page.evaluate(() => window.qaUpdateChecks);
+  await page.evaluate(() => {
+    window.electronAPI.updateCheck = () => { window.qaUpdateChecks++; return new Promise((resolve) => { window.qaResolveUpdate = resolve; }); };
+    window.qaCheckOne = checkUpdate(false); window.qaCheckTwo = checkUpdate(false);
+  });
+  assert.equal(await page.evaluate(() => window.qaUpdateChecks), checks + 1);
+  await page.evaluate(async () => {
+    window.qaResolveUpdate({ configured: true, current: '1.6.10', latest: '1.6.10', available: false });
+    await Promise.all([window.qaCheckOne, window.qaCheckTwo]);
+  });
+  assert.equal(await page.locator('#update-btn').evaluate((el) => el.classList.contains('update-attention')), false);
+  assert.equal(await page.evaluate(() => window.qaUpdateInstalls), 0);
+
+  // Returning after sleep or regaining connectivity checks immediately.
+  await page.evaluate(() => {
+    window.electronAPI.updateCheck = async () => { window.qaUpdateChecks++; return { configured: true, current: '1.6.10', latest: '1.6.11', available: true }; };
+  });
+  await page.clock.setSystemTime(new Date((await page.evaluate(() => Date.now())) + 300_000));
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await page.locator('#update-modal').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('#update-dialog-latest').textContent(), 'v1.6.11');
+  await page.locator('#update-dialog-cancel').click();
+
+  // Respect the existing automatic-check preference; manual checks still work.
+  await page.evaluate(() => { state.config.features['app.updates'] = false; });
+  const disabledChecks = await page.evaluate(() => window.qaUpdateChecks);
+  await page.clock.runFor(60_000);
+  assert.equal(await page.evaluate(() => window.qaUpdateChecks), disabledChecks);
+  await page.evaluate(() => checkUpdate(true));
+  await page.locator('#update-modal').waitFor({ state: 'visible' });
+  assert.equal(await page.evaluate(() => window.qaUpdateChecks), disabledChecks + 1);
+  await page.locator('#update-dialog-cancel').click();
+
+  // A fresh launch asks again for a still-pending release, but never when current.
+  await page.reload();
+  await page.locator('#auth-key').waitFor({ state: 'visible' });
+  await page.clock.runFor(1001);
+  await page.locator('#update-modal').waitFor({ state: 'visible' });
+  assert.equal(await page.evaluate(() => window.qaUpdateChecks), 1);
+  assert.equal(await page.locator('#update-dialog-latest').textContent(), 'v1.6.8');
+  const current = await context.newPage();
+  await current.clock.install({ time }); await current.clock.pauseAt(time);
+  await current.goto(base + '?qaUpdate=none');
+  await current.locator('#auth-key').waitFor({ state: 'visible' });
+  await current.clock.runFor(1001);
+  assert.equal(await current.evaluate(() => window.qaUpdateChecks), 1);
+  assert.equal(await current.locator('#update-modal').isVisible(), false);
+  assert.equal(await current.locator('#update-btn').evaluate((el) => el.classList.contains('update-attention')), false);
+  assert.deepEqual(errors, []);
+  await context.close();
+}
 (async () => {
   const { port } = await new Promise((resolve, reject) => { child.once('message', resolve); child.once('error', reject); child.once('exit', (code) => reject(new Error('Fixture server exited: ' + code))); });
   const base = 'http://127.0.0.1:' + port;
@@ -222,7 +368,8 @@ let browser;
   await fight.addScriptTag({ path: path.join(__dirname, '../torn-helpers/fight-helper.js') });
   assert.equal(await fight.locator('#lrx-live-fight').count(), 1);
   await fight.screenshot({ path: path.join(output, 'fight-analysis-fixture.png') });
-  console.log(JSON.stringify({ result: 'PASS', checked: ['manual entry and caret', 'Ctrl+V identical key', 'shortcut collapse and restore', 'Weav3r tab reuse', 'five themes and persistence', 'faction request race', 'group bulk assignment and reload', '640px layout', 'fight life loss and recovery', 'themed update dialog and error recovery', 'RFC refresh in fetch/Request/XHR', 'no failed-action replay', 'one sidebar navigation per click', 'no frontend exceptions'], screenshots: output }));
+  await checkUpdateNotifications(browser, base, output);
+  console.log(JSON.stringify({ result: 'PASS', checked: ['manual entry and caret', 'Ctrl+V identical key', 'shortcut collapse and restore', 'Weav3r tab reuse', 'five themes and persistence', 'faction request race', 'group bulk assignment and reload', '640px layout', 'fight life loss and recovery', 'themed update dialog and error recovery', 'startup and per-minute update prompts', 'deferred prompts and one notice per release', 'pending-update pulse and reduced motion', 'offline recovery and shared checks', 'automatic-check preference and manual override', 'RFC refresh in fetch/Request/XHR', 'no failed-action replay', 'one sidebar navigation per click', 'no frontend exceptions'], screenshots: output }));
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => {
   await browser?.close(); child.kill();
   await new Promise((r) => child.exitCode !== null ? r() : child.once('exit', r));

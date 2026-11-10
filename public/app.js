@@ -1377,7 +1377,7 @@ function renderUpdateInfo() {
     <div><span>${tr('Sürüm', 'Version')}</span><span class="mono">v${esc(u.current || c.version || '—')}</span></div>
     <div><span>${tr('Durum', 'Status')}</span><span>${status}</span></div>
     <div><span>${tr('Kaynak', 'Source')}</span><span class="mono">${repo ? `GitHub · ${esc(repo)}` : '—'}</span></div>
-    <div><span>${tr('Kontrol', 'Checks')}</span><span>${feat('app.updates') ? tr('Açılışta ve 6 saatte bir', 'On startup and every 6 hours') : tr('Otomatik kontrol kapalı', 'Automatic checks off')}</span></div>
+    <div><span>${tr('Kontrol', 'Checks')}</span><span>${feat('app.updates') ? tr('Açılışta ve dakikada bir · yeni sürümde bildirim', 'On startup and every minute · new-version notification') : tr('Otomatik kontrol kapalı', 'Automatic checks off')}</span></div>
     <small class="muted">${tr('Güncellemeler yalnızca resmi sürüm adresinden gelir; bu adres değiştirilemez.', 'Updates come only from the official release address; it cannot be changed.')}</small>`;
 }
 async function postConfig(body, okText) {
@@ -1610,6 +1610,7 @@ function activateWorkspaceTab(tabId) {
   renderBrowserTabs();
   if (!isTracker) updateBrowserToolbar();
   else catchUpTracker();
+  renderUpdateBtn();
 }
 
 // Takip ekranına dönünce: sayaçları hemen düzelt, uzun süre gizli kaldıysa veriyi tazele
@@ -1900,6 +1901,13 @@ $('#browser-url-form').addEventListener('submit', (e) => {
 
 /* ---------- Uygulama güncelleme ---------- */
 state.update = null;
+const UPDATE_CHECK_INTERVAL = 60_000;
+let updateChecksStarted = false;
+let updateCheckInFlight = null;
+let lastUpdateCheckAt = 0;
+let updateNoticeTimer = null;
+const announcedUpdates = new Set();
+const updateNoticeKey = (u) => `${u.latest}:${u.restartOnly ? 'restart' : 'install'}`;
 function renderUpdateBtn() {
   const u = state.update;
   const label = $('#update-label'), dot = $('#update-dot'), btn = $('#update-btn');
@@ -1907,25 +1915,73 @@ function renderUpdateBtn() {
   label.textContent = u?.restartOnly ? `v${u.latest} · ${tr('yeniden başlat', 'restart')}` : u?.available ? `v${u.latest} ${tr('hazır', 'ready')}` : `v${u?.current || '—'}`;
   dot.hidden = !u?.available;
   btn.classList.toggle('has-update', !!u?.available);
+  btn.classList.toggle('update-attention', !!u?.available && !updateInstalling);
   btn.title = !u ? '' : u.restartOnly ? tr(`v${u.latest} kuruldu ama çalışan sürüm v${u.current} — yeniden başlatmak için tıkla`, `v${u.latest} is installed but v${u.current} is running — click to restart`)
     : u.available ? tr(`Yeni sürüm v${u.latest} — kurmak için tıkla`, `New version v${u.latest} — click to install`)
     : u.error ? tr('Güncelleme kontrolü başarısız: ', 'Update check failed: ') + u.error
       : u.configured === false ? tr('Güncelleme adresi ayarlı değil', 'No update URL set')
         : tr('En güncel sürüm — tekrar kontrol için tıkla', 'Up to date — click to check again');
+  const workspaceButton = $('#workspace-update-btn');
+  workspaceButton.hidden = !u?.available || state.activeWsTab === 'tracker' || state.config?.features?.['app.updates'] === false;
+  workspaceButton.classList.toggle('has-update', !!u?.available);
+  workspaceButton.classList.toggle('update-attention', !!u?.available && !updateInstalling);
+  workspaceButton.title = btn.title;
+  workspaceButton.setAttribute('aria-label', btn.title);
+  $('.workspace-update-label', workspaceButton).textContent = u?.available ? `↑ v${u.latest}` : '';
 }
 async function checkUpdate(manual, force = false) {
+  if (updateInstalling) return;
   if (!manual && !force && state.config?.features?.['app.updates'] === false) return;
   if (!window.electronAPI?.updateCheck) { const b = $('#update-btn'); if (b) b.hidden = true; return; }
-  state.update = await window.electronAPI.updateCheck().catch((e) => ({ error: e.message }));
+  if (!updateCheckInFlight) {
+    lastUpdateCheckAt = Date.now();
+    updateCheckInFlight = Promise.resolve().then(() => window.electronAPI.updateCheck())
+      .catch((e) => ({ error: e.message })).finally(() => { updateCheckInFlight = null; });
+  }
+  const result = await updateCheckInFlight;
+  if (updateInstalling || !manual && !force && state.config?.features?.['app.updates'] === false) return;
+  // A temporary check failure must not erase an update already waiting to be installed.
+  state.update = result.error && state.update?.available ? { ...state.update, checkError: result.error } : result;
   renderUpdateBtn();
   renderUpdateInfo();
   if (manual) {
     const u = state.update;
     if (u.configured === false) toast(tr('Bu kurulumda güncelleme adresi yok', 'This build has no update address'));
-    else if (u.error) toast(tr('Güncelleme kontrolü başarısız: ', 'Update check failed: ') + u.error);
+    else if (result.error) toast(tr('Güncelleme kontrolü başarısız: ', 'Update check failed: ') + result.error);
     else openUpdateDialog();
-  }
+  } else maybeShowUpdateNotice();
 }
+function maybeShowUpdateNotice() {
+  clearTimeout(updateNoticeTimer);
+  updateNoticeTimer = null;
+  const u = state.update;
+  if (!u?.available || updateInstalling || announcedUpdates.has(updateNoticeKey(u))) return;
+  if (state.config?.features?.['app.updates'] === false && !u.restartOnly) return;
+  if (document.visibilityState !== 'visible') return; // Show on return, without bringing a background window forward.
+  const otherDialog = $$('.modal-backdrop:not(#update-modal)').some((el) => !el.hidden && el.getClientRects().length);
+  if (otherDialog) {
+    updateNoticeTimer = setTimeout(maybeShowUpdateNotice, 1000);
+    return;
+  }
+  openUpdateDialog();
+}
+function resumeUpdateChecks() {
+  if (!updateChecksStarted || document.visibilityState !== 'visible') return;
+  maybeShowUpdateNotice();
+  const elapsed = Date.now() - lastUpdateCheckAt;
+  if (elapsed >= UPDATE_CHECK_INTERVAL || (state.update?.error || state.update?.checkError) && elapsed >= 5000) checkUpdate(false);
+}
+function startUpdateChecks() {
+  if (updateChecksStarted) return;
+  if (!window.electronAPI?.updateCheck) { $('#update-btn').hidden = true; return; }
+  updateChecksStarted = true;
+  lastUpdateCheckAt = Date.now();
+  setTimeout(() => checkUpdate(false), 1000);
+  setInterval(() => checkUpdate(false), UPDATE_CHECK_INTERVAL);
+}
+window.addEventListener('focus', resumeUpdateChecks);
+window.addEventListener('online', resumeUpdateChecks);
+document.addEventListener('visibilitychange', resumeUpdateChecks);
 let updateInstalling = false;
 let updateReturnFocus = null;
 // Only render the release-note formatting we display; all upstream text stays text nodes.
@@ -1977,15 +2033,16 @@ function openUpdateDialog() {
   const u = state.update;
   if (!u || u.error || u.configured === false && !u.restartOnly || updateInstalling) return;
   if ($('#update-modal').hidden) updateReturnFocus = document.activeElement;
+  if (u.available) announcedUpdates.add(updateNoticeKey(u));
   $('#update-dialog-title').textContent = u.restartOnly ? tr('Yeniden başlatmaya hazır', 'Ready to restart')
-    : u.available ? tr('Yeni sürüm hazır', 'An update is ready') : tr('Uygulaman güncel', "You're up to date");
+    : u.available ? tr('Güncelleme yayımlandı', 'Update released') : tr('Uygulaman güncel', "You're up to date");
   $('#update-dialog-current-label').textContent = tr('Çalışan sürüm', 'Current version');
   $('#update-dialog-latest-label').textContent = u.restartOnly ? tr('Kurulu sürüm', 'Installed version') : tr('Son sürüm', 'Latest version');
   $('#update-dialog-current').textContent = 'v' + u.current;
   $('#update-dialog-latest').textContent = 'v' + (u.latest || u.current);
   $('#update-dialog-description').textContent = u.restartOnly
     ? tr('Güncelleme kuruldu. Yeni sürümü açmak için uygulama yeniden başlatılacak.', 'The update is installed. Restart the app to open the new version.')
-    : u.available ? tr('Güncelleme kurulduktan sonra uygulama kapanıp yeniden açılacak. Ayarların ve kayıtlı verilerin korunacak.', 'The app will close and reopen after installation. Your settings and saved data will be kept.')
+    : u.available ? tr(`v${u.latest} yayımlandı. Şimdi güncellemek ister misin? Kurulumdan sonra uygulama yeniden açılacak; ayarların ve kayıtlı verilerin korunacak.`, `v${u.latest} has been released. Would you like to update now? The app will restart after installation; your settings and saved data will be kept.`)
       : tr('LRX Torn Tracker’ın son sürümünü kullanıyorsun.', 'You are running the latest version of LRX Torn Tracker.');
   $('#update-dialog-notes-label').textContent = tr('Sürüm notları', 'Release notes');
   renderUpdateNotes(u.notes);
@@ -1996,7 +2053,7 @@ function openUpdateDialog() {
   $('#update-dialog-progress').hidden = true;
   $('#update-dialog-progress').value = 0;
   $('#update-dialog-progress').setAttribute('aria-label', tr('Güncelleme ilerlemesi', 'Update progress'));
-  $('#update-dialog-cancel').textContent = u.available ? tr('Vazgeç', 'Cancel') : tr('Kapat', 'Close');
+  $('#update-dialog-cancel').textContent = u.available ? tr('Daha sonra', 'Later') : tr('Kapat', 'Close');
   $('#update-dialog-install').hidden = !u.available;
   $('#update-dialog-install').textContent = u.restartOnly ? tr('Yeniden başlat', 'Restart') : tr('Kur ve yeniden başlat', 'Install and restart');
   $('#update-modal').hidden = false;
@@ -2007,6 +2064,7 @@ $('#update-btn')?.addEventListener('click', () => {
   if (state.update?.available) openUpdateDialog();
   else checkUpdate(true);
 });
+$('#workspace-update-btn').addEventListener('click', openUpdateDialog);
 $('#update-dialog-close').addEventListener('click', closeUpdateDialog);
 $('#update-dialog-cancel').addEventListener('click', closeUpdateDialog);
 $('#update-modal').addEventListener('keydown', (e) => {
@@ -2020,8 +2078,9 @@ $('#update-modal').addEventListener('keydown', (e) => {
   }
 });
 $('#update-dialog-install').addEventListener('click', async () => {
-  if (updateInstalling) return;
+  if (updateInstalling || !state.update?.available) return;
   updateInstalling = true;
+  $$('.update-btn').forEach((button) => button.classList.remove('update-attention'));
   $('#update-modal [role="dialog"]').setAttribute('aria-busy', 'true');
   $$('#update-modal button').forEach((b) => b.disabled = true);
   $('#update-dialog-feedback').hidden = false;
@@ -2037,6 +2096,7 @@ $('#update-dialog-install').addEventListener('click', async () => {
     $('#update-dialog-progress').hidden = true;
     $('#update-dialog-status').textContent = tr('Güncelleme başarısız: ', 'Update failed: ') + error.message;
     $$('#update-modal button').forEach((b) => b.disabled = false);
+    renderUpdateBtn();
     $('#update-dialog-install').focus();
   }
 });
@@ -2048,8 +2108,6 @@ window.electronAPI?.onUpdateProgress?.((p) => {
   progress.value = ({ download: 1, extract: 2, install: 3, done: 4, restart: 5 })[p.step] || 0;
 });
 window.electronAPI?.onUpdatePending?.(() => checkUpdate(false, true)); // kurulu ama çalışmayan sürüm: ayar kapalı olsa da göster
-setTimeout(() => checkUpdate(false), 2500); // config yüklensin (app.updates ayarı)
-setInterval(() => checkUpdate(false), 6 * 3600_000);
 
 /* ---------- TornTools (Chrome eklentisi) ---------- */
 function renderTornToolsBtn() {
@@ -2363,6 +2421,7 @@ function startApp(b, fresh = false) {
   let b = null;
   try { b = await api('/api/bootstrap'); } catch {}
   if (b?.config) { state.config = b.config; window.applyFeatures?.(); }
+  startUpdateChecks(); // Also runs on first launch, before a Torn API key has been entered.
   if (b?.config && !b.config.hasKey) {
     showAuth('login');
     return;

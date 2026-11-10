@@ -68,7 +68,7 @@ const FEATURE_DEFS = [
   { group: 'app', key: 'app.torntools', def: true, tr: ['TornTools', 'Yerleşik Torn sekmelerinde TornTools eklentisi (yeniden başlatınca)'], en: ['TornTools', 'TornTools extension in Torn tabs (after restart)'] },
   { group: 'app', key: 'app.tabSleep', def: true, tr: ['Kullanılmayan sekmeleri uyut', '20 dk açılmayan Torn sekmesi RAM\'den boşaltılır, tıklayınca kaldığı yerden açılır'], en: ['Sleep unused tabs', 'Torn tabs unused for 20 min are unloaded from RAM and reopen where you left off when clicked'] },
   { group: 'app', key: 'app.feedback', def: true, tr: ['Geri bildirim butonu', 'Üst çubukta: istek, öneri ve hatalar e-posta ile geliştiriciye gider'], en: ['Feedback button', 'In the top bar: requests, suggestions and bugs go to the developer by email'] },
-  { group: 'app', key: 'app.updates', def: true, tr: ['Otomatik güncelleme kontrolü', 'Açılışta ve 6 saatte bir'], en: ['Automatic update check', 'On startup and every 6 hours'] },
+  { group: 'app', key: 'app.updates', def: true, tr: ['Otomatik güncelleme kontrolü', 'Açılışta ve dakikada bir kontrol · yeni sürümde bildirim'], en: ['Automatic update check', 'Checks on startup and every minute · prompts for new versions'] },
 ];
 const FEATURE_DEF_MAP = Object.fromEntries(FEATURE_DEFS.map((f) => [f.key, f]));
 const EXTRA_VIEWS = { job: 'page.job', gym: 'page.gym', networth: 'page.networth', travel: 'page.travel', war: 'page.war', level: 'page.levelling', guide: 'page.levelling', crimes: 'page.crimes', awards: 'page.awards', tools: 'page.tools', faction: 'page.faction' };
@@ -120,7 +120,8 @@ function applyFeatures() {
   applyNavVisibility();
   document.body.classList.toggle('no-anim', !feat('app.animations'));
   const tt = $('#tt-open-btn'); if (tt) tt.hidden = !feat('app.torntools');
-  const ub = $('#update-btn'); if (ub) ub.hidden = !feat('app.updates');
+  const ub = $('#update-btn'); if (ub) ub.hidden = !window.electronAPI?.updateCheck || !feat('app.updates');
+  window.renderUpdateBtn?.();
   renderFeatureSettings();
   for (const fn of FEATURE_HOOKS) { try { fn(); } catch (e) { console.warn('[features]', e); } }
 }

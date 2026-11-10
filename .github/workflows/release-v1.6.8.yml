@@ -1,0 +1,151 @@
+name: Publish v1.6.8
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/release-v1.6.8.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-v1.6.8
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      RELEASE_COMMIT: ${{ github.sha }}
+    steps:
+      - name: Check out the verified application source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+
+      - name: Test the application
+        run: npm test
+
+      - name: Build and verify clean update and Windows packages
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import io
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import urllib.request
+          import zipfile
+
+          stage = pathlib.Path('stage').resolve()
+          stage.mkdir()
+          portable = stage / 'TornTracker-win32-x64'
+          app = portable / 'resources' / 'app'
+          app.mkdir(parents=True)
+          source = subprocess.check_output(['git', 'archive', '--format=zip', os.environ['RELEASE_COMMIT']])
+          with zipfile.ZipFile(io.BytesIO(source)) as archive:
+              for name in archive.namelist():
+                  path = pathlib.PurePosixPath(name)
+                  assert not path.is_absolute() and '..' not in path.parts, name
+              archive.extractall(app)
+          package = json.loads((app / 'package.json').read_text())
+          assert package['version'] == '1.6.8'
+          for item in json.loads((app / 'userscripts' / 'sources.json').read_text()):
+              assert hashlib.sha256((app / 'userscripts' / item['file']).read_bytes()).hexdigest() == item['sha256']
+
+          # Reuse the already published Windows runtime, pinned by its GitHub asset digest.
+          runtime_url = 'https://github.com/Mericsdc/lrx-torn-tracker/releases/download/v1.6.7/LRX-Torn-Tracker-win32-x64-1.6.7.zip'
+          request = urllib.request.Request(runtime_url, headers={'User-Agent': 'TornTracker-Release'})
+          with urllib.request.urlopen(request, timeout=120) as response:
+              runtime = response.read()
+          assert hashlib.sha256(runtime).hexdigest() == 'd63aeaffa26258ae3093655d5c3c08de465cf7ff7eb0210002e46ef687d33020'
+          with zipfile.ZipFile(io.BytesIO(runtime)) as archive:
+              executables = [pathlib.PurePosixPath(n) for n in archive.namelist() if pathlib.PurePosixPath(n).name == 'TornTracker.exe']
+              assert len(executables) == 1
+              root = executables[0].parent
+              for item in archive.infolist():
+                  if item.is_dir():
+                      continue
+                  path = pathlib.PurePosixPath(item.filename)
+                  assert not path.is_absolute() and '..' not in path.parts, item.filename
+                  try:
+                      relative = path.relative_to(root)
+                  except ValueError:
+                      continue
+                  if not (len(relative.parts) == 1 or relative.parts[0] == 'locales'):
+                      continue
+                  if relative.name.endswith('.log') or relative.name.startswith('.'):
+                      continue
+                  target = portable.joinpath(*relative.parts)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(archive.read(item))
+          assert (portable / 'TornTracker.exe').is_file()
+          assert (portable / 'locales' / 'en-US.pak').is_file()
+
+          notes = '''## Automatic update notifications
+
+          - The app checks for new releases on startup and every minute while running, including the first launch before entering a Torn API key.
+          - A new version opens the themed **Update released** dialog asking whether you want to update. Choosing **Later** keeps the update button pulsing until installation, including in the workspace bar while a Torn tab is active.
+          - Each release is announced once per app session. The prompt waits while the window is hidden or another dialog is open, and checks resume when you return or regain connectivity.
+          - Temporary connection failures preserve an update already found. Concurrent checks share one request.
+          - Reduced-motion and disabled-animation preferences retain a static update indicator. The existing automatic-check preference is respected, and installation requires your choice.
+
+          ## Install or update
+
+          - **Existing users:** use the update button to install v1.6.8 and enable the new notification behavior. The app verifies the download and restarts after installation.
+          - **New users:** download `LRX-Torn-Tracker-win32-x64-1.6.8.zip`, extract it, and run `TornTracker.exe`.
+          - Your saved API key, settings and local data are preserved.
+
+          Validation: 12 automated tests, UI smoke checks for startup and live release detection, deferred notifications, pulsing, offline recovery and concurrent checks, plus packaged Electron smoke tests.
+          '''
+          (stage / 'notes.md').write_text(notes, encoding='utf-8')
+          subprocess.run(['node', 'tools/make-update.js', notes], cwd=app, check=True)
+          output = stage / 'updates'
+          full = output / 'LRX-Torn-Tracker-win32-x64-1.6.8.zip'
+          with zipfile.ZipFile(full, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+              for path in sorted(portable.rglob('*')):
+                  if path.is_file():
+                      archive.write(path, path.relative_to(stage).as_posix())
+          update = output / 'torntracker-app-1.6.8.zip'
+          manifest = json.loads((output / 'latest.json').read_text())
+          assert manifest['version'] == '1.6.8'
+          assert manifest['url'] == 'https://github.com/Mericsdc/lrx-torn-tracker/releases/download/v1.6.8/torntracker-app-1.6.8.zip'
+          assert hashlib.sha256(update.read_bytes()).hexdigest() == manifest['sha256']
+          with zipfile.ZipFile(update) as small, zipfile.ZipFile(full) as large:
+              assert small.testzip() is None and large.testzip() is None
+              source_files = {p.relative_to(app).as_posix(): p for p in app.rglob('*') if p.is_file()}
+              assert set(small.namelist()) == set(source_files)
+              for name, path in source_files.items():
+                  assert small.read(name) == path.read_bytes() == large.read('TornTracker-win32-x64/resources/app/' + name)
+              for name in large.namelist():
+                  parts = pathlib.PurePosixPath(name).parts
+                  assert not any(p in {'.git', '.fallow', 'data', 'node_modules', 'backups', 'app-backup'} or p.startswith('qa-') for p in parts), name
+                  assert not name.endswith('.log')
+          print(json.dumps({'version': manifest['version'], 'files': len(source_files), 'sha256': manifest['sha256']}))
+          PY
+
+      - name: Publish all assets together as the latest release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: Mericsdc/lrx-torn-tracker
+        run: |
+          if gh release view v1.6.8 --json isDraft > stage/existing-release.json 2>/dev/null; then
+            test "$(python3 -c 'import json; print(json.load(open("stage/existing-release.json"))["isDraft"])')" = 'True'
+          else
+            gh release create v1.6.8 --target "$RELEASE_COMMIT" --title 'LRX Torn Tracker 1.6.8' --notes-file stage/notes.md --draft
+          fi
+          gh release upload v1.6.8 stage/updates/latest.json stage/updates/torntracker-app-1.6.8.zip stage/updates/LRX-Torn-Tracker-win32-x64-1.6.8.zip --clobber
+          gh release edit v1.6.8 --draft=false --latest
