@@ -1,0 +1,159 @@
+name: Publish v1.6.6
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/release-v1.6.6.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-v1.6.6
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      RELEASE_COMMIT: 75506135ddd2f6e0f95a663da872918a266ed889
+    steps:
+      - name: Check out the verified application source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: 75506135ddd2f6e0f95a663da872918a266ed889
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+
+      - name: Test the application
+        run: npm test
+
+      - name: Build and verify clean update and Windows packages
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import io
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import urllib.request
+          import zipfile
+
+          stage = pathlib.Path('stage').resolve()
+          stage.mkdir()
+          portable = stage / 'TornTracker-win32-x64'
+          app = portable / 'resources' / 'app'
+          app.mkdir(parents=True)
+          source = subprocess.check_output(['git', 'archive', '--format=zip', os.environ['RELEASE_COMMIT']])
+          with zipfile.ZipFile(io.BytesIO(source)) as archive:
+              for name in archive.namelist():
+                  path = pathlib.PurePosixPath(name)
+                  assert not path.is_absolute() and '..' not in path.parts, name
+              archive.extractall(app)
+          package = json.loads((app / 'package.json').read_text())
+          assert package['version'] == '1.6.6'
+          for item in json.loads((app / 'userscripts' / 'sources.json').read_text()):
+              assert hashlib.sha256((app / 'userscripts' / item['file']).read_bytes()).hexdigest() == item['sha256']
+
+          # Reuse the already published Windows runtime, pinned by its GitHub asset digest.
+          runtime_url = 'https://github.com/Mericsdc/lrx-torn-tracker/releases/download/v1.6.3/LRX-Torn-Tracker-win32-x64-1.6.3.zip'
+          request = urllib.request.Request(runtime_url, headers={'User-Agent': 'TornTracker-Release'})
+          with urllib.request.urlopen(request, timeout=120) as response:
+              runtime = response.read()
+          assert hashlib.sha256(runtime).hexdigest() == '27ec182eaa3a66378dba1525f2db500fa6f1b69737afda4fcfd63134a8e04cec'
+          with zipfile.ZipFile(io.BytesIO(runtime)) as archive:
+              executables = [pathlib.PurePosixPath(n) for n in archive.namelist() if pathlib.PurePosixPath(n).name == 'TornTracker.exe']
+              assert len(executables) == 1
+              root = executables[0].parent
+              for item in archive.infolist():
+                  if item.is_dir():
+                      continue
+                  path = pathlib.PurePosixPath(item.filename)
+                  assert not path.is_absolute() and '..' not in path.parts, item.filename
+                  try:
+                      relative = path.relative_to(root)
+                  except ValueError:
+                      continue
+                  if not (len(relative.parts) == 1 or relative.parts[0] == 'locales'):
+                      continue
+                  if relative.name.endswith('.log') or relative.name.startswith('.'):
+                      continue
+                  target = portable.joinpath(*relative.parts)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(archive.read(item))
+          assert (portable / 'TornTracker.exe').is_file()
+          assert (portable / 'locales' / 'en-US.pak').is_file()
+
+          notes = '''## What's new
+
+          - FF Scouter automatically uses the API key saved in Torn Tracker. No second key entry is needed. Verified on real Torn profile and active ranked-war pages against live FFScouter results.
+          - Bundled FF Scouter V2 and TornW3B Bazaars, with upstream licenses and source hashes included.
+          - Added Weav3r to the browser shortcuts and animated shortcut collapse when multiple tabs are open.
+          - Added persistent faction target groups, bulk assignment, filtering, and group labels on war rosters.
+          - Added five themes, appearance settings, and a passive live fight health-analysis overlay.
+
+          ## Fixes
+
+          - Fixed manual API-key entry and added Paste, a character counter, Caps Lock feedback, and clearer login errors.
+          - Fixed Xanax effective-stat calculations applying the active penalty twice.
+          - Fixed sidebar navigation loops, duplicate session cookies, and stale RFC tokens on outgoing Torn requests.
+          - Improved window sizing, tab creation, sleeping-tab titles, and native-view visibility.
+          - Updates follow the selected theme and fully close and relaunch the app after installation.
+
+          ## Install or update
+
+          - **Existing users:** use the update button in Torn Tracker. The updater checks the package's SHA-256 before installing.
+          - **New users:** download `LRX-Torn-Tracker-win32-x64-1.6.6.zip`, extract it, and run `TornTracker.exe`.
+          - API keys and personal data are not included in these downloads. Updates preserve each user's local data.
+
+          Validation: 12 automated tests, UI and packaged Electron smoke tests, and live FF Scouter checks on Torn profile and ranked-war pages.
+          '''
+          (stage / 'notes.md').write_text(notes, encoding='utf-8')
+          subprocess.run(['node', 'tools/make-update.js', notes], cwd=app, check=True)
+          output = stage / 'updates'
+          full = output / 'LRX-Torn-Tracker-win32-x64-1.6.6.zip'
+          with zipfile.ZipFile(full, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+              for path in sorted(portable.rglob('*')):
+                  if path.is_file():
+                      archive.write(path, path.relative_to(stage).as_posix())
+          update = output / 'torntracker-app-1.6.6.zip'
+          manifest = json.loads((output / 'latest.json').read_text())
+          assert manifest['version'] == '1.6.6'
+          assert manifest['url'] == 'https://github.com/Mericsdc/lrx-torn-tracker/releases/download/v1.6.6/torntracker-app-1.6.6.zip'
+          assert hashlib.sha256(update.read_bytes()).hexdigest() == manifest['sha256']
+          with zipfile.ZipFile(update) as small, zipfile.ZipFile(full) as large:
+              assert small.testzip() is None and large.testzip() is None
+              source_files = {p.relative_to(app).as_posix(): p for p in app.rglob('*') if p.is_file()}
+              assert set(small.namelist()) == set(source_files)
+              for name, path in source_files.items():
+                  assert small.read(name) == path.read_bytes() == large.read('TornTracker-win32-x64/resources/app/' + name)
+              for name in large.namelist():
+                  parts = pathlib.PurePosixPath(name).parts
+                  assert not any(p in {'.git', '.fallow', 'data', 'node_modules', 'backups', 'app-backup'} or p.startswith('qa-') for p in parts), name
+                  assert not name.endswith('.log')
+          print(json.dumps({'version': manifest['version'], 'files': len(source_files), 'sha256': manifest['sha256']}))
+          PY
+
+      - name: Publish all assets together as the latest release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: Mericsdc/lrx-torn-tracker
+        run: |
+          if gh release view v1.6.6 --json isDraft > stage/existing-release.json 2>/dev/null; then
+            test "$(python3 -c 'import json; print(json.load(open("stage/existing-release.json"))["isDraft"])')" = 'True'
+          else
+            gh release create v1.6.6 --target "$RELEASE_COMMIT" --title 'LRX Torn Tracker 1.6.6' --notes-file stage/notes.md --draft
+          fi
+          gh release upload v1.6.6 stage/updates/latest.json stage/updates/torntracker-app-1.6.6.zip stage/updates/LRX-Torn-Tracker-win32-x64-1.6.6.zip --clobber
+          gh release edit v1.6.6 --draft=false --latest
