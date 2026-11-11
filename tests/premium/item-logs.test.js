@@ -18,6 +18,48 @@ test('some Xanax notification never invents a quantity; outgoing transfers are i
   assert.equal(parsed.senderId, 123456); assert.equal(parsed.quantity, null); assert.equal(parsed.verified, false); assert.equal(parsed.reason, 'quantity_missing');
   assert.equal(parseEvent({ ...notification, event: 'You sent some Xanax to <a href="profiles.php?XID=1">Player</a>' }, NOW).status, 'ignored');
 });
+
+test('a first-time sender gets 30 days before app login; payment never creates an authenticated session', t => {
+  const { store, clock } = fixture(t);
+  store.db.prepare('DELETE FROM premium_users WHERE torn_id=123456').run();
+  const parsed = parseItemLog(log('first_payment', 2), NOW);
+  assert.equal(store.ingestItemLog(parsed).status, 'applied');
+  assert.equal(store.entitlement(123456).remainingDays, 30);
+  assert.equal(store.db.prepare('SELECT verified_at FROM premium_users WHERE torn_id=123456').get().verified_at, 0);
+  assert.equal(store.db.prepare('SELECT count(*) AS n FROM premium_sessions').get().n, 0);
+  assert.equal(store.members({ filter: 'active' }).total, 1);
+  const expires = store.entitlement(123456).expiresAt;
+  clock.now += 100; store.registerVerifiedUser(123456);
+  assert.equal(store.db.prepare('SELECT verified_at FROM premium_users WHERE torn_id=123456').get().verified_at, clock.now);
+  assert.equal(store.entitlement(123456).expiresAt, expires);
+  assert.equal(store.ingestItemLog(parsed).status, 'duplicate');
+  assert.equal(store.balance(123456).total_received, 2);
+});
+
+test('old pending official logs settle exactly once without a user connection or another API request', t => {
+  const { store } = fixture(t);
+  store.db.prepare('DELETE FROM premium_users WHERE torn_id=123456').run();
+  const parsed = parseItemLog(log('old_pending', 2), NOW);
+  const old = store.ingest(parsed, 'torn-v2-events');
+  assert.equal(old.status, 'pending_identity');
+  store.db.prepare("UPDATE premium_transactions SET source='torn-v2-item-log' WHERE id=?").run(old.id);
+  store.db.prepare('INSERT INTO premium_metadata VALUES(?,?)').run('payment-log:' + parsed.logId, JSON.stringify({ id: old.id, hash: parsed.payloadHash }));
+  assert.throws(() => store.settlePendingItemLogs('not-owner'), e => e.code === 'LEASE_LOST');
+  assert.equal(store.settlePendingItemLogs(), 1); assert.equal(store.settlePendingItemLogs(), 0);
+  assert.equal(store.ingestItemLog(parsed).status, 'duplicate');
+  assert.equal(store.entitlement(123456).remainingDays, 30);
+  assert.equal(store.balance(123456).available_xanax, 0);
+});
+
+test('a pending event for a new sender activates only when its official item log confirms the transfer', t => {
+  const { store } = fixture(t);
+  store.db.prepare('DELETE FROM premium_users WHERE torn_id=123456').run();
+  store.ingest(parseEvent({ ...notification, event: notification.event.replace('some Xanax', '2x Xanax') }, NOW));
+  assert.equal(store.entitlement(123456).active, false);
+  assert.equal(store.ingestItemLog(parseItemLog(log('confirmed', 2), NOW)).status, 'applied');
+  assert.equal(store.entitlement(123456).remainingDays, 30);
+  assert.equal(store.entitlement(999999).active, false);
+});
 test('official item log repairs the existing pending event automatically and preserves a manual day', (t) => {
   const { store } = fixture(t); store.adjustSubscription(ADMIN, { torn_id: 123456, days: 1, reason: 'Existing trial day' });
   const waiting = store.ingest(parseEvent(notification, NOW));

@@ -14,7 +14,7 @@ Migration `003-membership-management.sql` adds permanent-member policy records a
 
 The existing application uses a dependency-free Node HTTP server, local `data/config.json` / history files, and saved-key authentication. It has no ORM, shared user database or central scheduler. These local files are not a trustworthy authority for paid access.
 
-The optional central service in this folder uses Node's built-in SQLite API, with no new runtime package dependency. Run it on **Node 24 LTS**; the desktop server continues to support Node 18+. The desktop does not import SQLite or possess the receiver API key. `premium-client.js` proxies a fixed list of operations to the configured service. It keeps its bearer token only in memory and clears it on logout/key changes. A user must explicitly connect after seeing the service's data-use disclosure before their saved login key is forwarded over HTTPS. The separate optional remember checkbox stores only a key fingerprint, service origin and test-account scope in local configuration; it permits fresh server verification on restart, never trusts a saved entitlement, and is cleared on disconnect/key changes. Test connections send no Torn key.
+The optional central service in this folder uses Node's built-in SQLite API, with no new runtime package dependency. Run it on **Node 24 LTS**; the desktop server continues to support Node 18+. The desktop does not import SQLite or possess the receiver API key. `premium-client.js` proxies a fixed list of operations to the configured service. It keeps its bearer token only in memory and clears it on logout/key changes. App login automatically connects the saved Torn identity to the publisher-configured HTTPS membership service. There is no separate verification, acceptance, connection button or remember checkbox. Identity ownership is still checked in the background using the official API. A service-scoped key fingerprint is stored locally; server tokens remain memory-only and entitlements are always fetched from the server. Test connections send no Torn key.
 
 | Files | Responsibility |
 | --- | --- |
@@ -72,7 +72,7 @@ Use Node 24. Keep private env files outside this checkout. The service binds loo
 2. Set `PREMIUM_TEST_AUTH_TOKEN` to that token. Leave live payment flags false and receiver key empty.
 3. Start `node --env-file=/private/path/premium.env premium/server.js`.
 4. For the desktop process, set `TORN_PREMIUM_SERVICE_URL=http://127.0.0.1:3740`, `TORN_PREMIUM_TEST_MODE=1`, `TORN_PREMIUM_TEST_TOKEN` to the same token and `TORN_PREMIUM_TEST_TORN_ID=4037017`. These are **local operator test credentials**, not distribution defaults. Start `npm start` or `npm run web` from this environment.
-5. Open Premium, read the data-use notice, connect and open the administrator panel. Enable synthetic checks and submit a synthetic transfer. Use another synthetic ID such as 123456; receiver self-transfers require review. The sender account is credited after that same test identity is registered; tests demonstrate this automatically.
+5. Open Premium; the test identity connects automatically. Open the administrator panel. Enable synthetic checks and submit a synthetic transfer. Use another synthetic ID such as 123456; receiver self-transfers require review. The sender account is credited after that same test identity is registered; tests demonstrate this automatically.
 
 The built-in **synthetic transfer** form never calls Torn or sends items. The publisher default is https://lrxe8.com/torn-premium; an explicit empty TORN_PREMIUM_SERVICE_URL disables the optional service. The local test shortcut overrides the default with its loopback service. Saved login keys are forwarded only when the user chooses Connect account after the visible notice. The service is not automatically bundled as a background payment authority on each user's computer.
 
@@ -108,9 +108,9 @@ See [privacy and Torn monetisation findings](PRIVACY.md). No game scraping, auto
 
 ## Validation
 
-`npm test`: 12 existing regression tests plus one Vitest starter test. `npm run test:premium`: 57 tests covering public service paths, payments, pricing, identity, concurrency, feature permissions, consent, profile retention, schema 3→4 upgrades, expiry/renewal, calculation accuracy and remembered connection isolation. `npm run test:all` runs all 70. See [testing instructions](../TESTING.md).
+`npm test`: 12 existing regression tests plus one Vitest starter test. `npm run test:premium`: 74 tests covering public service paths, payments, pricing, identity, concurrency, feature permissions, consent, profile retention, schema 3→4 upgrades, expiry/renewal, calculation accuracy and remembered connection isolation. `npm run test:all` runs all 87. See [testing instructions](../TESTING.md).
 
-Integrated `tests/premium-ui-smoke.js` exercises the actual desktop HTTP bridge and central in-memory SQLite service: opt-in, test authentication without a Torn key, admin settings, synthetic transfer, 30-day activation, private history, admin isolation, escaped review text, five themes, 640px layout, TR/EN and disconnect. Existing `tests/ui-smoke.js` and the packaged `tests/electron-smoke.js` also pass. All automated payment tests use synthetic events and isolated databases, never real transfers. QA images are stored outside the source checkout. Live end-to-end acceptance is intentionally untested while collection is closed.
+Integrated `tests/premium-ui-smoke.js` exercises the actual desktop HTTP bridge and central in-memory SQLite service: automatic connection, test authentication without a Torn key, admin settings, synthetic transfer, 30-day activation, private history, admin isolation, escaped review text, five themes, 640px layout, TR/EN and automatic reconnection. Existing `tests/ui-smoke.js` and the packaged `tests/electron-smoke.js` also pass. All automated payment tests use synthetic events and isolated databases, never real transfers. QA images are stored outside the source checkout. Real collection is active; automated tests do not send real items. The read-only receipt validation is described in PUBLIC-DEPLOYMENT.md.
 
 ## Operator-enabled in-game Xanax collection
 
@@ -122,6 +122,12 @@ The live collector uses `/v2/user/log?log=4103` and strictly validates the offic
 
 Verified player names are fetched from the official public basic profile and cached in existing private metadata for six hours. Name search, member cards and exports use that cache. No schema migration is needed; database schema 4 is retained.
 
-Connection and analysis screens now show informational notices without acceptance checkboxes. The user still chooses Connect account before a login key is forwarded. Analysis is available to verified Premium members after the notice; users can pause/resume it without losing saved profiles. Existing explicit pauses are preserved. The legacy consent endpoint/response field remains for older clients, but new requests do not create a legal-consent record.
+Connection and analysis screens now show informational notices without acceptance checkboxes. The earlier explicit connection step was removed in v1.6.11; app login now connects automatically. Analysis is available to verified Premium members after the notice; users can pause/resume it without losing saved profiles. Existing explicit pauses are preserved. The legacy consent endpoint/response field remains for older clients, but new requests do not create a legal-consent record.
 
 Validation: 81 automated tests and integrated desktop/service UI checks, including notification-to-log repair, a preserved trial day, log/event replay, nanosecond pagination, player names, no acceptance controls, pause/expiry/renewal and escaped display text.
+
+## Automatic membership policy — v1.6.11
+
+App login is the only account entry step. Do not reintroduce a separate Premium verification/acceptance/connect form or remember checkbox. Data use is disclosed in the login copy and a collapsed informational Privacy section, without recording an invented legal-consent action. Background ownership checks, HTTPS destination restrictions, server authorization, key-change isolation and expiry checks remain mandatory.
+
+Official Item receive logs immediately reserve and activate membership for their exact sender Torn ID, even before first app login. Such payment-created user rows have verified_at=0 until the actual owner logs in with their own key; a payment never creates a session or grants access to a different ID. Existing pending official-log receipts settle once under the worker lease. Ambiguous notifications and unverified legacy event rows cannot activate a new identity without authoritative log proof. No database schema migration is needed.

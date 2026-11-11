@@ -8,7 +8,7 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
   const configured = env.TORN_PREMIUM_SERVICE_URL ?? defaultServiceUrl;
   const test = env.TORN_PREMIUM_TEST_MODE === '1';
   let base = null, invalid = false, session = null, generation = 0;
-  let reconnecting = null, retryAt = 0;
+  let reconnecting = null, retryAt = 0, connectionError = null;
   if (configured) {
     try {
       base = serviceUrl(configured, { allowLoopbackHttp: test });
@@ -39,14 +39,15 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
     let data;
     try { data = JSON.parse(text); } catch { throw bridgeError('PREMIUM_SERVICE_RESPONSE'); }
     if (!response.ok) {
-      if (response.status === 401 && session?.token === token) { session = null; generation++; }
+      if (response.status === 401 && token && session?.token === token) { session = null; generation++; retryAt = 0; }
       throw bridgeError(/^[A-Z0-9_]{1,80}$/.test(data.code || '') ? data.code : 'PREMIUM_SERVICE_ERROR', response.status);
     }
     return data;
   }
   function reset({ forget = true } = {}) {
     const previous = session; session = null; generation++;
-    if (forget) { setRemembered(null); retryAt = 0; }
+    reconnecting = null; retryAt = 0; connectionError = null;
+    if (forget) setRemembered(null);
     if (previous) request('/v1/auth/logout', { method: 'POST', body: {}, token: previous.token }).catch(() => {});
   }
   function current() {
@@ -54,29 +55,40 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
     if (!session) throw bridgeError('PREMIUM_CONNECT_REQUIRED', 401);
     return session;
   }
+  const hasIdentity = () => test ? Number.isSafeInteger(Number(env.TORN_PREMIUM_TEST_TORN_ID)) && Number(env.TORN_PREMIUM_TEST_TORN_ID) > 0 : !!getKey();
   async function status({ skipReconnect = false } = {}) {
     if (!base) return { configured: false, connected: false, code: invalid ? 'PREMIUM_SERVICE_URL_INVALID' : 'PREMIUM_SERVICE_NOT_CONFIGURED', freeApiAccess: true };
     if (session && session.fingerprint !== fingerprint()) reset();
-    if (!session && !skipReconnect) {
-      const remembered = getRemembered();
-      const matches = remembered && (remembered.baseUrl || remembered.origin) === base.href.replace(/\/$/, '') && remembered.test === test && remembered.fingerprint === fingerprint() && remembered.testId === (test ? Number(env.TORN_PREMIUM_TEST_TORN_ID) : null);
-      if (remembered && !matches) setRemembered(null);
-      if (matches && Date.now() >= retryAt) {
-        if (!reconnecting) reconnecting = connect({ noticeVersion: 1, remember: true }, { automatic: true }).catch((e) => { retryAt = Date.now() + 60000; throw e; }).finally(() => { reconnecting = null; });
-        return reconnecting;
-      }
+    if (!session && !skipReconnect && hasIdentity() && Date.now() >= retryAt) {
+      try { return await connect(); }
+      catch (error) { if (error.code === 'PREMIUM_IDENTITY_CHANGED') throw error; /* Free tools remain available during an outage. */ }
     }
     const stamp = generation;
-    const data = await request(session ? '/v1/me' : '/v1/info', { token: session?.token });
+    let data;
+    try { data = await request(session ? '/v1/me' : '/v1/info', { token: session?.token }); }
+    catch (error) {
+      if (!skipReconnect && error.status === 401 && hasIdentity()) return status();
+      throw error;
+    }
     if (stamp !== generation) throw bridgeError('PREMIUM_IDENTITY_CHANGED', 409);
     if ((data.mode === 'test') !== test) throw bridgeError('PREMIUM_MODE_MISMATCH');
-    return { ...data, configured: true, connected: !!session, serviceOrigin: base.origin, serviceUrl: base.href.replace(/\/$/, '') };
+    return { ...data, configured: true, connected: !!session, connectionError: session ? null : connectionError, serviceOrigin: base.origin, serviceUrl: base.href.replace(/\/$/, '') };
   }
-  async function connect(body, { automatic = false } = {}) {
-    // Connecting after the visible disclosure is the action; no separate acceptance checkbox.
-    // Older clients may still send consent=true during their upgrade.
-    if (body.noticeVersion !== 1 && body.consent !== true) throw bridgeError('PREMIUM_NOTICE_REQUIRED', 400);
-    reset({ forget: !automatic });
+  function connect() {
+    if (session && session.fingerprint !== fingerprint()) reset();
+    if (session) return status({ skipReconnect: true });
+    if (reconnecting) return reconnecting;
+    const stamp = generation;
+    const pending = authenticate().catch((error) => {
+      if (stamp === generation) { retryAt = Date.now() + 60000; connectionError = error.code; }
+      throw error;
+    }).finally(() => { if (reconnecting === pending) reconnecting = null; });
+    reconnecting = pending;
+    return pending;
+  }
+  async function authenticate() {
+    // App login connects membership automatically. Never trust a renderer-supplied Torn ID.
+    // Legacy notice/remember fields are accepted but are no longer prerequisites.
     const stamp = generation, keyFingerprint = fingerprint();
     const info = await request('/v1/info');
     if ((info.mode === 'test') !== test) throw bridgeError('PREMIUM_MODE_MISMATCH');
@@ -90,8 +102,9 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
     }
     if (!/^[A-Za-z0-9_-]{43}$/.test(result.token || '') || !Number.isSafeInteger(result.tornId) || (result.mode === 'test') !== test) throw bridgeError('PREMIUM_SERVICE_RESPONSE');
     session = { token: result.token, fingerprint: keyFingerprint };
-    if (body.remember === true) setRemembered({ origin: base.origin, baseUrl: base.href.replace(/\/$/, ''), test, fingerprint: keyFingerprint, testId: test ? Number(env.TORN_PREMIUM_TEST_TORN_ID) : null });
-    retryAt = 0;
+    const binding = { origin: base.origin, baseUrl: base.href.replace(/\/$/, ''), test, fingerprint: keyFingerprint, testId: test ? Number(env.TORN_PREMIUM_TEST_TORN_ID) : null };
+    if (JSON.stringify(getRemembered()) !== JSON.stringify(binding)) setRemembered(binding);
+    retryAt = 0; connectionError = null;
     return status({ skipReconnect: true });
   }
   async function proxy(action, method, body) {
@@ -109,6 +122,7 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
     };
     const route = routes[action];
     if (!route || route[0] !== method) throw bridgeError('NOT_FOUND', 404);
+    if (!session || session.fingerprint !== fingerprint()) await status();
     const stamp = generation;
     const data = await request(route[1], { method, body: method === 'POST' ? body : undefined, token: current().token });
     if (stamp !== generation) throw bridgeError('PREMIUM_IDENTITY_CHANGED', 409);

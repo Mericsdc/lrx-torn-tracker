@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const { createHttpServer } = require('../../premium/server');
 const { readConfig } = require('../../premium/config');
 const { DAY } = require('../../premium/store');
+const { parseItemLog } = require('../../premium/payment-logs');
 
 async function fixture(t, live = false, publicUrl = 'https://premium.example.invalid') {
   const secret = crypto.randomBytes(32).toString('hex'), clock = { now: 1794331965 };
@@ -27,6 +28,22 @@ async function fixture(t, live = false, publicUrl = 'https://premium.example.inv
   const login = async (id) => { const result = await call('/v1/auth/test', { tornId: id }, null, { 'X-Premium-Test-Token': secret }); assert.equal(result.status, 200); return result.data.token; };
   return { service, config, clock, call, login, base, upstreamCalls: () => upstreamCalls };
 }
+
+test('a paid membership is ready before login but another account cannot claim or read it', async t => {
+  const { service, clock, call } = await fixture(t, true);
+  service.store.acquireLease('setup'); service.store.checkpointUpdate('setup', { baseline_at: clock.now - 1 }); service.store.releaseLease('setup');
+  const receipt = parseItemLog({ id: 'before_first_login', timestamp: clock.now, details: { id: 4103 }, data: { sender: 999999, items: [{ id: 206, qty: 2 }] } }, clock.now);
+  assert.equal(service.store.ingestItemLog(receipt).status, 'applied');
+  assert.equal(service.store.entitlement(999999).remainingDays, 30);
+  assert.equal((await call('/v1/me')).status, 401);
+  assert.equal((await call('/v1/auth/test', { tornId: 999999 })).status, 403);
+  const login = await call('/v1/auth/torn', { apiKey: 'AbCdEfGh12345678', tornId: 999999 });
+  assert.equal(login.status, 200); assert.equal(login.data.tornId, 123456);
+  const me = await call('/v1/me', undefined, login.data.token);
+  assert.equal(me.data.account.tornId, 123456); assert.equal(me.data.subscription.active, false);
+  assert.deepEqual(me.data.transactions, []);
+  assert.equal(service.store.entitlement(999999).remainingDays, 30);
+});
 
 test('public landing serves static files safely while API routes keep authentication', async (t) => {
   const { base, upstreamCalls } = await fixture(t, true, 'https://lrxe8.com/torn-premium');

@@ -71,7 +71,7 @@ Validation: `npm test` runs isolated server and calculation tests. `tests/ui-smo
    - To create a key: Torn → Preferences → API Keys → Add new key → choose **Limited Access**.
    - The "Limited API key oluştur →" link on the login screen opens this page with the fields already filled in.
 
-> 🔒 Your API key is stored in local `data/config.json` and used with `api.torn.com` (and `ffscouter.com` for war estimates). If you separately connect the optional membership service, it receives the key transiently to verify its Torn owner and does not store it. Premium discloses that service's data use before connection. Feedback uses `formsubmit.co` and contains what you type in the form. Use **Settings → Çıkış Yap** to remove the local key and clear the membership session.
+> 🔒 Your API key is stored in local `data/config.json` and used with `api.torn.com` (and `ffscouter.com` for war estimates). App login automatically connects membership using the configured HTTPS service. It receives the key transiently to verify its Torn owner and does not store it. No separate Premium verification, acceptance or remember checkbox is required. Data-use details remain available in Premium. Feedback uses `formsubmit.co` and contains what you type in the form. Use **Settings → Çıkış Yap** to remove the local key and clear the membership session.
 
 ## Development
 

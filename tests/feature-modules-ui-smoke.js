@@ -38,7 +38,7 @@ async function desktop(tornId) {
   });
   await page.goto(base + '/#premium'); await page.locator('#auth-key').waitFor();
   await page.evaluate(() => { document.querySelector('#auth-screen').hidden = true; document.body.classList.remove('auth-open'); showView('premium'); });
-  await page.locator('[data-premium-action="connect"]').click();
+  assert.equal(await page.locator('[data-premium-action="connect"],#premium-remember,#premium-consent,#pm-connect').count(), 0);
   await page.waitForFunction(() => !!window.PremiumAccess?.snapshot()?.account);
   return { page, base, context };
 }

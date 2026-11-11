@@ -8,7 +8,7 @@ const dataDir = path.join(temp, 'data'); fs.mkdirSync(dataDir);
 fs.writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({ features: { 'app.torntools': false, 'app.updates': false, 'page.travel': false, 'app.splash': false, 'app.animations': false } }));
 let app;
 (async () => {
-  app = await _electron.launch({ executablePath: path.resolve(__dirname, '../../../TornTracker.exe'), args: ['--user-data-dir=' + path.join(temp, 'profile')], env: { ...process.env, TT_DATA_DIR: dataDir, TT_LOG_FILE: path.join(temp, 'startup.log'), TORN_API_KEY: '' }, timeout: 20000 });
+  app = await _electron.launch({ executablePath: path.resolve(__dirname, '../../../TornTracker.exe'), args: ['--user-data-dir=' + path.join(temp, 'profile')], env: { ...process.env, TT_DATA_DIR: dataDir, TT_LOG_FILE: path.join(temp, 'startup.log'), TORN_API_KEY: '', TORN_PREMIUM_SERVICE_URL: '' }, timeout: 20000 });
   const page = await app.firstWindow();
   await page.locator('#auth-key').waitFor({ state: 'visible' });
   const minimum = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getMinimumSize());

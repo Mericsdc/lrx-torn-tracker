@@ -15,7 +15,7 @@ import urllib.request
 import zipfile
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-VERSION = '1.6.10'
+VERSION = '1.6.11'
 RUNTIME_URL = 'https://github.com/Mericsdc/lrx-torn-tracker/releases/download/v1.6.9/LRX-Torn-Tracker-win32-x64-1.6.9.zip'
 RUNTIME_SHA = '84aca86b641190673c539045a8d746d11dff5ee2ef75a6cccd81e91af720714e'
 COMMIT = os.environ.get('RELEASE_COMMIT', 'HEAD')

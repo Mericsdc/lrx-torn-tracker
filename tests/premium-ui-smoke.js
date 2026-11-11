@@ -30,11 +30,11 @@ async function desktop(tornId) {
   await page.locator('#auth-key').waitFor({ state: 'visible' });
   // The app login is independent; membership proof is exercised through the real bridge below.
   await page.evaluate(() => { document.querySelector('#auth-screen').hidden = true; document.body.classList.remove('auth-open'); showView('premium'); });
-  await page.locator('[data-premium-action="connect"]').waitFor();
+  await page.waitForFunction(() => window.PremiumAccess?.snapshot()?.connected === true);
   assert.equal(await page.locator('#premium-consent').count(), 0);
   assert.equal(await page.locator('.premium-notice').count(), 0);
   assert.ok((await page.locator('#premium-content').textContent()).includes('Test workspace'));
-  await page.locator('[data-premium-action="connect"]').click();
+  assert.equal(await page.locator('[data-premium-action="connect"],#premium-remember,#premium-consent,#pm-connect').count(), 0);
   await page.waitForFunction(() => !!window.PremiumAccess?.snapshot()?.account);
   return { page, base, errors, context };
 }
@@ -100,10 +100,14 @@ async function desktop(tornId) {
   assert.ok(overflow.scroll <= overflow.width + 1, JSON.stringify(overflow));
   await user.page.locator('[data-lang="tr"]').click();
   assert.ok((await user.page.locator('#premium-content').textContent()).includes('Test ortamı'));
-  await user.page.locator('[data-premium-action="disconnect"]').click(); await user.page.locator('[data-premium-action="connect"]').waitFor();
-  assert.ok((await user.page.locator('.pm-card-number').textContent()).includes('—'));
+  await user.page.reload();
+  await user.page.evaluate(() => { document.querySelector('#auth-screen').hidden = true; document.body.classList.remove('auth-open'); showView('premium'); });
+  await user.page.waitForFunction(() => window.PremiumAccess?.snapshot()?.connected === true);
+  await user.page.locator('.pm-card-number').filter({ hasText: '30' }).waitFor();
+  assert.equal(await user.page.locator('[data-premium-action="connect"],#premium-remember,#pm-connect').count(), 0);
+  assert.equal(service.store.entitlement(tornId).expiresAt, firstExpiry);
   assert.deepEqual(admin.errors, []); assert.deepEqual(user.errors, []);
-  console.log(JSON.stringify({ ok: true, assertions: ['real desktop-to-service authentication', 'visible notice without an acceptance checkbox', 'test mode never sends Torn keys', 'protected founder lifetime membership', 'in-app 2-Xanax test awards 30 days', 'same-event replay awards zero and retains one record', 'member search and remaining days', 'private history and admin isolation', 'informational payment ledger without approval controls', 'five themes', '640px layout', 'TR/EN', 'disconnect clears identity'], screenshots: output }));
+  console.log(JSON.stringify({ ok: true, assertions: ['real desktop-to-service authentication', 'automatic connection with collapsed privacy notice and no verification form', 'test mode never sends Torn keys', 'protected founder lifetime membership', 'in-app 2-Xanax test awards 30 days', 'same-event replay awards zero and retains one record', 'member search and remaining days', 'private history and admin isolation', 'informational payment ledger without approval controls', 'five themes', '640px layout', 'TR/EN', 'restart reconnects automatically without a verification form'], screenshots: output }));
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => {
   await browser?.close();
   for (const child of children) { child.kill(); await new Promise((r) => child.exitCode !== null ? r() : child.once('exit', r)); }

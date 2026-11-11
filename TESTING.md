@@ -15,8 +15,8 @@ npm run build:preview
 - `test:unit`: Vitest 5.1.0, one starter suite/test in `tests/unit/travel-math.test.mjs`. Tests the real shared function: 15 items × $400 margin gives $6,000 profit for a one-hour round trip.
 - `test:watch`: reruns the Vitest suite as its inputs change.
 - `npm test`: the existing 12 core/session/userscript tests plus the Vitest starter test.
-- `test:premium`: Node's existing runner, 57 tests for the payment service, identity, features, migrations, concurrency and public HTTPS service paths.
-- `test:all`: all 70 unit/integration tests. The runners use separate include patterns; Vitest does not collect Node's `node:test` suites.
+- `test:premium`: Node's existing runner, 74 tests for the payment service, identity, features, migrations, concurrency and public HTTPS service paths.
+- `test:all`: all 87 unit/integration tests. The runners use separate include patterns; Vitest does not collect Node's `node:test` suites.
 - `check`: syntax validation of maintained JavaScript, including `.mjs`; this JavaScript project has no TypeScript compilation/typecheck configuration.
 - `build:preview`: creates an application update payload under the adjacent `updates/premium-feature-build` folder. It does not publish a release or replace `latest.json`.
 
@@ -35,6 +35,6 @@ node tests/feature-modules-ui-smoke.js
 node tests/electron-smoke.js
 ```
 
-Windows QA uses the installed Chrome executable. The Electron check starts the packaged app with a separate temporary profile. Every payment/feature test uses synthetic game observations and isolated databases; no real Xanax is sent or collected. UI checks cover actual desktop-to-service requests, Free/expired/renewed states, informational notices and pause preferences, editable themes, saved profiles, five modules, escaping, responsive layouts (390, 640, 1440 pixels), and transport failure. Screenshots and temporary QA files are outside Git and update payloads.
+Windows QA uses the installed Chrome executable. The Electron check starts the packaged app with a separate temporary profile. Every payment/feature test uses synthetic game observations and isolated databases; no real Xanax is sent or collected. UI checks cover actual desktop-to-service requests, Free/expired/renewed states, automatic first connection/reconnection without buttons or checkboxes, informational notices and pause preferences, editable themes, saved profiles, five modules, escaping, responsive layouts (390, 640, 1440 pixels), and transport failure. Screenshots and temporary QA files are outside Git and update payloads.
 
-The GitHub test workflow is configured in `.github/workflows/tests.yml`. It has not been run on GitHub as part of this change. The public service deployment and external HTTPS checks are recorded in `premium/PUBLIC-DEPLOYMENT.md`.
+The GitHub test workflow is configured in `.github/workflows/tests.yml`. Release workflows also run the full suite before publication. The public service deployment and external HTTPS checks are recorded in `premium/PUBLIC-DEPLOYMENT.md`.

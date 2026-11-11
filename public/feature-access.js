@@ -53,8 +53,8 @@
     if (pending) return pending;
     if (!force && snapshot && performance.now() - fetched < 15000) return snapshot;
     const stamp = generation;
-    pending = api('/api/premium/status').then((data) => stamp === generation ? accept(data) : null).catch((e) => { if (stamp === generation) { deadline = 0; changed(); } throw e; }).finally(() => { pending = null; });
-    return pending;
+    const task = api('/api/premium/status').then((data) => stamp === generation ? accept(data) : null).catch((e) => { if (stamp === generation) { deadline = 0; changed(); } throw e; }).finally(() => { if (pending === task) pending = null; });
+    pending = task; return task;
   }
   async function call(action, body = {}) {
     try { const value = await api('/api/premium/feature-' + action, { method: 'POST', body: JSON.stringify(body) }); if (value.access && snapshot) accept({ ...snapshot, featureAccess: value.access }); return value; }
@@ -84,7 +84,7 @@
     clearAppearance(); try { localStorage.setItem('lrx.appearance.disabled.' + owner(), '1'); } catch {}
     if (can('appearance_custom_themes')) call('workspace', { featureId: 'appearance_custom_themes' }).then((w) => call('select', { featureId: 'appearance_custom_themes', revision: w.revision, profileId: null })).catch(() => {});
   });
-  window.addEventListener('lrx-premium-reset', () => { generation++; deadline = 0; snapshot = null; fetched = 0; restoreOwner = null; clearAppearance(); changed(); window.dispatchEvent(new Event('lrx-feature-identity-changed')); });
+  window.addEventListener('lrx-premium-reset', () => { generation++; deadline = 0; snapshot = null; pending = null; fetched = 0; restoreOwner = null; clearAppearance(); changed(); window.dispatchEvent(new Event('lrx-feature-identity-changed')); setTimeout(() => status(true).catch(() => {}), 0); });
   const previousLang = window.onLangChanged; window.onLangChanged = () => { previousLang?.(); paint(); };
   window.PremiumAccess = { can, status, accept, call, applyAppearance, clearAppearance, snapshot: () => snapshot, repaint: paint };
   paint(); setTimeout(() => status().catch(() => {}), 1800);

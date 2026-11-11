@@ -89,7 +89,7 @@ function createWorker(store, client, config, { random = Math.random, maxPages = 
         store.checkpointUpdate(owner, { baseline_at: snapshot.baselineAt ?? snapshot.serverTime, watermark_at: snapshot.serverTime, anchor_event_id: snapshot.newest?.id || null });
       }
       const parsed = snapshot.events.map((event) => parseEvent(event, snapshot.serverTime + 1));
-      let applied = 0;
+      let applied = store.settlePendingItemLogs(owner);
       for (const event of parsed.toSorted ? parsed.toSorted((a, b) => a.timestamp - b.timestamp) : parsed.sort((a, b) => a.timestamp - b.timestamp)) {
         const result = store.ingest(event, config.mode === 'test' ? 'synthetic-test' : 'torn-v2-events', owner);
         if (result.status === 'conflict') throw new TornError('EVENT_ID_CHANGED');

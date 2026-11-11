@@ -51,6 +51,12 @@ function createStore(filename, options = {}) {
   }
   function applyTransaction(row) {
     if (!row.parsed_verified || !['pending_identity', 'review'].includes(row.status)) return false;
+    if (row.source === 'torn-v2-item-log' && row.status === 'pending_identity') {
+      // The receiver's official log proves who paid, not who owns a desktop session.
+      // Reserve membership for that sender immediately; auth still requires their own Torn key.
+      const added = run('INSERT OR IGNORE INTO premium_users(torn_id,verified_at,created_at) VALUES(?,0,?)', row.torn_sender_id, now());
+      if (Number(added.changes)) audit(null, 'payment.sender_registered', row.torn_sender_id, 'Membership reserved for the official Item receive sender; account login remains separate', null, { loginVerified: false });
+    }
     if (!one('SELECT id FROM premium_users WHERE torn_id=?', row.torn_sender_id)) return false;
     const rate = one('SELECT * FROM premium_price_versions WHERE id=?', row.price_version_id);
     if (!rate) fail('PRICE_VERSION_MISSING', 409);
@@ -59,7 +65,7 @@ function createStore(filename, options = {}) {
     const debit = run('UPDATE premium_payment_balances SET available_xanax=available_xanax-?,updated_at=? WHERE torn_id=? AND available_xanax>=?', row.quantity, now(), row.torn_sender_id, row.quantity);
     if (Number(debit.changes) !== 1) fail('BALANCE_INVARIANT', 409);
     run("UPDATE premium_transactions SET status='applied',reason=NULL,awarded_seconds=?,premium_days=?,processed_at=? WHERE id=?", seconds, seconds / DAY, now(), row.id);
-    audit(null, 'payment.applied', row.event_id, 'Verified receiver event and verified sender identity', null, { tornId: row.torn_sender_id, quantity: row.quantity, seconds, priceVersion: row.price_version_id });
+    audit(null, 'payment.applied', row.event_id, 'Verified receiver transfer credited to its exact sender Torn ID', null, { tornId: row.torn_sender_id, quantity: row.quantity, seconds, priceVersion: row.price_version_id });
     return true;
   }
   function registerVerifiedUser(tornId) {
@@ -113,7 +119,9 @@ function createStore(filename, options = {}) {
       const proof = one('SELECT value FROM premium_metadata WHERE key=?', proofKey);
       if (proof) {
         const previous = JSON.parse(proof.value);
-        return { status: previous.hash === parsed.payloadHash ? 'duplicate' : 'conflict', id: previous.id };
+        if (previous.hash !== parsed.payloadHash) return { status: 'conflict', id: previous.id };
+        const pending = one("SELECT * FROM premium_transactions WHERE id=? AND source='torn-v2-item-log' AND status='pending_identity'", previous.id);
+        return { status: pending && applyTransaction(pending) ? 'applied' : 'duplicate', id: previous.id };
       }
       const baseline = checkpoint().baseline_at;
       if (baseline == null) fail('CHECKPOINT_REQUIRED', 409);
@@ -128,6 +136,10 @@ function createStore(filename, options = {}) {
       let row = candidates[0], result;
       if (!row) result = ingestRecord(parsed, 'torn-v2-item-log', leaseOwner);
       else if (row.parsed_verified) {
+        if (row.status === 'pending_identity') {
+          run("UPDATE premium_transactions SET source='torn-v2-item-log' WHERE id=?", row.id);
+          row = { ...row, source: 'torn-v2-item-log' };
+        }
         result = { status: row.status === 'applied' ? 'duplicate' : row.status === 'pending_identity' && applyTransaction(row) ? 'applied' : row.status, id: row.id };
       } else {
         const rate = one('SELECT * FROM premium_price_versions WHERE effective_at<=? ORDER BY effective_at DESC,id DESC LIMIT 1', parsed.timestamp);
@@ -274,8 +286,18 @@ function createStore(filename, options = {}) {
     const counts = one('SELECT count(*) AS total, sum(CASE WHEN ' + active + ' THEN 1 ELSE 0 END) AS active, sum(CASE WHEN p.torn_id IS NOT NULL THEN 1 ELSE 0 END) AS permanent' + base, now());
     return { members: rows.map((row) => ({ ...entitlement(row.torn_id), ...player(row.torn_id), joinedAt: row.created_at })), page, pageSize: limit, total, pages: Math.max(1, Math.ceil(total / limit)), counts: { total: counts.total, active: counts.active || 0, permanent: counts.permanent || 0 } };
   }
+  function settlePendingItemLogs(leaseOwner) {
+    return transaction(() => {
+      if (leaseOwner && !ownsLease(leaseOwner)) fail('LEASE_LOST', 409);
+      let applied = 0;
+      for (const row of all("SELECT * FROM premium_transactions WHERE source='torn-v2-item-log' AND parsed_verified=1 AND status='pending_identity' ORDER BY event_timestamp,id")) {
+        if (applyTransaction(row)) applied++;
+      }
+      return applied;
+    });
+  }
   return {
-    db, transaction, mode, now, settings, checkpoint, entitlement, registerVerifiedUser, ingest, ingestItemLog, historyFor, player, cachePlayerName,
+    db, transaction, mode, now, settings, checkpoint, entitlement, registerVerifiedUser, ingest, ingestItemLog, settlePendingItemLogs, historyFor, player, cachePlayerName,
     balance: (id) => one('SELECT * FROM premium_payment_balances WHERE torn_id=?', id) || { torn_id: id, available_xanax: 0, total_received: 0 },
     updateSettings, adjustSubscription, review, acquireLease, ownsLease, releaseLease, checkpointUpdate, recordError, apiBudget, rebaseline,
     expire: () => run("UPDATE premium_subscriptions SET status='expired',updated_at=? WHERE status='active' AND expires_at<=?", now(), now()),
