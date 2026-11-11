@@ -16,7 +16,8 @@
   let savingTheme = false;
   function applyTheme(theme) {
     if (!themes.some(([id]) => id === theme)) theme = 'obsidian';
-    document.documentElement.dataset.theme = theme;
+    if (document.documentElement.dataset.premiumAppearance) theme = state.config?.theme || 'obsidian';
+    else document.documentElement.dataset.theme = theme;
     try { localStorage.setItem('tt.theme', theme); } catch {}
     $('#theme-options').innerHTML = themes.map(([id, trName, enName, bg, accent]) =>
       `<button type="button" class="theme-choice ${id === theme ? 'selected' : ''}" data-theme-choice="${id}" aria-pressed="${id === theme}" ${savingTheme ? 'disabled' : ''}>
@@ -26,6 +27,7 @@
   $('#theme-options').addEventListener('click', async (e) => {
     const button = e.target.closest('[data-theme-choice]');
     if (!button || savingTheme) return;
+    window.dispatchEvent(new Event('lrx-base-theme-selected'));
     const previous = document.documentElement.dataset.theme || 'obsidian';
     const theme = button.dataset.themeChoice;
     savingTheme = true;

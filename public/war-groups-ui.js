@@ -64,6 +64,7 @@
     finally { busy = false; render(); if (current() && state.targets?.faction.id == faction) renderTargets(); }
   }
   window.filterWarTargets = (rows) => !current() || filter === '*' ? rows : rows.filter((m) => (data.assignments[m.id] || '') === filter);
+  window.warGroupName = (id) => current() ? data.groups.find((g) => g.id === data.assignments[id])?.name || '' : '';
   window.decorateWarGroups = (rows) => {
     if (!current() || loading || error || state.targets?.faction.id != faction) return;
     visible = rows.map((m) => m.id);

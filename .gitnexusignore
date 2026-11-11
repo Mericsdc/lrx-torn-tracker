@@ -1,0 +1,4 @@
+# Keep the graph on maintained application code and its tests.
+userscripts/*.user.js
+!tests/
+!tests/**

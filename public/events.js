@@ -352,5 +352,5 @@ const pollSeasonal = () => { if (state.config?.hasKey) fetchEvents().catch(() =>
 setTimeout(pollSeasonal, 4000);
 setInterval(pollSeasonal, 30 * 60_000);
 FEATURE_HOOKS.push(() => { updateEventBanner(); });
-Object.assign(window, { renderEventSettings, loadEventSettings, fetchEvents, eventGuideCards });
+Object.assign(window, { renderEventSettings, loadEventSettings, fetchEvents, eventGuideCards, cachedEventData: () => evData.d });
 })();

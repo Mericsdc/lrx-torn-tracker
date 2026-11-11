@@ -228,6 +228,9 @@ async function checkUpdateNotifications(browser, base, output) {
   await page.reload(); await page.locator('[data-set-tab="appearance"]').click();
   assert.equal(await page.locator('html').getAttribute('data-theme'), 'ocean');
   await page.screenshot({ path: path.join(output, 'themes-ocean.png') });
+  await page.evaluate(() => { state.overview.bars = { energy: { current: 120, maximum: 150, fulltime: 900 }, nerve: { current: 35, maximum: 60, fulltime: 3600 }, happy: { current: 3500, maximum: 5000, fulltime: 7200 }, life: { current: 2400, maximum: 3000, fulltime: 1200 } }; renderOverview(); showView('overview'); window.scrollTo({ top: 0, behavior: 'instant' }); });
+  await page.screenshot({ path: path.join(output, 'overview-ocean.png') });
+  await page.evaluate(() => { showView('settings'); showSettingsTab('appearance'); });
   await page.locator('[data-view="war"]').click();
   await page.evaluate(() => { state.factionId = 5; state.targets = null; loadTargets(); state.factionId = 6; loadTargets(); });
   await page.waitForFunction(() => state.targets?.faction.id === 6);

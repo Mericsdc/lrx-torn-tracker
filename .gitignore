@@ -1,16 +1,25 @@
 # Kişisel veriler — API key'ler, geçmiş, oturum bilgileri burada tutulur. ASLA commit etme.
 data/
 *.log
+*.sqlite
+*.sqlite-*
 
 # Bağımlılıklar / derleme çıktıları
 node_modules/
 .fallow/
+.hallmark/
+.gitnexus/
+.vitest/
+coverage/
 dist/
 out/
+stage/
 
 # Ortam değişkenleri
 .env
 .env.*
+*.env
+!premium/config.example.env
 
 # OS
 Thumbs.db

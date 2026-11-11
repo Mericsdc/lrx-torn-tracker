@@ -71,7 +71,7 @@ Validation: `npm test` runs isolated server and calculation tests. `tests/ui-smo
    - To create a key: Torn → Preferences → API Keys → Add new key → choose **Limited Access**.
    - The "Limited API key oluştur →" link on the login screen opens this page with the fields already filled in.
 
-> 🔒 Your API key is stored only in `data/config.json` next to the app on your own computer, and it is sent only to `api.torn.com` (and to `ffscouter.com` for war estimates). Feedback messages go through `formsubmit.co` and contain only what you type in the form. Use **Settings → Çıkış Yap** to remove the key.
+> 🔒 Your API key is stored in local `data/config.json` and used with `api.torn.com` (and `ffscouter.com` for war estimates). If you separately connect the optional membership service, it receives the key transiently to verify its Torn owner and does not store it. Premium discloses that service's data use before connection. Feedback uses `formsubmit.co` and contains what you type in the form. Use **Settings → Çıkış Yap** to remove the local key and clear the membership session.
 
 ## Development
 
@@ -81,6 +81,8 @@ npm start          # Electron app
 npm run web        # Server only: http://localhost:3737
 npm run build:exe  # Windows package into dist/
 ```
+
+See [TESTING.md](TESTING.md) for Vitest, the existing service tests and local preview builds. The additional Free/Premium modules are documented in [the implementation report](premium/FEATURES-REPORT.md) and [feature matrix](premium/FEATURE-MATRIX.md). The shared membership API is published at https://lrxe8.com/torn-premium; the application uses that publisher default, and users need no Tailscale or SSH. Real Xanax collection is disabled. See [deployment details](premium/PUBLIC-DEPLOYMENT.md).
 
 To publish an update package:
 
@@ -93,7 +95,9 @@ This writes `torntracker-app-<version>.zip` and `latest.json` to the `updates/` 
 ## Privacy
 
 - The repository contains **no** API keys or personal data. The `data/` folder is in `.gitignore`.
-- Each user enters their own key and their data stays on their own computer.
+- Tracker data stays on the user's computer. Optional membership stores verified Torn ID, payments and subscription records centrally, accessible only to the account owner and authorized service operators.
+- Torn IDs linked to account/payments are treated as personal data. See [privacy findings](premium/PRIVACY.md) and [service setup, migrations, environment variables and validation](premium/README.md).
+- Existing app features and Torn API data access remain free. No paid insights have been assigned; the premium infrastructure defaults to synthetic tests and accepts no real payment until Torn approval and live operator configuration.
 
 ## License
 

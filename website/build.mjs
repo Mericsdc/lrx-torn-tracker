@@ -1,0 +1,12 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+const root=path.dirname(fileURLToPath(import.meta.url)), dist=path.join(root,'dist');
+const page=fs.readFileSync(path.join(root,'index.html'),'utf8').replaceAll('/torn-premium/download/windows','https://github.com/Mericsdc/lrx-torn-tracker/releases/latest/download/LRX-Torn-Tracker-Windows-x64.zip');
+const base=path.join(dist,'torn-premium'), assets=path.join(base,'site');
+fs.mkdirSync(assets,{recursive:true});
+for(const folder of ['assets','styles'])fs.cpSync(path.join(root,folder),path.join(assets,folder),{recursive:true});
+fs.copyFileSync(path.join(root,'site.js'),path.join(assets,'site.js'));
+fs.writeFileSync(path.join(dist,'index.html'),page);fs.writeFileSync(path.join(base,'index.html'),page);
+fs.writeFileSync(path.join(dist,'_headers'),"/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: strict-origin-when-cross-origin\n  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\n");
+console.log('Built static landing page at '+dist);

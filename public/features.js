@@ -590,10 +590,7 @@ function travelRows({ ignoreStock = false } = {}) {
       const st = stockStatus(it, now, arrive);
       if (!ignoreStock && t.stock === 'now' && it.qty <= 0) continue;
       if (!ignoreStock && t.stock === 'arrival' && (st === 'no' || st === 'later' || st === 'stale')) continue;
-      const units = it.qty > 0 ? Math.min(cap, it.qty) : cap;
-      const trip = units * (it.profit || 0);
-      const round = 2 * oneWay;
-      const perHour = trip / (round / 60);
+      const { units, trip, round, perHour } = LRXTravelMath.tripMetrics(it.profit || 0, cap, it.qty, oneWay);
       if (t.minProfit && perHour < t.minProfit) continue;
       rows.push({ c, it, key, watched, st, units, trip, round, oneWay, perHour, arrive });
     }

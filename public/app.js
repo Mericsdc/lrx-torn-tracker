@@ -86,18 +86,18 @@ const I18N = {
   'auth.showHide': ['Göster / gizle', 'Show / hide'],
   'auth.login': ['Giriş Yap', 'Log In'],
   'auth.getKey': ['Limited API key oluştur →', 'Create a Limited API key →'],
-  'auth.privacy': ["Key yalnızca bu bilgisayarda saklanır ve api.torn.com'a gönderilir. Ayrı bir FFScouter key girmezsen Savaş Hedefleri için ffscouter.com'a da gönderilir.", 'Your key is stored only on this computer and sent to api.torn.com. Unless you enter a separate FFScouter key, it is also sent to ffscouter.com for War Targets.'],
+  'auth.privacy': ["Key bu bilgisayarda saklanır; Torn API ve ayrı key yoksa FFScouter için kullanılır. İsteğe bağlı Premium bağlantısında, ayrıca onayınızla üyelik servisine yalnızca hesap doğrulaması için gönderilir; orada saklanmaz.", 'Your key is stored on this computer and used with Torn API and, unless separately configured, FFScouter. Optional Premium connection sends it to the membership service only after your separate acknowledgement, for account verification; it is not stored there.'],
   'auth.creditTitle': ['Torn profili', 'Torn profile'],
   // Torn API kullanım koşulları (ToS) tablosu — key'in girildiği ekranda gösterilmesi gerekir
   'tos.title': ['API kullanım koşulları (Torn ToS)', 'API terms of use (Torn ToS)'],
   'tos.storage': ['Veri saklama', 'Data storage'],
-  'tos.storageV': ['Yalnızca bu bilgisayarda, uygulamanın data klasöründe. Uygulamanın sunucusu yoktur.', "Only on this computer, in the app's data folder. The app has no server."],
+  'tos.storageV': ['Takip verileri yereldir. Premium bağlantısı isteğe bağlıdır; doğrulanmış Torn ID, ödeme ve üyelik kayıtları üyelik servisinde de saklanır. Saklama bilgileri Premium ekranındadır.', 'Tracker data is local. Optional Premium connection also stores verified Torn ID, payment and subscription records at the membership service; retention details appear on the Premium screen.'],
   'tos.sharing': ['Veri paylaşımı', 'Data sharing'],
-  'tos.sharingV': ["Kimseyle paylaşılmaz. Yalnızca Savaş Hedefleri için oyuncu ID'leri ffscouter.com'a gönderilir.", 'Not shared with anyone. Only player IDs are sent to ffscouter.com for War Targets.'],
+  'tos.sharingV': ["Savaş tahminleri için oyuncu ID'leri FFScouter'a gönderilir. Premium kayıtlarına hesap sahibi ve yetkili üyelik servisi yöneticileri erişir; kayıtlar halka açılmaz.", 'Player IDs are sent to FFScouter for war estimates. Premium records are accessible to the account owner and authorized membership operators; they are not public.'],
   'tos.purpose': ['Kullanım amacı', 'Purpose of use'],
-  'tos.purposeV': ['Kişisel takip: şirket, stok, istatistik, suç ve bildirimler.', 'Personal tracking: company, stock, stats, crimes and notifications.'],
+  'tos.purposeV': ['Kişisel takip ve isteğe bağlı uygulama üyeliği. API verilerine erişim ve mevcut özellikler ücretsizdir; gelecekteki ücretler ek analizler için olabilir.', 'Personal tracking and optional application membership. API data access and existing features stay free; future remuneration may concern additional insights.'],
   'tos.keyStorage': ['Key saklama ve paylaşım', 'Key storage & sharing'],
-  'tos.keyStorageV': ["Bu bilgisayarda config.json içinde. api.torn.com'a, ayrı FFScouter key yoksa ffscouter.com'a gönderilir. Başka yere gönderilmez.", 'In config.json on this computer. Sent to api.torn.com, and to ffscouter.com if no separate FFScouter key is set. Sent nowhere else.'],
+  'tos.keyStorageV': ["Yerel config.json içinde. Torn API'ye ve ayrı key yoksa FFScouter'a gönderilir. Premium'a ayrıca bağlanırsanız üyelik servisi anahtarı hesap doğrulaması için geçici kullanır, saklamaz.", 'Stored in local config.json. Sent to Torn API and, without a separate key, FFScouter. If you separately connect Premium, the membership service uses it transiently for account verification and does not store it.'],
   'tos.access': ['Key erişim seviyesi', 'Key access level'],
   'tos.accessV': ['Limited Access. Log okuyan özellikler için isteğe bağlı ayrı bir "log" key.', 'Limited Access. An optional separate "log" key for features that read logs.'],
   'set.logout': ['Çıkış Yap', 'Log Out'],
@@ -307,6 +307,8 @@ async function api(path, opts = {}) {
   const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(60_000), ...opts });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) { const e = new Error(json.error || `HTTP ${res.status}`); e.status = res.status; e.code = json.code; throw e; }
+  if (path === '/api/premium/connect') window.PremiumAccess?.accept(json);
+  if (['/api/logout', '/api/premium/disconnect'].includes(path) || (path === '/api/config' && opts.body && /"apiKey"/.test(opts.body))) window.dispatchEvent(new Event('lrx-premium-reset'));
   return json;
 }
 

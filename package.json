@@ -1,11 +1,20 @@
 {
   "name": "torn-tracker",
   "productName": "TornTracker",
-  "version": "1.6.8",
+  "version": "1.6.9",
   "description": "LRX Torn Tracker – Torn City masaüstü takip uygulaması: şirket stoku, günlük rapor, çalışanlar, gelir tablosu, sayaçlar, Fair Fight savaş hedef önerileri, TornTools ve yerleşik Torn tarayıcısı.",
   "main": "electron-main.js",
   "scripts": {
-    "test": "node --test tests/core.test.js tests/session.test.js tests/ff-script.test.js",
+    "check": "node tools/check-syntax.js",
+    "build:preview": "node tools/build-preview.js",
+    "test:all": "npm test && npm run test:premium",
+    "test": "npm run test:node && npm run test:unit",
+    "test:node": "node --test tests/core.test.js tests/session.test.js tests/ff-script.test.js",
+    "test:unit": "vitest run",
+    "test:watch": "vitest",
+    "test:premium": "node --test tests/premium/*.test.js",
+    "premium:serve": "node premium/server.js",
+    "premium:validate-receiver": "node premium/validate-receiver.js",
     "start": "electron .",
     "web": "node server.js",
     "build:exe": "npx @electron/packager . TornTracker --platform=win32 --arch=x64 --out=dist --overwrite --ignore=\"^/dist\""
@@ -15,10 +24,12 @@
   },
   "license": "SEE LICENSE IN LICENSE",
   "devDependencies": {
-    "@electron/packager": "^19.1.2",
-    "electron": "^41.2.0"
+    "@electron/packager": "^19.1.1",
+    "electron": "^41.2.0",
+    "vitest": "5.1.0"
   },
   "updateUrl": "https://github.com/Mericsdc/lrx-torn-tracker/releases/latest/download/latest.json",
+  "premiumServiceUrl": "https://lrxe8.com/torn-premium",
   "repository": {
     "type": "git",
     "url": "https://github.com/Mericsdc/lrx-torn-tracker.git"

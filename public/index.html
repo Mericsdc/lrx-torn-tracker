@@ -6,6 +6,7 @@
   <title>LRX Torn Tracker</title>
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/themes.css" />
+  <link rel="stylesheet" href="/premium.css" />
   <script src="/theme-init.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -45,14 +46,14 @@
         </form>
         <div class="auth-help">
           <a href="#" id="auth-get-key" data-i18n="auth.getKey">Create a Limited API key →</a>
-          <small data-i18n="auth.privacy">Your key is stored only on this computer and sent to api.torn.com. Unless you enter a separate FFScouter key, it is also sent to ffscouter.com for War Targets.</small>
+          <small data-i18n="auth.privacy">Your key is stored locally and used with Torn API and FFScouter. Optional Premium connection requires a separate acknowledgement before sending it transiently to the membership service for identity verification.</small>
           <details class="auth-tos">
             <summary data-i18n="tos.title">API terms of use (Torn ToS)</summary>
             <table>
-              <tr><th data-i18n="tos.storage">Data storage</th><td data-i18n="tos.storageV">Only on this computer, in the app's data folder. The app has no server.</td></tr>
-              <tr><th data-i18n="tos.sharing">Data sharing</th><td data-i18n="tos.sharingV">Not shared with anyone. Only player IDs are sent to ffscouter.com for War Targets.</td></tr>
-              <tr><th data-i18n="tos.purpose">Purpose of use</th><td data-i18n="tos.purposeV">Personal tracking: company, stock, stats, crimes and notifications.</td></tr>
-              <tr><th data-i18n="tos.keyStorage">Key storage &amp; sharing</th><td data-i18n="tos.keyStorageV">In config.json on this computer. Sent to api.torn.com, and to ffscouter.com if no separate FFScouter key is set. Sent nowhere else.</td></tr>
+              <tr><th data-i18n="tos.storage">Data storage</th><td data-i18n="tos.storageV">Tracker data is local. Optional membership stores verified Torn ID, payments and subscription periods centrally; see Premium for retention details.</td></tr>
+              <tr><th data-i18n="tos.sharing">Data sharing</th><td data-i18n="tos.sharingV">Player IDs go to FFScouter for war estimates. Premium records are private to their owner and authorized membership operators.</td></tr>
+              <tr><th data-i18n="tos.purpose">Purpose of use</th><td data-i18n="tos.purposeV">Personal tracking and optional membership. API data and existing features remain free; future remuneration may concern additional insights.</td></tr>
+              <tr><th data-i18n="tos.keyStorage">Key storage &amp; sharing</th><td data-i18n="tos.keyStorageV">Stored locally. Used with Torn and FFScouter. Optional Premium sends the key transiently to the membership service for identity verification, without storing it there.</td></tr>
               <tr><th data-i18n="tos.access">Key access level</th><td data-i18n="tos.accessV">Limited Access. An optional separate "log" key for features that read logs.</td></tr>
             </table>
           </details>
@@ -160,6 +161,9 @@
         <button class="nav-item" data-view="tools">
           <svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg><span data-i18n="nav.tools">Tools</span>
         </button>
+        <button class="nav-item" data-view="premium">
+          <svg viewBox="0 0 24 24"><path d="M3 7l4 4 5-7 5 7 4-4-2 13H5z"/></svg><span data-i18n="nav.premium">Premium</span>
+        </button>
         <button class="nav-item" data-view="settings">
           <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg><span data-i18n="nav.settings">Settings</span>
         </button>
@@ -200,6 +204,7 @@
 
       <div id="alert-area"></div>
 
+      <section class="view" id="view-premium" aria-label="Premium"><div id="premium-content"></div><p id="premium-feedback" role="status" aria-live="polite"></p></section>
       <!-- ===================== OVERVIEW ===================== -->
       <section class="view active" id="view-overview">
         <div class="grid timers">
@@ -341,6 +346,7 @@
 
       <!-- ===================== WAR ===================== -->
       <section class="view" id="view-war">
+        <div data-feature-slot="helpers_advanced"></div>
         <article class="glass card war-head">
           <div class="war-select">
             <span class="eyebrow" data-i18n="war.enemyFaction">Enemy Faction</span>
@@ -383,12 +389,12 @@
       <section class="view" id="view-job"><div class="stack" id="job-body"></div></section>
       <section class="view" id="view-gym"><div class="stack" id="gym-body"></div></section>
       <section class="view" id="view-networth"><div class="stack" id="networth-body"></div></section>
-      <section class="view" id="view-travel"><div class="stack" id="travel-body"></div></section>
+      <section class="view" id="view-travel"><div class="stack" id="travel-body"></div><div data-feature-slot="travel_advanced"></div></section>
       <section class="view" id="view-level"><div class="stack" id="level-body"></div></section>
       <section class="view" id="view-guide"><div class="stack" id="guide-body"></div></section>
       <section class="view" id="view-crimes"><div class="stack" id="crimes-body"></div></section>
-      <section class="view" id="view-awards"><div class="stack" id="awards-body"></div></section>
-      <section class="view" id="view-tools"><div class="stack" id="tools-body"></div></section>
+      <section class="view" id="view-awards"><div class="stack" id="awards-body"></div><div data-feature-slot="merits_optimizer"></div></section>
+      <section class="view" id="view-tools"><div class="stack" id="tools-body"></div><div data-feature-slot="events_advanced"></div><div data-feature-slot="helpers_advanced"></div></section>
       <section class="view" id="view-faction"><div class="stack" id="faction-body"></div></section>
 
       <!-- ===================== SETTINGS ===================== -->
@@ -465,6 +471,7 @@
         </div>
 
         <div class="set-panel" data-set-panel="appearance">
+          <div data-feature-slot="appearance_custom_themes"></div>
           <article class="glass card">
             <div class="card-head"><h3 data-i18n="set.themes">Themes</h3></div>
             <p class="muted" data-i18n="set.themeHint">Choose a theme for the tracker and browser toolbar.</p>
@@ -481,10 +488,12 @@
             <div class="feat-list" id="set-feat-notify"></div></article>
         </div>
         <div class="set-panel" data-set-panel="torn">
+          <div data-feature-slot="helpers_advanced"></div>
           <article class="glass card"><div class="card-head wrap"><h3 data-i18n="set.tab.torn">Torn helpers</h3><span class="muted" data-i18n="set.tornHint">Runs in Torn tabs · changes apply when the page reloads</span></div>
             <div class="feat-cols" id="set-feat-torn"></div></article>
         </div>
         <div class="set-panel" data-set-panel="events">
+          <div data-feature-slot="events_advanced"></div>
           <div class="stack" id="set-events"></div>
         </div>
       </section>
@@ -601,7 +610,11 @@
   </div>
   <script src="/shape-waves.js"></script>
   <script src="/app.js"></script>
+  <script src="/travel-math.js"></script>
+  <script src="/feature-catalog.js"></script>
   <script src="/features.js"></script>
+  <script src="/feature-access.js"></script>
+  <script src="/premium.js"></script>
   <script src="/workspace.js"></script>
   <script src="/war-groups-ui.js"></script>
   <script src="/extras.js"></script>

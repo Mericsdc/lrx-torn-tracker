@@ -41,6 +41,11 @@ function writeJson(file, obj, pretty = false) {
 }
 
 let config = { ...DEFAULT_CONFIG, ...readJson(CONFIG_FILE, {}) };
+const premiumClient = require('./premium-client').createPremiumClient(() => config.apiKey, {
+  defaultServiceUrl: PKG.premiumServiceUrl || '',
+  getRemembered: () => config.premiumConnection || null,
+  setRemembered: (value) => { if (JSON.stringify(config.premiumConnection || null) !== JSON.stringify(value)) { if (value) config.premiumConnection = value; else delete config.premiumConnection; saveConfig(); } },
+});
 const ffScriptProxy = require('./ff-script-proxy').createFFScriptProxy(() => config, undefined, throttle);
 // Language of user-facing server messages: English by default, Turkish when the app is set to TR
 const T = (trStr, enStr) => (config.lang === 'tr' ? trStr : enStr);
@@ -1066,6 +1071,17 @@ async function getAwards() {
   };
 }
 
+// Raw merit allocations remain Free; the paid planner uses these cached values.
+async function getMeritAllocation() {
+  return cached('merits:allocation', 5 * 60_000, async () => {
+    const [own, catalog] = await Promise.all([torn('v2/user/merits', 5 * 60_000), torn('v2/torn/merits', 6 * 3600_000)]);
+    if (!Array.isArray(own.merits?.upgrades) || !Array.isArray(catalog.merits)) throw new Error('Merit data unavailable');
+    const levels = new Map(own.merits.upgrades.map((r) => [r.id, r.level]));
+    return { available: own.merits.available, used: own.merits.used, awards: own.merits.honors + own.merits.medals,
+      tracks: catalog.merits.map((m) => ({ id: String(m.id), name: m.name, description: m.description, level: levels.get(m.id) ?? 0 })), at: Date.now(), source: 'desktop-api-snapshot' };
+  });
+}
+
 /* ------------------------------------------------------------------ */
 /* Suç kârlılığı: Emforus'un Crime Profitability Index tablosu         */
 /* ------------------------------------------------------------------ */
@@ -1736,16 +1752,16 @@ function send(res, status, obj) {
 }
 function readBody(req) {
   return new Promise((resolve, reject) => {
-    let data = '';
+    const chunks = [];
     let size = 0;
     const bad = (message, status = 400) => reject(Object.assign(new Error(message), { status }));
-    req.on('data', (c) => { size += c.length; if (size > 1e5) bad('Request body too large', 413); else data += c; });
+    req.on('data', (c) => { size += c.length; if (size > 1e5) bad('Request body too large', 413); else chunks.push(c); });
     req.on('error', reject);
     req.on('aborted', () => bad('Request aborted'));
     req.on('end', () => {
       if (size > 1e5) return;
       try {
-        const value = JSON.parse(data || '{}');
+        const value = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
         if (!value || typeof value !== 'object' || Array.isArray(value)) return bad('Expected a JSON object');
         resolve(value);
       } catch { bad('Invalid JSON'); }
@@ -1757,6 +1773,15 @@ const maskKey = (k) => (k ? k.slice(0, 3) + '•'.repeat(Math.max(0, k.length - 
 async function handleApi(req, res, url) {
   const p = url.pathname;
   try {
+    if (p.startsWith('/api/premium/')) {
+      try {
+        const action = p.slice('/api/premium/'.length);
+        if (action === 'status' && req.method === 'GET') return send(res, 200, await premiumClient.status());
+        if (action === 'connect' && req.method === 'POST') return send(res, 200, await premiumClient.connect(await readBody(req)));
+        if (action === 'disconnect' && req.method === 'POST') { premiumClient.reset(); return send(res, 200, { ok: true }); }
+        return send(res, 200, await premiumClient.proxy(action, req.method, req.method === 'POST' ? await readBody(req) : undefined));
+      } catch (error) { return send(res, error.status || 503, { error: error.code || 'PREMIUM_SERVICE_ERROR', code: error.code || 'PREMIUM_SERVICE_ERROR' }); }
+    }
     if (p === '/api/ff-script-request' && req.method === 'POST') {
       return send(res, 200, await ffScriptProxy.run(await readBody(req)));
     }
@@ -1793,6 +1818,7 @@ async function handleApi(req, res, url) {
     if (p === '/api/levelling') return send(res, 200, await getLevelling(url.searchParams.get('list') || ''));
     if (p === '/api/shoplifting') return send(res, 200, await getShoplifting());
     if (p === '/api/awards') return send(res, 200, await getAwards());
+    if (p === '/api/merit-allocation') return send(res, 200, await getMeritAllocation());
     if (p === '/api/crime-value') return send(res, 200, await getCrimeValue(url.searchParams.get('force') === '1'));
     if (p === '/api/jail') return send(res, 200, await getJail());
     if (p === '/api/events') return send(res, 200, await getEvents(url.searchParams.get('force') === '1'));
@@ -1829,6 +1855,7 @@ async function handleApi(req, res, url) {
       }
       if (b.theme != null && !THEMES.has(b.theme)) return send(res, 400, { error: 'Invalid theme' });
       if (typeof b.apiKey === 'string' && b.apiKey.trim()) {
+        if (b.apiKey.trim() !== config.apiKey) premiumClient.reset();
         config.apiKey = b.apiKey.trim(); cache.clear(); ffCache.clear(); estCache.clear();
         ffStatus = { ok: null, error: null, checkedAt: 0 };
       }
@@ -1873,6 +1900,7 @@ async function handleApi(req, res, url) {
         config.logKey = ''; // önceki oyuncunun log key'i yeni oyuncuya ait değildir
         saveHistory();
       }
+      if (config.apiKey !== key) premiumClient.reset();
       config.apiKey = key;
       cache.clear(); ffCache.clear(); estCache.clear();
       ffStatus = { ok: null, error: null, checkedAt: 0 };
@@ -1880,6 +1908,7 @@ async function handleApi(req, res, url) {
       return send(res, 200, { ok: true, player: { id: user.player_id, name: user.name, level: user.level }, accessType: info.access_type, resetData: !!(prevPlayer && prevPlayer !== user.player_id) });
     }
     if (p === '/api/logout' && req.method === 'POST') {
+      premiumClient.reset();
       config.apiKey = '';
       config.ffscouterKey = '';
       config.logKey = '';

@@ -16,12 +16,12 @@ const crypto = require('crypto');
 
 const APP = path.resolve(__dirname, '..');
 const OUT = path.resolve(APP, '..', '..', '..', 'updates');
-const SKIP = new Set(['data', 'node_modules', 'dist', '.git', '.fallow']);
+const SKIP = new Set(['data', 'node_modules', 'dist', '.git', '.fallow', '.hallmark', '.sites-state', '.openai', '.gitnexus', '.vitest', 'coverage']);
 
 function listFiles(dir, base = '') {
   const out = [];
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (!base && SKIP.has(ent.name)) continue;
+    if (SKIP.has(ent.name) || ent.name === '.env' || ent.name.startsWith('.env.') || ent.name.endsWith('.env') && ent.name !== 'config.example.env' || /\.(?:sqlite(?:-\w+)?|db|log)$/i.test(ent.name) || ent.isSymbolicLink()) continue;
     const rel = base ? `${base}/${ent.name}` : ent.name;
     if (ent.isDirectory()) out.push(...listFiles(path.join(dir, ent.name), rel));
     else out.push(rel);
@@ -56,6 +56,7 @@ function makeZip(files) {
   return Buffer.concat([...locals, cd, end]);
 }
 
+if (require.main === module) {
 const pkg = JSON.parse(fs.readFileSync(path.join(APP, 'package.json'), 'utf8'));
 const files = listFiles(APP);
 const zip = makeZip(files);
@@ -76,3 +77,5 @@ fs.writeFileSync(path.join(OUT, 'latest.json'), JSON.stringify(manifest, null, 2
 console.log(`✓ ${files.length} dosya → ${path.join(OUT, zipName)} (${(zip.length / 1024).toFixed(0)} KB)`);
 console.log(`✓ ${path.join(OUT, 'latest.json')}`);
 console.log('Bu iki dosyayı aynı yere yükle; uygulamada Güncelleme adresi = <o yer>/latest.json');
+}
+module.exports = { listFiles, makeZip };
