@@ -97,4 +97,4 @@ This writes `torntracker-app-<version>.zip` and `latest.json` to the `updates/` 
 
 ## License
 
-MIT
+New original contributions and the website use the [Original Additions License](LICENSE). Personal use of official releases is permitted; redistribution or commercial reuse of covered new contributions requires permission. Earlier MIT releases keep their existing rights: [legacy MIT terms](LICENSES/LEGACY-MIT.txt). Third-party and copyleft components retain their own licenses; see [notices](userscripts/NOTICE.txt). A license states permissions and cannot technically prevent copying from a public repository.

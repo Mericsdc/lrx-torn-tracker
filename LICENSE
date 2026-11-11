@@ -1,0 +1,53 @@
+LRX Torn Tracker Original Additions License
+Effective 11 November 2026
+
+Copyright (c) 2026 Mericsdc, known in Torn as Ezlira [4037017].
+
+1. Scope and previous releases
+
+This license applies only to copyrightable original contributions first
+published by the copyright holder under this license on or after its effective
+date, including the original Torn Tracker website design, text and code.
+It does not revoke or replace permissions already granted for earlier code
+published under the MIT License. Those earlier versions and contributions
+remain available under their original terms. See LICENSES/LEGACY-MIT.txt.
+
+2. Personal use
+
+You may download and use the copyright holder's official application releases
+for your own Torn gameplay. No ownership of the software, website, name or
+artwork is transferred. You may inspect publicly available source code and
+submit feedback or proposed contributions.
+
+3. Rights reserved for original additions
+
+Except as expressly permitted above or by applicable law, reproducing,
+redistributing, sublicensing, selling, commercially exploiting, or preparing
+derivative works of the covered original additions requires prior written
+permission from the copyright holder. You may not remove their copyright or
+license notices or represent another person's work as your own.
+
+Ordinary links to the official website, repository and releases are welcome.
+GitHub platform rights to view and fork public repositories under GitHub's
+terms are not restricted by this notice. A public repository is not a technical
+barrier against copying; this document states permissions, not copy protection.
+
+4. Third-party and copyleft material
+
+Third-party software, fonts, scripts and assets retain their own licenses.
+This license does not restrict any rights granted by those licenses and does
+not apply to code that must remain under a copyleft license. In particular,
+FF Scouter and its covered wrappers retain GPL-3.0 permissions; TornW3B,
+React/React DOM and other MIT components retain MIT permissions; Mona Sans
+retains the SIL Open Font License. TornTools retains its upstream license.
+See userscripts/NOTICE.txt, userscripts/GPL-3.0.txt and website/assets/OFL.txt.
+
+5. No warranty
+
+The covered original additions are provided as available, without warranties
+of merchantability, fitness for a particular purpose or non-infringement.
+To the extent permitted by applicable law, the copyright holder is not liable
+for losses resulting from their use. Mandatory consumer rights are unaffected.
+
+Permission requests: contact Ezlira [4037017] through the official Torn
+profile or the Feedback channel in Torn Tracker.
