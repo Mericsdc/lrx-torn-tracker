@@ -4,7 +4,7 @@ Reliability follow-up: synthetic test requests wait for their own worker run ins
 
 The original `LRX-Torn-Tracker` GitNexus map points at the separate installed application in `D:/Meric/TORN/LRX-Torn-Tracker`, which has no application Premium module. The maintained source is registered separately as `LRX-Torn-Tracker-Premium`. Its graph excludes bundled third-party userscripts and includes project tests; it supplements source inspection and does not prove complete runtime call coverage.
 
-Status, 11 November 2026: five advanced modules are implemented and tested. The shared service is published at **https://lrxe8.com/torn-premium**, with verified-account identity and **real payments disabled**. Receiver: **Ezlira [4037017]**. All existing features and Torn API data access remain free. The previous remote synthetic-test deployment remains separate on schema 3; the public service has its own schema-4 database. See [public deployment and verification](PUBLIC-DEPLOYMENT.md).
+Status, 11 November 2026: five advanced modules are implemented and tested. The shared service is published at **https://lrxe8.com/torn-premium**, with verified-account identity and collection controlled by explicit operator opt-in. Receiver: **Ezlira [4037017]**. All existing features and Torn API data access remain free. The previous remote synthetic-test deployment remains separate on schema 3; the public service has its own schema-4 database. See [public deployment and verification](PUBLIC-DEPLOYMENT.md).
 
 The membership screen now has a themed membership card and separate Membership, Members, Payments, Test lab and Settings tabs. The large closed-payments notice was removed; test mode is identified by a compact badge. Ezlira [4037017] receives a permanent server-side membership after identity verification. It has no expiry and cannot be removed through manual time adjustments. The admin member directory supports search, status filters and pagination, and shows remaining days or lifetime access.
 
@@ -88,7 +88,6 @@ The built-in **synthetic transfer** form never calls Torn or sends items. The pu
 | `PREMIUM_TEST_AUTH_TOKEN` | Empty; random ≥32 characters required for local test login |
 | `PREMIUM_REVIEW_RETENTION_DAYS` | `30`, range 1–90, raw review text only |
 | `PREMIUM_ALLOW_LIVE_PAYMENTS` | `false`; explicit operator gate |
-| `PREMIUM_TORN_APPROVAL_REFERENCE` | Empty; reference to actual Torn permission for this model |
 | `PREMIUM_RECEIVER_FORMAT_VERIFIED` | `false`; operator's completed real-shape verification |
 | `PREMIUM_RECEIVER_API_KEY` | Empty; server secret with receiver `events` access (Limited) |
 | `PREMIUM_PUBLIC_URL` | Empty; live HTTPS public origin / terms link |
@@ -112,3 +111,7 @@ See [privacy and Torn monetisation findings](PRIVACY.md). No game scraping, auto
 `npm test`: 12 existing regression tests plus one Vitest starter test. `npm run test:premium`: 57 tests covering public service paths, payments, pricing, identity, concurrency, feature permissions, consent, profile retention, schema 3→4 upgrades, expiry/renewal, calculation accuracy and remembered connection isolation. `npm run test:all` runs all 70. See [testing instructions](../TESTING.md).
 
 Integrated `tests/premium-ui-smoke.js` exercises the actual desktop HTTP bridge and central in-memory SQLite service: opt-in, test authentication without a Torn key, admin settings, synthetic transfer, 30-day activation, private history, admin isolation, escaped review text, five themes, 640px layout, TR/EN and disconnect. Existing `tests/ui-smoke.js` and the packaged `tests/electron-smoke.js` also pass. All automated payment tests use synthetic events and isolated databases, never real transfers. QA images are stored outside the source checkout. Live end-to-end acceptance is intentionally untested while collection is closed.
+
+## Operator-enabled in-game Xanax collection
+
+On 11 November 2026 the operator explicitly requested removal of the mandatory Torn approval-reference field. The collector no longer reads that field. This records an operator configuration decision, not a claim of official Torn approval. Receiver identity, events permission, real-format verification, explicit live-payment opt-in, privacy configuration, first-run baseline and atomic event deduplication remain required. The desktop continues to use the shared HTTPS service; this server change does not require a new desktop release.

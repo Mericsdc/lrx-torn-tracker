@@ -22,7 +22,6 @@ function readConfig(env = process.env) {
     dbPath: env.PREMIUM_DB_PATH === ':memory:' ? ':memory:' : path.resolve(env.PREMIUM_DB_PATH || path.join(__dirname, '..', 'data', 'premium-' + mode + '.sqlite')),
     receiverKey: env.PREMIUM_RECEIVER_API_KEY || '',
     livePaymentsAllowed: bool(env.PREMIUM_ALLOW_LIVE_PAYMENTS),
-    approvalReference: String(env.PREMIUM_TORN_APPROVAL_REFERENCE || '').trim(),
     formatVerified: bool(env.PREMIUM_RECEIVER_FORMAT_VERIFIED),
     privacyContact: String(env.PREMIUM_PRIVACY_CONTACT || '').trim(),
     controllerName: String(env.PREMIUM_CONTROLLER_NAME || '').trim(),

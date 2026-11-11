@@ -12,6 +12,7 @@ The implementation therefore:
 
 - Derives a user's Torn ID from the official API's key owner, never a self-declared payment recipient or browser role flag.
 - Stores only structured verified transfer metadata; does not retain the raw HTML of accepted transfers or unrelated events.
+- Stores the operator's receiver API key only in a private server environment file for read-only transfer polling. Ordinary users' login keys remain transient and are not stored by the membership service.
 - Keeps ambiguous raw review text for at most the configured 30 days (1–90 allowed), then clears the text while preserving duplicate-prevention metadata. API login keys are used transiently, not persisted by the central service. Session tokens are stored as hashes; key fingerprints map known keys to owner IDs to coordinate request budgets. These linked identifiers are also private.
 - Restricts user history, balances and exports to that authenticated owner. Authorized operators can review records; administrator reads/mutations and manual grants are audited. No public member/payment list exists.
 - Provides free authenticated JSON/CSV access to the user's own records, even after premium expiry, and a verified erasure-assessment request queue. Submitting a request does **not** erase data or mark it completed. The operator must assess retention, disputes, duplicate prevention, backups and applicable rights, perform the appropriate deletion/anonymisation, and respond. Audit records are not advertised as anonymous.
@@ -26,11 +27,11 @@ The application's intended distinction is preserved:
 - Torn API data access does not depend on sending Xanax.
 - All current app features remain free.
 - Any later remuneration would concern the richness of additional application-produced analysis, not a sale of Torn Premium or a charge just to access the API.
-- Five additional analysis/personalization modules now use the server entitlement guard in the private test implementation. Existing features remain Free. This implementation does not authorize real collection: the operator must still obtain the previously required official approval.
+- Five additional analysis/personalization modules use the server entitlement guard. Existing features remain Free. In-game Xanax collection requires explicit operator opt-in and the technical prerequisites below.
 
 That product distinction is useful, but it is **not official permission** for the Xanax payment arrangement. The [official API acceptable-usage rules](https://www.torn.com/api.html) ask developers to contact Torn before charging users for usage; they also require clear disclosures covering storage, sharing, purpose, key storage/sharing and access level. They do not provide an explicit automatic exemption for charging only for insights. The [game rules](https://www.torn.com/rules.php) also need to be considered when describing an item-funded third-party service.
 
-Obtain explicit confirmation from Torn staff for this exact arrangement: **players send in-game Xanax to Ezlira [4037017] for optional application insight subscriptions while API data and existing features remain freely available**. No contact has been made on the user's behalf, and no permission has been inferred. Test mode is the default and real payments stay closed until that confirmation and the other operator prerequisites are configured.
+On 11 November 2026, the operator explicitly requested activation using only in-game Xanax and removal of the mandatory approval-reference field. That software requirement has been removed; no Torn approval or exemption is claimed, and no contact was made on the operator's behalf. Test mode and disabled collection remain the defaults for new installations. An operator must explicitly enable a verified receiver, supported event format and the other technical/privacy prerequisites.
 
 ## Optional advanced analysis data
 

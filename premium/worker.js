@@ -5,7 +5,6 @@ const { TornError } = require('./torn-client');
 function liveGate(config) {
   if (config.mode === 'test') return { allowed: true, livePayments: false, reason: 'TEST_MODE' };
   if (!config.livePaymentsAllowed) return { allowed: false, livePayments: false, reason: 'LIVE_PAYMENTS_DISABLED' };
-  if (!config.approvalReference) return { allowed: false, livePayments: false, reason: 'TORN_APPROVAL_REQUIRED' };
   if (!config.formatVerified) return { allowed: false, livePayments: false, reason: 'RECEIVER_FORMAT_VALIDATION_REQUIRED' };
   if (!config.receiverKey) return { allowed: false, livePayments: false, reason: 'RECEIVER_KEY_REQUIRED' };
   if (!config.controllerName || !config.privacyContact || !config.publicUrl || !config.recordRetentionPolicy) return { allowed: false, livePayments: false, reason: 'PRIVACY_NOTICE_NOT_CONFIGURED' };

@@ -128,7 +128,7 @@ test('Torn 429 and temporary failures back off durably without altering premium'
   const client = createTornClient(store, { fetchImpl: async () => new Response('{}', { status: 429, headers: { 'Retry-After': '120' } }) });
   await assert.rejects(client.identity('AbCdEfGh12345678'), (e) => e.code === 'UPSTREAM_RATE_LIMIT' && e.retryAfter === 120);
   let calls = 0;
-  const cfg = { ...PRIVACY, mode: 'live', receiverKey: 'AbCdEfGh12345678', livePaymentsAllowed: true, approvalReference: 'Fixture approval only', formatVerified: true };
+  const cfg = { ...PRIVACY, mode: 'live', receiverKey: 'AbCdEfGh12345678', livePaymentsAllowed: true, formatVerified: true };
   const worker = createWorker(store, { identity: async () => { calls++; throw new TornError('UPSTREAM_RATE_LIMIT', { retryAfter: 120 }); } }, cfg, { random: () => 0 });
   assert.equal((await worker.tick()).code, 'UPSTREAM_RATE_LIMIT');
   assert.equal(store.checkpoint().next_check_at, clock.now + 120);
@@ -141,7 +141,7 @@ test('initial live baseline ignores old transfers; missing history anchor pauses
   store.updateSettings(ADMIN, { revision: 1, enabled: true, reason: 'Enable fixture live adapter' });
   let page = [event('old_transfer', 2, 123456, clock.now - 1)];
   const client = { identity: async () => ({ tornId: 4037017, selections: ['events'] }), timestamp: async () => clock.now, page: async () => ({ events: page, _metadata: { links: { prev: null, next: null } } }), previousParams: () => null };
-  const config = { ...PRIVACY, mode: 'live', receiverKey: 'AbCdEfGh12345678', livePaymentsAllowed: true, approvalReference: 'Fixture approval only', formatVerified: true };
+  const config = { ...PRIVACY, mode: 'live', receiverKey: 'AbCdEfGh12345678', livePaymentsAllowed: true, formatVerified: true };
   const worker = createWorker(store, client, config, { random: () => 0 });
   assert.equal((await worker.tick()).status, 'ok'); assert.equal(store.entitlement(123456).active, false);
   clock.now += 61;
@@ -155,8 +155,25 @@ test('live acceptance is closed by default and cannot be enabled through adminis
   const service = createPremiumService(config, { filename: ':memory:', now: () => 1794331965, fetchImpl: async () => { throw new Error('No external calls expected'); } });
   t.after(() => service.close());
   assert.equal(liveGate(config).allowed, false);
-  await assert.rejects(service.adminAction(ADMIN, 'settings', { revision: 1, enabled: true, reason: 'Attempt to enable without approval' }), (e) => e.code === 'LIVE_PAYMENTS_DISABLED');
+  await assert.rejects(service.adminAction(ADMIN, 'settings', { revision: 1, enabled: true, reason: 'Attempt without operator opt-in' }), (e) => e.code === 'LIVE_PAYMENTS_DISABLED');
   assert.equal(service.store.settings().enabled, 0);
+});
+
+test('operator can enable Xanax collection without an approval reference; technical checks remain mandatory', async (t) => {
+  const config = readConfig({ PREMIUM_MODE: 'live', PREMIUM_DB_PATH: ':memory:', PREMIUM_ALLOW_LIVE_PAYMENTS: 'true',
+    PREMIUM_RECEIVER_FORMAT_VERIFIED: 'true', PREMIUM_RECEIVER_API_KEY: 'AbCdEfGh12345678',
+    PREMIUM_CONTROLLER_NAME: PRIVACY.controllerName, PREMIUM_PRIVACY_CONTACT: PRIVACY.privacyContact,
+    PREMIUM_PUBLIC_URL: PRIVACY.publicUrl, PREMIUM_RECORD_RETENTION_POLICY: PRIVACY.recordRetentionPolicy });
+  assert.equal(Object.hasOwn(config, 'approvalReference'), false);
+  assert.equal(liveGate(config).allowed, true);
+  for (const [property, missing, reason] of [
+    ['livePaymentsAllowed', false, 'LIVE_PAYMENTS_DISABLED'], ['formatVerified', false, 'RECEIVER_FORMAT_VALIDATION_REQUIRED'],
+    ['receiverKey', '', 'RECEIVER_KEY_REQUIRED'], ['privacyContact', '', 'PRIVACY_NOTICE_NOT_CONFIGURED']
+  ]) assert.equal(liveGate({ ...config, [property]: missing }).reason, reason);
+  const service = createPremiumService(config, { filename: ':memory:', fetchImpl: async () => { throw Error('No external call expected'); } });
+  t.after(() => service.close());
+  assert.equal((await service.adminAction(ADMIN, 'settings', { revision: 1, enabled: true, reason: 'Operator enables in-game Xanax payments' })).enabled, 1);
+  assert.equal(service.info().livePayments, true);
 });
 test('v1 normalization preserves event IDs; unverified inputs cannot be manually reassigned', (t) => {
   const { store } = fixture(t);

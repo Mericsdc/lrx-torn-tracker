@@ -5,7 +5,7 @@ const { createWorker } = require('../../premium/worker');
 const { createTornClient } = require('../../premium/torn-client');
 const { parseEvent } = require('../../premium/parser');
 const ADMIN = { tornId: 4037017, admin: true };
-const cfg = { mode: 'live', receiverKey: 'AbCdEfGh12345678', livePaymentsAllowed: true, approvalReference: 'Fixture only', formatVerified: true, controllerName: 'Fixture', privacyContact: 'test@example.invalid', publicUrl: 'https://example.invalid', recordRetentionPolicy: 'Fixture only' };
+const cfg = { mode: 'live', receiverKey: 'AbCdEfGh12345678', livePaymentsAllowed: true, formatVerified: true, controllerName: 'Fixture', privacyContact: 'test@example.invalid', publicUrl: 'https://example.invalid', recordRetentionPolicy: 'Fixture only' };
 function fixture(t) {
   const store = createStore(':memory:', { now: () => 2000 }); t.after(() => store.close());
   store.registerVerifiedUser(123456); store.updateSettings(ADMIN, { revision: 1, enabled: true, reason: 'Enable fixture adapter' });
@@ -14,6 +14,29 @@ function fixture(t) {
 }
 const event = (id, timestamp, pay = false) => ({ id, timestamp, event: pay ? 'You were sent 1x Xanax from <a href="profiles.php?XID=123456">Player</a>' : 'You won a race.' });
 const envelope = (events) => ({ events, _metadata: { links: { prev: null, next: null } } });
+
+test('live activation baselines old events, awards two new Xanax as 30 days, and ignores replay', async (t) => {
+  let now = 2000;
+  const store = createStore(':memory:', { mode: 'live', now: () => now }); t.after(() => store.close());
+  store.registerVerifiedUser(123456);
+  store.updateSettings(ADMIN, { revision: 1, enabled: true, reason: 'Operator enables verified receiver' });
+  const old = event('historical', 1999, true);
+  let events = [old];
+  const client = { identity: async () => ({ tornId: 4037017, selections: ['events'] }), timestamp: async () => now,
+    page: async () => envelope(events), previousParams: () => null };
+  const worker = createWorker(store, client, cfg);
+  assert.equal((await worker.tick()).applied, 0);
+  assert.equal(store.entitlement(123456).active, false);
+  now += 61;
+  events = [{ ...event('incoming_two_xanax', now, true), event: 'You were sent 2x Xanax from <a href="profiles.php?XID=123456">Player</a>' }, old];
+  assert.equal((await worker.tick()).applied, 1);
+  const expiry = store.entitlement(123456).expiresAt;
+  assert.equal(store.entitlement(123456).remainingDays, 30);
+  now += 61;
+  assert.equal((await worker.tick()).applied, 0);
+  assert.equal(store.entitlement(123456).expiresAt, expiry);
+  assert.equal(store.db.prepare('SELECT count(*) AS n FROM premium_transactions').get().n, 1);
+});
 
 test('inclusive pagination recovers other transfers sharing the oldest second', async (t) => {
   const store = fixture(t), requested = [];
