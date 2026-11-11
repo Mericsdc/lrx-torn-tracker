@@ -7,7 +7,7 @@ Public service: **https://lrxe8.com/torn-premium**. Health: `/health`; metadata:
 - Host: `lrx@100.73.60.83` (operator management address only).
 - User unit: `lrx-torn-premium-public.service`, enabled for startup, `Restart=on-failure`.
 - Runtime: existing Node 24; no new runtime dependencies.
-- Source: `/home/lrx/.local/share/lrx-torn-premium-public/current`, release `xanax-045ba501bddc`.
+- Source: `/home/lrx/.local/share/lrx-torn-premium-public/current`, release `xanax-00898c4db557`.
 - Private configuration: `/home/lrx/.local/share/lrx-torn-premium-public/service.env`.
 - Independent database: `/home/lrx/.local/share/lrx-torn-premium-public/state/premium-live.sqlite`, schema 4. No synthetic payment records were imported.
 - Listener: **127.0.0.1:3742**, reachable publicly only through the configured HTTPS route.
@@ -64,3 +64,9 @@ A private SQLite backup was taken before activation. A fenced initial checkpoint
 Only `premium/worker.js` and `premium/config.js` changed in the remote source release. Existing API source, state, routes and test service were preserved. The live environment has explicit collection opt-in and verified-format flags enabled. Both the environment and backups are private; no receiver secret is in Git or public metadata. Public membership/admin routes continue to require authentication, and public synthetic login stays disabled.
 
 Local validation: 73 passing tests, including operator activation without a reference, retained technical gates, initial historical exclusion, two-Xanax/30-day activation and replay deduplication. A post-activation new real payment has not been initiated for testing; only the official read-only API was used.
+
+## Item receive upgrade — v1.6.10
+
+Live payment collection now uses official structured Item receive (4103) logs instead of relying on notification quantities. A dedicated receiver key was verified and provisioned through the private server environment. The normal desktop login key was left unchanged. Existing pending notifications are automatically correlated with received-item log IDs, with atomic event/log duplicate prevention and the original price version. A real pending receipt was reconciled and an official-log replay added no further time. Customer IDs, receipt IDs, quantities and entitlement details are intentionally omitted from these public deployment notes.
+
+Verified player names are cached privately from official basic profiles. Connection and analysis notices no longer require separate acceptance checkboxes; explicit connection and optional pause controls remain. Metadata additions reuse schema 4, so there is no database migration. Source changes and v1.6.10 desktop assets are published separately; the live server update applies immediately. Private SQLite/environment backups were taken before switching source.

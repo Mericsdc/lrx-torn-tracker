@@ -1,5 +1,6 @@
 const crypto = require('node:crypto');
 const { openDatabase } = require('./database');
+const { parseEvent } = require('./parser');
 const DAY = 86400;
 const MAX_GRANT = 36500 * DAY;
 const fail = (code, status = 400) => { throw Object.assign(new Error(code), { code, status }); };
@@ -11,6 +12,16 @@ function createStore(filename, options = {}) {
   const one = (sql, ...args) => db.prepare(sql).get(...args);
   const all = (sql, ...args) => db.prepare(sql).all(...args);
   const run = (sql, ...args) => db.prepare(sql).run(...args);
+  function player(tornId) {
+    const row = one('SELECT value FROM premium_metadata WHERE key=?', 'player-name:' + tornId);
+    let cached = null; try { cached = row ? JSON.parse(row.value) : null; } catch {}
+    return { tornId, name: cached?.name || (tornId === 4037017 ? 'Ezlira' : mode === 'test' ? 'Test player' : String(tornId)), nameCheckedAt: cached?.checkedAt || null };
+  }
+  function cachePlayerName(tornId, name) {
+    if (!positiveId(tornId) || typeof name !== 'string' || !name.trim() || name.length > 64 || /[\u0000-\u001f\u007f]/.test(name)) fail('PLAYER_NAME_SCHEMA');
+    run('INSERT INTO premium_metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', 'player-name:' + tornId, JSON.stringify({ name: name.trim(), checkedAt: now() }));
+    return player(tornId);
+  }
   const settings = () => one('SELECT * FROM premium_settings WHERE id=1');
   const checkpoint = () => one('SELECT * FROM premium_checkpoint WHERE id=1');
   const audit = (actor, action, target, reason, before, after) => run(
@@ -59,8 +70,8 @@ function createStore(filename, options = {}) {
       return one('SELECT * FROM premium_users WHERE torn_id=?', tornId);
     });
   }
-  function ingest(parsed, source = 'torn-v2-events', leaseOwner = null) {
-    return transaction(() => {
+  function ingest(parsed, source = 'torn-v2-events', leaseOwner = null) { return transaction(() => ingestRecord(parsed, source, leaseOwner)); }
+  function ingestRecord(parsed, source, leaseOwner) {
       if (leaseOwner && !ownsLease(leaseOwner)) fail('LEASE_LOST', 409);
       const previous = one('SELECT * FROM premium_transactions WHERE event_id=?', parsed.eventId);
       if (previous) {
@@ -90,11 +101,51 @@ function createStore(filename, options = {}) {
         ON CONFLICT(torn_id) DO UPDATE SET available_xanax=available_xanax+excluded.available_xanax,total_received=total_received+excluded.total_received,updated_at=excluded.updated_at`, parsed.senderId, parsed.quantity, parsed.quantity, now());
       if (status === 'pending_identity') applyTransaction(one('SELECT * FROM premium_transactions WHERE id=?', id));
       return { id, status: one('SELECT status FROM premium_transactions WHERE id=?', id).status };
-    });
   }
   function historyFor(tornId, limit = 100) {
     return all(`SELECT event_id AS eventId,item_id AS itemId,item_name AS itemName,quantity,premium_days AS premiumDays,status,reason,event_timestamp AS eventTimestamp,processed_at AS processedAt,price_version_id AS priceVersion
       FROM premium_transactions WHERE torn_sender_id=? ORDER BY event_timestamp DESC,id DESC LIMIT ?`, tornId, Math.min(100, limit));
+  }
+  function ingestItemLog(parsed, leaseOwner) {
+    return transaction(() => {
+      if (leaseOwner && !ownsLease(leaseOwner)) fail('LEASE_LOST', 409);
+      const proofKey = 'payment-log:' + parsed.logId;
+      const proof = one('SELECT value FROM premium_metadata WHERE key=?', proofKey);
+      if (proof) {
+        const previous = JSON.parse(proof.value);
+        return { status: previous.hash === parsed.payloadHash ? 'duplicate' : 'conflict', id: previous.id };
+      }
+      const baseline = checkpoint().baseline_at;
+      if (baseline == null) fail('CHECKPOINT_REQUIRED', 409);
+      if (parsed.timestamp <= baseline) return { status: 'baseline' };
+      const candidates = all("SELECT * FROM premium_transactions WHERE source='torn-v2-events' AND event_timestamp BETWEEN ? AND ? AND status IN ('review','pending_identity','applied') ORDER BY (status='applied') DESC,id", parsed.timestamp - 2, parsed.timestamp + 2)
+        .filter((row) => {
+          if (one('SELECT 1 FROM premium_metadata WHERE key=?', 'payment-event:' + row.event_id)) return false;
+          let sender = row.torn_sender_id;
+          if (!sender && row.event_text) { try { sender = parseEvent({ id: row.event_id, timestamp: row.event_timestamp, event: row.event_text }, now()).senderId; } catch {} }
+          return sender === parsed.senderId && (row.quantity == null || row.quantity === parsed.quantity);
+        });
+      let row = candidates[0], result;
+      if (!row) result = ingestRecord(parsed, 'torn-v2-item-log', leaseOwner);
+      else if (row.parsed_verified) {
+        result = { status: row.status === 'applied' ? 'duplicate' : row.status === 'pending_identity' && applyTransaction(row) ? 'applied' : row.status, id: row.id };
+      } else {
+        const rate = one('SELECT * FROM premium_price_versions WHERE effective_at<=? ORDER BY effective_at DESC,id DESC LIMIT 1', parsed.timestamp);
+        if (!rate) fail('PRICE_VERSION_MISSING', 409);
+        const seconds = parsed.quantity * (rate.days_per_xanax * DAY / rate.xanax_price);
+        const review = seconds > MAX_GRANT || parsed.senderId === settings().payment_receiver_torn_id;
+        run("UPDATE premium_transactions SET source='torn-v2-item-log',torn_sender_id=?,item_id=206,item_name='Xanax',quantity=?,premium_days=?,price_version_id=?,status=?,reason=?,event_timestamp=?,parsed_verified=1,event_text='' WHERE id=?",
+          parsed.senderId, parsed.quantity, seconds / DAY, rate.id, review ? 'review' : 'pending_identity', review ? 'duration_or_self_transfer' : null, parsed.timestamp, row.id);
+        run('INSERT INTO premium_payment_balances(torn_id,available_xanax,total_received,updated_at) VALUES(?,?,?,?) ON CONFLICT(torn_id) DO UPDATE SET available_xanax=available_xanax+excluded.available_xanax,total_received=total_received+excluded.total_received,updated_at=excluded.updated_at', parsed.senderId, parsed.quantity, parsed.quantity, now());
+        row = one('SELECT * FROM premium_transactions WHERE id=?', row.id);
+        result = { status: !review && applyTransaction(row) ? 'applied' : row.status, id: row.id };
+        audit(null, 'payment.automatically_resolved', row.event_id, 'Official Item receive log supplied the verified sender, item and quantity', null, { logId: parsed.logId, quantity: parsed.quantity });
+      }
+      if (!result.id) return result;
+      run('INSERT INTO premium_metadata(key,value) VALUES(?,?)', proofKey, JSON.stringify({ id: result.id, hash: parsed.payloadHash }));
+      if (candidates[0]) run('INSERT INTO premium_metadata(key,value) VALUES(?,?)', 'payment-event:' + candidates[0].event_id, parsed.logId);
+      return result;
+    });
   }
   function updateSettings(actor, body) {
     assertAdmin(actor);
@@ -200,7 +251,7 @@ function createStore(filename, options = {}) {
     });
   }
   function exportData(tornId) {
-    return { exportedAt: now(), mode, account: one('SELECT torn_id,verified_at,created_at FROM premium_users WHERE torn_id=?', tornId),
+    return { exportedAt: now(), mode, account: { ...one('SELECT torn_id,verified_at,created_at FROM premium_users WHERE torn_id=?', tornId), name: player(tornId).name },
       subscription: entitlement(tornId), balance: one('SELECT * FROM premium_payment_balances WHERE torn_id=?', tornId) || null,
       transactions: all('SELECT event_id,item_id,item_name,quantity,premium_days,status,reason,event_timestamp,processed_at,price_version_id FROM premium_transactions WHERE torn_sender_id=? ORDER BY id', tornId),
       privacyRequests: all('SELECT id,requested_at,status,updated_at,resolution FROM premium_privacy_requests WHERE torn_id=? ORDER BY id', tornId) };
@@ -210,10 +261,10 @@ function createStore(filename, options = {}) {
     if (!['all', 'active', 'expired', 'inactive', 'permanent'].includes(filter)) fail('INVALID_MEMBER_FILTER');
     const page = body.page == null ? 1 : body.page, limit = 25;
     if (!Number.isSafeInteger(page) || page < 1 || page > 100000) fail('INVALID_PAGE');
-    const base = ' FROM premium_users u LEFT JOIN premium_subscriptions s ON s.user_id=u.id LEFT JOIN premium_permanent_members p ON p.torn_id=u.torn_id';
+    const base = " FROM premium_users u LEFT JOIN premium_subscriptions s ON s.user_id=u.id LEFT JOIN premium_permanent_members p ON p.torn_id=u.torn_id LEFT JOIN premium_metadata n ON n.key='player-name:'||u.torn_id";
     const active = "(p.torn_id IS NOT NULL OR (s.status='active' AND s.expires_at>?))";
     let where = ' WHERE 1=1', args = [];
-    if (search) { where += ' AND (CAST(u.torn_id AS TEXT) LIKE ? OR (?=1 AND u.torn_id=4037017))'; args.push('%' + search + '%', 'ezlira'.includes(search.toLowerCase()) ? 1 : 0); }
+    if (search) { where += " AND (CAST(u.torn_id AS TEXT) LIKE ? OR json_extract(n.value,'$.name') LIKE ? OR (?=1 AND u.torn_id=4037017))"; args.push('%' + search + '%', '%' + search + '%', 'ezlira'.includes(search.toLowerCase()) ? 1 : 0); }
     if (filter === 'active') { where += ' AND ' + active; args.push(now()); }
     if (filter === 'permanent') where += ' AND p.torn_id IS NOT NULL';
     if (filter === 'expired') { where += ' AND p.torn_id IS NULL AND s.expires_at<=?'; args.push(now()); }
@@ -221,10 +272,10 @@ function createStore(filename, options = {}) {
     const total = one('SELECT count(*) AS n' + base + where, ...args).n;
     const rows = all('SELECT u.torn_id,u.created_at' + base + where + ' ORDER BY (p.torn_id IS NOT NULL) DESC,u.id DESC LIMIT ? OFFSET ?', ...args, limit, (page - 1) * limit);
     const counts = one('SELECT count(*) AS total, sum(CASE WHEN ' + active + ' THEN 1 ELSE 0 END) AS active, sum(CASE WHEN p.torn_id IS NOT NULL THEN 1 ELSE 0 END) AS permanent' + base, now());
-    return { members: rows.map((row) => ({ ...entitlement(row.torn_id), name: row.torn_id === 4037017 ? 'Ezlira' : mode === 'test' && row.torn_id >= 9000000000 ? 'Test player' : 'Torn player', joinedAt: row.created_at })), page, pageSize: limit, total, pages: Math.max(1, Math.ceil(total / limit)), counts: { total: counts.total, active: counts.active || 0, permanent: counts.permanent || 0 } };
+    return { members: rows.map((row) => ({ ...entitlement(row.torn_id), ...player(row.torn_id), joinedAt: row.created_at })), page, pageSize: limit, total, pages: Math.max(1, Math.ceil(total / limit)), counts: { total: counts.total, active: counts.active || 0, permanent: counts.permanent || 0 } };
   }
   return {
-    db, transaction, mode, now, settings, checkpoint, entitlement, registerVerifiedUser, ingest, historyFor,
+    db, transaction, mode, now, settings, checkpoint, entitlement, registerVerifiedUser, ingest, ingestItemLog, historyFor, player, cachePlayerName,
     balance: (id) => one('SELECT * FROM premium_payment_balances WHERE torn_id=?', id) || { torn_id: id, available_xanax: 0, total_received: 0 },
     updateSettings, adjustSubscription, review, acquireLease, ownsLease, releaseLease, checkpointUpdate, recordError, apiBudget, rebaseline,
     expire: () => run("UPDATE premium_subscriptions SET status='expired',updated_at=? WHERE status='active' AND expires_at<=?", now(), now()),

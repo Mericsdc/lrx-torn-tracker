@@ -38,7 +38,7 @@ async function desktop(tornId) {
   });
   await page.goto(base + '/#premium'); await page.locator('#auth-key').waitFor();
   await page.evaluate(() => { document.querySelector('#auth-screen').hidden = true; document.body.classList.remove('auth-open'); showView('premium'); });
-  await page.locator('#premium-consent').check(); await page.locator('[data-premium-action="connect"]').click();
+  await page.locator('[data-premium-action="connect"]').click();
   await page.waitForFunction(() => !!window.PremiumAccess?.snapshot()?.account);
   return { page, base, context };
 }
@@ -74,7 +74,9 @@ async function capture(page, name) { await page.evaluate(() => window.scrollTo({
   service.store.adjustSubscription({ tornId: 4037017, admin: true }, { torn_id: 123456, days: 30, reason: 'Feature UI fixture membership' });
   await member.page.evaluate(() => PremiumAccess.status(true));
   let slot = await show(member.page, 'appearance_custom_themes');
-  await slot.locator('[name="analysis-consent"]').check(); await slot.locator('[data-fx-action="consent"]').click(); await slot.locator('[data-fx-form]').waitFor();
+  await slot.locator('[data-fx-form]').waitFor();
+  assert.equal(await slot.locator('[name="analysis-consent"]').count(),0);
+  assert.equal(await slot.locator('.fx-data-notice').isVisible(),true);
   await slot.locator('[data-fx-preset="aurora"]').click(); await slot.locator('[name="density"]').selectOption('compact');
   await save(slot, 'Aurora desk'); await member.page.waitForFunction(() => document.documentElement.dataset.premiumAppearance === 'true');
   assert.equal(await member.page.evaluate(() => document.documentElement.dataset.density), 'compact');
@@ -147,5 +149,5 @@ async function capture(page, name) { await page.evaluate(() => window.scrollTo({
     await LRXAdvanced.background(); return qaNotifications.filter((n) => n.tag.startsWith('advanced:')).length;
   });
   assert.equal(afterReload, 2, 'restored rule remains functional when its cooldown expires');
-  assert.deepEqual(errors, []); console.log(JSON.stringify({ ok: true, checks: ['Free travel/capacity/themes/scripts', 'lazy advanced bundle', 'server rejects forged membership', 'analysis consent', 'custom theme profiles and one-click switching', 'travel scenarios/history', 'combined filters/player comparison', 'API event progress', 'merit budget/plan', 'escaped profile names', '390/640/1440px', 'expiry and renewal', 'outage fails closed without blocking Free', 'TR/EN', 'native rule notification', 'rules and deduplication survive renderer restart'], screenshots: output }));
+  assert.deepEqual(errors, []); console.log(JSON.stringify({ ok: true, checks: ['Free travel/capacity/themes/scripts', 'lazy advanced bundle', 'server rejects forged membership', 'informational analysis notice without acceptance', 'custom theme profiles and one-click switching', 'travel scenarios/history', 'combined filters/player comparison', 'API event progress', 'merit budget/plan', 'escaped profile names', '390/640/1440px', 'expiry and renewal', 'outage fails closed without blocking Free', 'TR/EN', 'native rule notification', 'rules and deduplication survive renderer restart'], screenshots: output }));
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => { if (browser) await browser.close(); for (const c of children) c.kill(); await new Promise((r) => server.close(r)); await service.close(); });

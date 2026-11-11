@@ -86,7 +86,7 @@ const I18N = {
   'auth.showHide': ['Göster / gizle', 'Show / hide'],
   'auth.login': ['Giriş Yap', 'Log In'],
   'auth.getKey': ['Limited API key oluştur →', 'Create a Limited API key →'],
-  'auth.privacy': ["Key bu bilgisayarda saklanır; Torn API ve ayrı key yoksa FFScouter için kullanılır. İsteğe bağlı Premium bağlantısında, ayrıca onayınızla üyelik servisine yalnızca hesap doğrulaması için gönderilir; orada saklanmaz.", 'Your key is stored on this computer and used with Torn API and, unless separately configured, FFScouter. Optional Premium connection sends it to the membership service only after your separate acknowledgement, for account verification; it is not stored there.'],
+  'auth.privacy': ["Key bu bilgisayarda saklanır; Torn API ve ayrı key yoksa FFScouter için kullanılır. Premium sayfasındaki Hesabı bağla düğmesini kullandığınızda üyelik servisine yalnızca hesap doğrulaması için gönderilir; orada saklanmaz.", 'Your key is stored on this computer and used with Torn API and, unless separately configured, FFScouter. Using Connect account on the Premium page sends it to the membership service only for account verification; it is not stored there.'],
   'auth.creditTitle': ['Torn profili', 'Torn profile'],
   // Torn API kullanım koşulları (ToS) tablosu — key'in girildiği ekranda gösterilmesi gerekir
   'tos.title': ['API kullanım koşulları (Torn ToS)', 'API terms of use (Torn ToS)'],

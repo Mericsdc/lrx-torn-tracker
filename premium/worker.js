@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const { normalizeEvents, parseEvent } = require('./parser');
 const { TornError } = require('./torn-client');
+const { collectItemLogs } = require('./payment-logs');
 
 function liveGate(config) {
   if (config.mode === 'test') return { allowed: true, livePayments: false, reason: 'TEST_MODE' };
@@ -18,6 +19,14 @@ function createWorker(store, client, config, { random = Math.random, maxPages = 
   async function collectLive(checkpoint) {
     const identity = await client.identity(config.receiverKey);
     if (identity.tornId !== store.settings().payment_receiver_torn_id) throw new TornError('RECEIVER_ID_MISMATCH', { retryable: false });
+    if (identity.itemLogAccess === false) throw new TornError('ITEM_RECEIVE_LOG_PERMISSION_REQUIRED', { retryable: false });
+    if (identity.itemLogAccess === true) {
+      const serverTime = await client.timestamp(config.receiverKey);
+      const itemLogs = await collectItemLogs(store, client, config.receiverKey, checkpoint, serverTime, owner, maxPages);
+      return { events: [], itemLogs, newest: null, serverTime };
+    }
+    // Legacy in-memory adapters use explicit-quantity event fixtures. The real
+    // Torn client always reports itemLogAccess and uses structured receive logs.
     if (!identity.selections.includes('events')) throw new TornError('EVENTS_PERMISSION_REQUIRED', { retryable: false });
     const serverTime = await client.timestamp(config.receiverKey);
     const events = [], seen = new Set();
@@ -86,17 +95,26 @@ function createWorker(store, client, config, { random = Math.random, maxPages = 
         if (result.status === 'conflict') throw new TornError('EVENT_ID_CHANGED');
         if (result.status === 'applied') applied++;
       }
+      for (const log of (snapshot.itemLogs || []).sort((a, b) => a.timestamp - b.timestamp)) {
+        const result = store.ingestItemLog(log, owner);
+        if (result.status === 'conflict') throw new TornError('EVENT_ID_CHANGED');
+        if (result.status === 'applied') applied++;
+      }
+      if (snapshot.itemLogs) store.transaction(() => {
+        if (!store.ownsLease(owner)) throw new TornError('LEASE_LOST');
+        store.db.prepare('INSERT INTO premium_metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('item-log-watermark', String(snapshot.serverTime));
+      });
       if (snapshot.batches) store.transaction(() => {
         if (!store.ownsLease(owner)) throw new TornError('LEASE_LOST');
         for (const id of snapshot.batches) store.db.prepare('UPDATE premium_test_batches SET consumed_at=? WHERE id=? AND consumed_at IS NULL').run(store.now(), id);
       });
       store.checkpointUpdate(owner, { watermark_at: snapshot.serverTime, anchor_event_id: snapshot.newest?.id || before.anchor_event_id, last_checked_at: store.now(), last_success_at: store.now(), next_check_at: store.now() + cfg.check_interval, consecutive_failures: 0, last_error_code: null, gap_detected: 0 });
-      return { status: 'ok', applied, observed: parsed.length };
+      return { status: 'ok', applied, observed: parsed.length + (snapshot.itemLogs?.length || 0) };
     } catch (error) {
       const code = /^[A-Z0-9_]+$/.test(error.code || '') ? error.code : 'PAYMENT_CHECK_FAILED';
       if (store.ownsLease(owner)) {
         const failures = Math.min(20, before.consecutive_failures + 1);
-        const gap = ['EVENT_HISTORY_GAP', 'EVENT_BOUNDARY_SATURATED', 'PAGINATION_STALLED', 'EVENT_ORDER', 'EVENT_ID_CHANGED'].includes(code);
+        const gap = ['EVENT_HISTORY_GAP', 'EVENT_BOUNDARY_SATURATED', 'PAGINATION_STALLED', 'EVENT_ORDER', 'EVENT_ID_CHANGED', 'ITEM_LOG_HISTORY_GAP', 'ITEM_LOG_ORDER', 'ITEM_LOG_PAGINATION'].includes(code);
         const wait = Math.min(3600, Math.max(error.retryAfter || 0, cfg.check_interval * 2 ** Math.min(failures - 1, 5))) + Math.floor(random() * 5);
         store.checkpointUpdate(owner, { last_checked_at: store.now(), next_check_at: store.now() + wait, consecutive_failures: failures, last_error_code: code, gap_detected: gap ? 1 : 0 });
         if (error.retryable === false) store.transaction(() => {

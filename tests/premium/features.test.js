@@ -50,14 +50,16 @@ test('HTTP denies all paid operations to Free users, ignores forged flags, and r
   assert.equal(status.freeApiAccess, true); assert.equal(status.livePayments, false);
 });
 
-test('separate analysis consent is required and may be revoked without deleting profiles', async (t) => {
+test('analysis needs no acceptance checkbox; pausing preserves profiles', async (t) => {
   const f = await fixture(t);
-  assert.equal((await f.call('/v1/features/run', { featureId: 'appearance_custom_themes' }, f.admin)).data.code, 'FEATURE_DATA_CONSENT_REQUIRED');
+  const direct = await f.call('/v1/features/run', { featureId: 'appearance_custom_themes' }, f.admin);
+  assert.equal(direct.status, 200);
+  assert.equal((await f.call('/v1/me', undefined, f.admin)).data.featureAccess.analysisEnabled, true);
   await f.enable();
   const saved = await f.call('/v1/features/save', { featureId: 'appearance_custom_themes', revision: 0, name: 'Aurora', params: { preset: 'aurora' } }, f.user);
   assert.equal(saved.status, 200);
   await f.call('/v1/features/consent', { accepted: false }, f.user);
-  assert.equal((await f.call('/v1/features/run', { featureId: 'appearance_custom_themes', profileId: saved.data.savedId }, f.user)).data.code, 'FEATURE_DATA_CONSENT_REQUIRED');
+  assert.equal((await f.call('/v1/features/run', { featureId: 'appearance_custom_themes', profileId: saved.data.savedId }, f.user)).data.code, 'FEATURE_ANALYSIS_PAUSED');
   const exported = (await f.call('/v1/me/data', undefined, f.user)).data.advancedFeatures;
   assert.equal(exported.modules.appearance_custom_themes.workspace.profiles.length, 1);
   assert.equal(exported.consent, null);
@@ -189,7 +191,7 @@ test('recorded observations expire by retention policy even when the user stops 
   assert.equal(f.service.store.db.prepare('SELECT count(*) n FROM premium_feature_observations').get().n, 0);
 });
 
-test('only active, opted-in and granted saved notification profiles resume after reconnect', async (t) => {
+test('only active, unpaused and granted saved notification profiles resume after reconnect', async (t) => {
   const f = await fixture(t); await f.enable();
   await f.call('/v1/features/save', { featureId: 'helpers_advanced', revision: 0, name: 'Energy alert', params: { rule: { enabled: true, metric: 'energyPercent', threshold: 80 } } }, f.user);
   let access = (await f.call('/v1/me', undefined, f.user)).data.featureAccess;

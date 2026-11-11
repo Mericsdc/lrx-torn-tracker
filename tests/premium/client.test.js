@@ -4,7 +4,7 @@ const { createPremiumClient } = require('../../premium-client');
 const token = 'a'.repeat(43);
 const reply = (data, status = 200) => new Response(JSON.stringify(data), { status });
 
-test('desktop refuses arbitrary insecure destinations and does not transmit keys without opt-in', async () => {
+test('desktop refuses arbitrary insecure destinations and does not transmit keys without the visible connection notice', async () => {
   let calls = 0;
   const disabled = createPremiumClient(() => 'AbCdEfGh12345678', { env: {}, fetchImpl: async () => { calls++; } });
   assert.equal((await disabled.status()).configured, false);
@@ -15,7 +15,7 @@ test('desktop refuses arbitrary insecure destinations and does not transmit keys
     assert.equal((await invalidPath.status()).code, 'PREMIUM_SERVICE_URL_INVALID');
   }
   const bridge = createPremiumClient(() => 'AbCdEfGh12345678', { env: { TORN_PREMIUM_SERVICE_URL: 'https://premium.example' }, fetchImpl: async () => { calls++; return reply({ mode: 'live' }); } });
-  await assert.rejects(bridge.connect({ consent: false }), (e) => e.code === 'PREMIUM_CONSENT_REQUIRED');
+  await assert.rejects(bridge.connect({ consent: false }), (e) => e.code === 'PREMIUM_NOTICE_REQUIRED');
   await bridge.status(); assert.equal(calls, 1);
   await assert.rejects(bridge.proxy('https://evil.example', 'GET'), (e) => e.code === 'NOT_FOUND');
 });
@@ -27,7 +27,7 @@ test('test bridge never sends saved Torn keys; session secrets stay out of rende
     if (url.pathname === '/v1/auth/test') return reply({ mode: 'test', token, tornId: 123456 });
     return reply({ mode: 'test', account: { tornId: 123456, admin: false } });
   } });
-  const status = await bridge.connect({ consent: true });
+  const status = await bridge.connect({ noticeVersion: 1 });
   assert.equal(status.connected, true); assert.equal(JSON.stringify(status).includes(token), false);
   assert.equal(bodies.join().includes('AbCdEfGh12345678'), false); assert.ok(bodies.includes('{"tornId":123456}'));
 });

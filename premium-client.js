@@ -62,7 +62,7 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
       const matches = remembered && (remembered.baseUrl || remembered.origin) === base.href.replace(/\/$/, '') && remembered.test === test && remembered.fingerprint === fingerprint() && remembered.testId === (test ? Number(env.TORN_PREMIUM_TEST_TORN_ID) : null);
       if (remembered && !matches) setRemembered(null);
       if (matches && Date.now() >= retryAt) {
-        if (!reconnecting) reconnecting = connect({ consent: true, remember: true }, { automatic: true }).catch((e) => { retryAt = Date.now() + 60000; throw e; }).finally(() => { reconnecting = null; });
+        if (!reconnecting) reconnecting = connect({ noticeVersion: 1, remember: true }, { automatic: true }).catch((e) => { retryAt = Date.now() + 60000; throw e; }).finally(() => { reconnecting = null; });
         return reconnecting;
       }
     }
@@ -73,7 +73,9 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
     return { ...data, configured: true, connected: !!session, serviceOrigin: base.origin, serviceUrl: base.href.replace(/\/$/, '') };
   }
   async function connect(body, { automatic = false } = {}) {
-    if (body.consent !== true) throw bridgeError('PREMIUM_CONSENT_REQUIRED', 400);
+    // Connecting after the visible disclosure is the action; no separate acceptance checkbox.
+    // Older clients may still send consent=true during their upgrade.
+    if (body.noticeVersion !== 1 && body.consent !== true) throw bridgeError('PREMIUM_NOTICE_REQUIRED', 400);
     reset({ forget: !automatic });
     const stamp = generation, keyFingerprint = fingerprint();
     const info = await request('/v1/info');

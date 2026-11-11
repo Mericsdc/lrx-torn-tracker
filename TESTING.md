@@ -35,6 +35,6 @@ node tests/feature-modules-ui-smoke.js
 node tests/electron-smoke.js
 ```
 
-Windows QA uses the installed Chrome executable. The Electron check starts the packaged app with a separate temporary profile. Every payment/feature test uses synthetic game observations and isolated databases; no real Xanax is sent or collected. UI checks cover actual desktop-to-service requests, Free/expired/renewed states, consent, editable themes, saved profiles, five modules, escaping, responsive layouts (390, 640, 1440 pixels), and transport failure. Screenshots and temporary QA files are outside Git and update payloads.
+Windows QA uses the installed Chrome executable. The Electron check starts the packaged app with a separate temporary profile. Every payment/feature test uses synthetic game observations and isolated databases; no real Xanax is sent or collected. UI checks cover actual desktop-to-service requests, Free/expired/renewed states, informational notices and pause preferences, editable themes, saved profiles, five modules, escaping, responsive layouts (390, 640, 1440 pixels), and transport failure. Screenshots and temporary QA files are outside Git and update payloads.
 
 The GitHub test workflow is configured in `.github/workflows/tests.yml`. It has not been run on GitHub as part of this change. The public service deployment and external HTTPS checks are recorded in `premium/PUBLIC-DEPLOYMENT.md`.

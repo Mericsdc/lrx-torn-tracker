@@ -30,13 +30,12 @@ async function desktop(tornId) {
   await page.locator('#auth-key').waitFor({ state: 'visible' });
   // The app login is independent; membership proof is exercised through the real bridge below.
   await page.evaluate(() => { document.querySelector('#auth-screen').hidden = true; document.body.classList.remove('auth-open'); showView('premium'); });
-  await page.locator('#premium-consent').waitFor();
+  await page.locator('[data-premium-action="connect"]').waitFor();
+  assert.equal(await page.locator('#premium-consent').count(), 0);
   assert.equal(await page.locator('.premium-notice').count(), 0);
   assert.ok((await page.locator('#premium-content').textContent()).includes('Test workspace'));
   await page.locator('[data-premium-action="connect"]').click();
-  await page.waitForFunction(() => document.querySelector('#premium-feedback').textContent.includes('Acknowledge'));
-  await page.locator('#premium-consent').check(); await page.locator('[data-premium-action="connect"]').click();
-  await page.waitForFunction(() => !document.querySelector('#premium-consent'));
+  await page.waitForFunction(() => !!window.PremiumAccess?.snapshot()?.account);
   return { page, base, errors, context };
 }
 (async () => {
@@ -54,7 +53,9 @@ async function desktop(tornId) {
   assert.equal(await admin.page.locator('[data-test-records]').textContent(), '1');
   assert.equal(service.store.entitlement(tornId).expiresAt, firstExpiry);
   assert.equal(service.store.settings().enabled, 0);
+  service.store.cachePlayerName(tornId, 'ExamplePlayer');
   const user = await desktop(tornId);
+  assert.ok((await user.page.locator('.pm-card-bottom').textContent()).includes('ExamplePlayer'));
   assert.equal(await user.page.locator('[data-premium-tab="members"]').count(), 0);
   assert.equal((await user.page.request.get(user.base + '/api/premium/admin')).status(), 403);
   assert.ok((await user.page.locator('.pm-card-number').textContent()).includes('30'));
@@ -71,8 +72,8 @@ async function desktop(tornId) {
   // Admin review text must be visible as text, never executed or inserted as markup.
   service.store.ingest(parseEvent({ id: 'xss_review', timestamp: Math.floor(Date.now() / 1000), event: 'You were sent 1x Xanax <img src=x onerror="window.premiumXSS=true">' }));
   await admin.page.locator('[data-premium-tab="payments"]').click();
-  await admin.page.locator('tr').filter({ hasText: 'xss_review' }).locator('[data-review-id]').click();
-  assert.ok((await admin.page.locator('.pm-review-text').textContent()).includes('<img'));
+  await admin.page.locator('tr').filter({ hasText: 'xss_review' }).waitFor();
+  assert.equal(await admin.page.locator('[data-review-id],[data-premium-form="review"]').count(),0);
   assert.equal(await admin.page.locator('#premium-content img').count(), 0);
   assert.equal(await admin.page.evaluate(() => !!window.premiumXSS), false);
   const backgrounds = [];
@@ -99,10 +100,10 @@ async function desktop(tornId) {
   assert.ok(overflow.scroll <= overflow.width + 1, JSON.stringify(overflow));
   await user.page.locator('[data-lang="tr"]').click();
   assert.ok((await user.page.locator('#premium-content').textContent()).includes('Test ortamı'));
-  await user.page.locator('[data-premium-action="disconnect"]').click(); await user.page.locator('#premium-consent').waitFor();
+  await user.page.locator('[data-premium-action="disconnect"]').click(); await user.page.locator('[data-premium-action="connect"]').waitFor();
   assert.ok((await user.page.locator('.pm-card-number').textContent()).includes('—'));
   assert.deepEqual(admin.errors, []); assert.deepEqual(user.errors, []);
-  console.log(JSON.stringify({ ok: true, assertions: ['real desktop-to-service authentication', 'opt-in required', 'test mode never sends Torn keys', 'protected founder lifetime membership', 'in-app 2-Xanax test awards 30 days', 'same-event replay awards zero and retains one record', 'member search and remaining days', 'private history and admin isolation', 'safe review text', 'five themes', '640px layout', 'TR/EN', 'disconnect clears identity'], screenshots: output }));
+  console.log(JSON.stringify({ ok: true, assertions: ['real desktop-to-service authentication', 'visible notice without an acceptance checkbox', 'test mode never sends Torn keys', 'protected founder lifetime membership', 'in-app 2-Xanax test awards 30 days', 'same-event replay awards zero and retains one record', 'member search and remaining days', 'private history and admin isolation', 'informational payment ledger without approval controls', 'five themes', '640px layout', 'TR/EN', 'disconnect clears identity'], screenshots: output }));
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => {
   await browser?.close();
   for (const child of children) { child.kill(); await new Promise((r) => child.exitCode !== null ? r() : child.once('exit', r)); }

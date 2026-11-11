@@ -55,6 +55,7 @@ function parseEvent(event, now = Math.floor(Date.now() / 1000)) {
   const text = typeof raw === 'string' ? raw : '';
   const result = { eventId: id, timestamp, text: text.slice(0, 4096), payloadHash: hash(JSON.stringify([id, timestamp, raw])), verified: false, status: 'review', reason: 'unrecognized_transfer', senderId: null, itemId: null, itemName: null, quantity: null };
   if (!text || text.length > 4096) return { ...result, reason: 'invalid_event_text' };
+  if (/^You sent\b/.test(text)) return { ...result, status: 'ignored', reason: 'outgoing_transfer' };
   if (!/\b(?:sent|received)\b/i.test(text)) return { ...result, status: 'ignored', reason: 'not_a_transfer' };
   if (!/\bXanax\b/.test(text) && !/^You were sent /.test(text) && !/<\/a> sent you /.test(text)) return { ...result, status: 'ignored', reason: 'not_a_transfer' };
   const anchors = [...text.matchAll(/<a\s+([^<>]+)>([^<>]{1,200})<\/a>/gi)];
@@ -64,6 +65,7 @@ function parseEvent(event, now = Math.floor(Date.now() / 1000)) {
   if (!senderId) return { ...result, reason: 'invalid_sender_link' };
   const plain = text.slice(0, anchor.index) + '\u0000SENDER\u0000' + text.slice(anchor.index + anchor[0].length);
   if (/[<>]/.test(plain)) return { ...result, reason: 'unsupported_markup' };
+  if (/^You were sent some Xanax from \u0000SENDER\u0000\.?$/.test(plain)) return { ...result, senderId, itemId: XANAX_ID, itemName: 'Xanax', reason: 'quantity_missing' };
   const match = plain.match(/^You were sent ([\d,]+)\s*x\s+(.+?) from \u0000SENDER\u0000\.?$/)
     || plain.match(/^\u0000SENDER\u0000 sent you ([\d,]+)\s*x\s+(.+?)\.?$/);
   if (!match) return { ...result, reason: 'unrecognized_transfer' };

@@ -14,6 +14,7 @@ async function fixture(t, live = false, publicUrl = 'https://premium.example.inv
     upstreamCalls++;
     assert.equal(new URL(url).origin, 'https://api.torn.com');
     assert.equal(options.redirect, 'error');
+    if (new URL(url).pathname.endsWith('/basic')) return new Response(JSON.stringify({ profile: { id: 123456, name: 'VerifiedPlayer' } }));
     return new Response(JSON.stringify({ info: { user: { id: 123456 }, selections: { user: ['events'] } } }));
   } });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -66,7 +67,7 @@ test('public website prefix serves health, disclosure and authenticated routes w
   assert.equal((await call('/torn-premium/v1/me', undefined, auth.data.token)).data.account.tornId, 123456);
   assert.equal((await call('/torn-premium/v1/admin', undefined, auth.data.token)).status, 403);
   assert.equal((await call('/torn-premium-x/v1/info')).status, 401);
-  assert.equal(upstreamCalls(), 1);
+  assert.equal(upstreamCalls(), 2);
 });
 
 test('HTTP enforces sessions, owner isolation, administrator roles and origins', async (t) => {
@@ -115,11 +116,11 @@ test('live identity is derived from Torn key ownership, never the submitted ID o
   const login = await call('/v1/auth/torn', { apiKey: 'AbCdEfGh12345678', tornId: 4037017, admin: true });
   assert.equal(login.status, 200); assert.equal(login.data.tornId, 123456); assert.equal(login.data.admin, false);
   const status = await call('/v1/me', undefined, login.data.token);
-  assert.equal(status.data.livePayments, false); assert.equal(status.data.freeApiAccess, true);
+  assert.equal(status.data.account.name, 'VerifiedPlayer'); assert.equal(status.data.livePayments, false); assert.equal(status.data.freeApiAccess, true);
   assert.equal(JSON.stringify(status.data).includes('AbCdEfGh12345678'), false);
   assert.equal((await call('/v1/auth/test', { tornId: 4037017 })).status, 403);
   assert.equal((await call('/v1/admin/test-events', { events: [] }, login.data.token)).status, 403);
-  assert.equal(upstreamCalls(), 1);
+  assert.equal(upstreamCalls(), 2);
 });
 
 test('logout and elapsed sessions revoke access; privacy configuration is required for live identity', async (t) => {

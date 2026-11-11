@@ -23,7 +23,7 @@ The optional central service in this folder uses Node's built-in SQLite API, wit
 | `parser.js`, `torn-client.js`, `validate-receiver.js` | Conservative transfer validation, official read-only API calls and an explicit receiver-format check |
 | `store.js` | Atomic awards, balances, versioned prices, subscriptions, audit, exports and privacy queue |
 | `auth.js`, `service.js`, `server.js`, `worker.js` | Verified identities, roles, HTTP API and scheduled polling |
-| `feature-service.js`, `insights.js`, `migrations/004-feature-modules.sql` | Central feature authorization, advanced calculations, consent, profiles and bounded observations |
+| `feature-service.js`, `insights.js`, `migrations/004-feature-modules.sql` | Central feature authorization, advanced calculations, data notices, pause preferences, profiles and bounded observations |
 | `../premium-client.js`, `../server.js` | Desktop connection and owner/session isolation |
 | `../public/premium.js`, `premium.css`, `index.html`, `themes.css` | User/admin screens, membership card, five existing themes, narrow layout |
 | `../public/feature-catalog.js`, `feature-access.js/css`, `advanced-modules.js/css`, `travel-math.js` | Shared catalog/arithmetic, lightweight access display and on-demand module panels |
@@ -72,9 +72,9 @@ Use Node 24. Keep private env files outside this checkout. The service binds loo
 2. Set `PREMIUM_TEST_AUTH_TOKEN` to that token. Leave live payment flags false and receiver key empty.
 3. Start `node --env-file=/private/path/premium.env premium/server.js`.
 4. For the desktop process, set `TORN_PREMIUM_SERVICE_URL=http://127.0.0.1:3740`, `TORN_PREMIUM_TEST_MODE=1`, `TORN_PREMIUM_TEST_TOKEN` to the same token and `TORN_PREMIUM_TEST_TORN_ID=4037017`. These are **local operator test credentials**, not distribution defaults. Start `npm start` or `npm run web` from this environment.
-5. Open Premium, acknowledge the data-use notice, connect and open the administrator panel. Enable synthetic checks and submit a synthetic transfer. Use another synthetic ID such as 123456; receiver self-transfers require review. The sender account is credited after that same test identity is registered; tests demonstrate this automatically.
+5. Open Premium, read the data-use notice, connect and open the administrator panel. Enable synthetic checks and submit a synthetic transfer. Use another synthetic ID such as 123456; receiver self-transfers require review. The sender account is credited after that same test identity is registered; tests demonstrate this automatically.
 
-The built-in **synthetic transfer** form never calls Torn or sends items. The publisher default is https://lrxe8.com/torn-premium; an explicit empty TORN_PREMIUM_SERVICE_URL disables the optional service. The local test shortcut overrides the default with its loopback service. Saved login keys are forwarded only after explicit connection consent. The service is not automatically bundled as a background payment authority on each user's computer.
+The built-in **synthetic transfer** form never calls Torn or sends items. The publisher default is https://lrxe8.com/torn-premium; an explicit empty TORN_PREMIUM_SERVICE_URL disables the optional service. The local test shortcut overrides the default with its loopback service. Saved login keys are forwarded only when the user chooses Connect account after the visible notice. The service is not automatically bundled as a background payment authority on each user's computer.
 
 ## Environment variables
 
@@ -89,7 +89,7 @@ The built-in **synthetic transfer** form never calls Torn or sends items. The pu
 | `PREMIUM_REVIEW_RETENTION_DAYS` | `30`, range 1–90, raw review text only |
 | `PREMIUM_ALLOW_LIVE_PAYMENTS` | `false`; explicit operator gate |
 | `PREMIUM_RECEIVER_FORMAT_VERIFIED` | `false`; operator's completed real-shape verification |
-| `PREMIUM_RECEIVER_API_KEY` | Empty; server secret with receiver `events` access (Limited) |
+| `PREMIUM_RECEIVER_API_KEY` | Empty; server-only receiver secret with Item receive (4103) log access; ordinary app keys remain Limited |
 | `PREMIUM_PUBLIC_URL` | Empty; live HTTPS public origin / terms link |
 | `PREMIUM_CONTROLLER_NAME` | Empty; live privacy controller identity |
 | `PREMIUM_PRIVACY_CONTACT` | Empty; live rights-request contact |
@@ -115,3 +115,13 @@ Integrated `tests/premium-ui-smoke.js` exercises the actual desktop HTTP bridge 
 ## Operator-enabled in-game Xanax collection
 
 On 11 November 2026 the operator explicitly requested removal of the mandatory Torn approval-reference field. The collector no longer reads that field. This records an operator configuration decision, not a claim of official Torn approval. Receiver identity, events permission, real-format verification, explicit live-payment opt-in, privacy configuration, first-run baseline and atomic event deduplication remain required. The desktop continues to use the shared HTTPS service; this server change does not require a new desktop release.
+
+## v1.6.10 — automatic quantities, player names and notices
+
+The live collector uses `/v2/user/log?log=4103` and strictly validates the official sender and item quantities. Notifications such as `You were sent some Xanax` cannot establish a quantity. A receiver key must have Item receive log access; naming a key does not grant permissions. Raw log messages and unrelated items are not retained. Log IDs and event aliases share atomic duplicate prevention, so an already credited event is never paid again. Existing unresolved notifications are automatically linked to their matching official log and use the original transfer-time price.
+
+Verified player names are fetched from the official public basic profile and cached in existing private metadata for six hours. Name search, member cards and exports use that cache. No schema migration is needed; database schema 4 is retained.
+
+Connection and analysis screens now show informational notices without acceptance checkboxes. The user still chooses Connect account before a login key is forwarded. Analysis is available to verified Premium members after the notice; users can pause/resume it without losing saved profiles. Existing explicit pauses are preserved. The legacy consent endpoint/response field remains for older clients, but new requests do not create a legal-consent record.
+
+Validation: 81 automated tests and integrated desktop/service UI checks, including notification-to-log repair, a preserved trial day, log/event replay, nanosecond pagination, player names, no acceptance controls, pause/expiry/renewal and escaped display text.

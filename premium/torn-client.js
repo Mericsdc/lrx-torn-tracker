@@ -38,7 +38,7 @@ function createTornClient(store, { fetchImpl = fetch } = {}) {
     const ipWait = store.apiBudget('service:all-keys', 2000);
     if (ipWait) throw new TornError('LOCAL_API_BUDGET', { retryAfter: ipWait });
     const allowed = new Set(['/v2/key/info', '/v2/user/events', '/v2/user/timestamp']);
-    if (!allowed.has(pathname)) throw new TornError('UPSTREAM_PATH', { retryable: false });
+    if (!allowed.has(pathname) && !/^\/v2\/user\/[1-9]\d{0,9}\/basic$/.test(pathname) && pathname !== '/v2/user/log') throw new TornError('UPSTREAM_PATH', { retryable: false });
     const url = new URL(pathname, 'https://api.torn.com');
     url.searchParams.set('comment', 'LRXPremium');
     for (const [name, value] of Object.entries(params)) url.searchParams.set(name, String(value));
@@ -68,7 +68,16 @@ function createTornClient(store, { fetchImpl = fetch } = {}) {
       if (wait) throw new TornError('LOCAL_API_BUDGET', { retryAfter: wait });
     }
     store.db.prepare('INSERT INTO premium_metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('key-owner:' + digest, String(id));
-    return { tornId: id, selections: data.info.selections?.user || [] };
+    const available = data.info.access?.log?.available || [];
+    return { tornId: id, selections: data.info.selections?.user || [], itemLogAccess: (data.info.selections?.user || []).includes('log') || available.some((entry) => entry.log_ids?.includes(4103)) };
+  }
+  async function profile(key, id) {
+    if (!Number.isSafeInteger(id) || id <= 0 || id > 9999999999) throw new TornError('PROFILE_ID', { retryable: false });
+    const cached = store.player(id);
+    if (cached.nameCheckedAt && cached.nameCheckedAt > store.now() - 21600) return cached;
+    const data = await request('/v2/user/' + id + '/basic', key);
+    if (data?.profile?.id !== id || typeof data.profile.name !== 'string' || !data.profile.name.trim()) throw new TornError('PROFILE_SCHEMA');
+    return store.cachePlayerName(id, data.profile.name);
   }
   async function timestamp(key) {
     const data = await request('/v2/user/timestamp', key);
@@ -76,6 +85,7 @@ function createTornClient(store, { fetchImpl = fetch } = {}) {
     return data.timestamp;
   }
   function page(key, params = {}) { return request('/v2/user/events', key, { limit: 100, striptags: false, ...params }); }
+  function itemLogs(key, params = {}) { return request('/v2/user/log', key, { log: 4103, limit: 100, ...params }); }
   function previousParams(data, current) {
     if (!data?._metadata?.links || !Object.hasOwn(data._metadata.links, 'prev')) throw new TornError('PAGINATION_SCHEMA');
     const link = data._metadata.links.prev;
@@ -88,6 +98,6 @@ function createTornClient(store, { fetchImpl = fetch } = {}) {
     if (!/^\d+$/.test(to || '') || !Number.isSafeInteger(Number(to)) || current.to != null && Number(to) >= current.to) throw new TornError('PAGINATION_STALLED');
     return { to: Number(to) };
   }
-  return { request, identity, timestamp, page, previousParams };
+  return { request, identity, timestamp, page, previousParams, profile, itemLogs };
 }
 module.exports = { createTornClient, TornError, retrySeconds };

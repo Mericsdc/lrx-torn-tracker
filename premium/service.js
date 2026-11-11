@@ -29,7 +29,7 @@ function createPremiumService(config, dependencies = {}) {
   }
   function me(actor) {
     store.expire();
-    return { ...info(), connected: true, account: { tornId: actor.tornId, admin: actor.admin, verified: true }, subscription: store.entitlement(actor.tornId), balance: store.balance(actor.tornId), transactions: store.historyFor(actor.tornId), featureAccess: features.access(actor) };
+    return { ...info(), connected: true, account: { ...store.player(actor.tornId), admin: actor.admin, verified: true }, subscription: store.entitlement(actor.tornId), balance: store.balance(actor.tornId), transactions: store.historyFor(actor.tornId), featureAccess: features.access(actor) };
   }
   function requirePremium(actor) {
     const entitlement = store.entitlement(actor.tornId);
@@ -45,7 +45,14 @@ function createPremiumService(config, dependencies = {}) {
   async function adminAction(actor, action, body) {
     store.assertAdmin(actor);
     if (action === 'feature-permission') return features.override(actor, body);
-    if (action === 'members') return store.members(body);
+    if (action === 'members') {
+      if (config.mode === 'live' && config.receiverKey) {
+        for (const member of store.members(body).members.filter((member) => !member.nameCheckedAt || member.nameCheckedAt < store.now() - 21600).slice(0, 5)) {
+          try { await client.profile(config.receiverKey, member.tornId); } catch { break; }
+        }
+      }
+      return store.members(body);
+    }
     if (action === 'test-payment' || action === 'test-replay') {
       if (config.mode !== 'test') fail('TEST_ENDPOINT_DISABLED', 403);
       let scenario;

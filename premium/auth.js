@@ -18,6 +18,7 @@ function createAuth(store, client, config) {
     if (config.mode !== 'live') fail('TEST_MODE_USE_TEST_LOGIN', 409);
     if (!config.controllerName || !config.privacyContact || !config.publicUrl || !config.recordRetentionPolicy) fail('PRIVACY_NOTICE_NOT_CONFIGURED', 503);
     const identity = await client.identity(key);
+    try { await client.profile?.(key, identity.tornId); } catch { /* A profile outage must not block verified identity. */ }
     return issue(identity.tornId);
   }
   function loginTest(secret, tornId) {

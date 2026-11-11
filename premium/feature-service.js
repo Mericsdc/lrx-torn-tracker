@@ -5,6 +5,14 @@ const { fail, positiveId } = require('./store');
 const CONSENT_VERSION = 1;
 function createFeatureService(store) {
   const { db, now, transaction } = store;
+  function analysisEnabled(actor) {
+    if (!actor) return false;
+    const saved = db.prepare('SELECT value FROM premium_metadata WHERE key=?').get('analysis-paused:' + actor.tornId);
+    if (saved) return saved.value !== '1';
+    // Preserve an explicit pause made by an older client; no acceptance is required for new use.
+    const legacy = db.prepare("SELECT after_json FROM premium_audit_log WHERE actor_torn_id=? AND action='features.consent' ORDER BY id DESC LIMIT 1").get(actor.tornId);
+    return !legacy || JSON.parse(legacy.after_json)?.accepted !== false;
+  }
   function verified(actor) {
     if (!actor || !positiveId(actor.tornId) || !db.prepare('SELECT 1 FROM premium_users WHERE torn_id=?').get(actor.tornId)) fail('IDENTITY_NOT_VERIFIED', 401);
   }
@@ -13,13 +21,13 @@ function createFeatureService(store) {
     const subscription = actor ? store.entitlement(actor.tornId) : { active: false, expiresAt: null };
     const overrides = actor ? Object.fromEntries(db.prepare('SELECT feature_id,allowed FROM premium_feature_overrides WHERE torn_id=?').all(actor.tornId).map((r) => [r.feature_id, !!r.allowed])) : {};
     const permissions = Object.fromEntries(catalog.definitions.map((d) => [d.id, d.tier === 'free' || !!actor && subscription.active && overrides[d.id] !== false]));
-    const consent = !!actor && !!db.prepare('SELECT 1 FROM premium_feature_consents WHERE torn_id=? AND version=?').get(actor.tornId, CONSENT_VERSION);
+    const consent = analysisEnabled(actor); // Legacy field means analysis enabled, not recorded legal consent.
     const automations = consent ? db.prepare('SELECT feature_id,revision,content_json FROM premium_feature_workspaces WHERE torn_id=?').all(actor.tornId).flatMap((row) => {
       if (!permissions[row.feature_id]) return [];
       const w = JSON.parse(row.content_json), p = w.profiles.find((p) => p.id === w.activeProfile);
       return p && (p.params.rule?.enabled || p.params.notifications) ? [{ featureId: row.feature_id, revision: row.revision, profileId: p.id }] : [];
     }) : [];
-    return { catalogVersion: catalog.version, serverNow: now(), validUntil: Math.min(now() + 60, actor?.expiresAt || Infinity, subscription.active && !subscription.permanent ? subscription.expiresAt : Infinity), permissions, consent, automations };
+    return { catalogVersion: catalog.version, serverNow: now(), validUntil: Math.min(now() + 60, actor?.expiresAt || Infinity, subscription.active && !subscription.permanent ? subscription.expiresAt : Infinity), permissions, consent, analysisEnabled: consent, dataNoticeVersion: 1, automations };
   }
   function requireFeature(actor, id) {
     const d = definition(id);
@@ -29,7 +37,7 @@ function createFeatureService(store) {
     if (db.prepare('SELECT allowed FROM premium_feature_overrides WHERE torn_id=? AND feature_id=?').get(actor.tornId, id)?.allowed === 0) fail('FEATURE_NOT_GRANTED', 403);
     return d;
   }
-  function requireConsent(actor) { if (!db.prepare('SELECT 1 FROM premium_feature_consents WHERE torn_id=? AND version=?').get(actor.tornId, CONSENT_VERSION)) fail('FEATURE_DATA_CONSENT_REQUIRED', 403); }
+  function requireConsent(actor) { if (!analysisEnabled(actor)) fail('FEATURE_ANALYSIS_PAUSED', 403); }
   function workspace(actor, id) {
     verified(actor); definition(id);
     const row = db.prepare('SELECT * FROM premium_feature_workspaces WHERE torn_id=? AND feature_id=?').get(actor.tornId, id);
@@ -98,9 +106,8 @@ function createFeatureService(store) {
   function consent(actor, body) {
     verified(actor); if (typeof body.accepted !== 'boolean') fail('INVALID_CONSENT');
     transaction(() => {
-      if (body.accepted) db.prepare('INSERT INTO premium_feature_consents VALUES(?,?,?) ON CONFLICT(torn_id) DO UPDATE SET accepted_at=excluded.accepted_at,version=excluded.version').run(actor.tornId, now(), CONSENT_VERSION);
-      else db.prepare('DELETE FROM premium_feature_consents WHERE torn_id=?').run(actor.tornId);
-      store.audit(actor, 'features.consent', actor.tornId, body.accepted ? 'Opted in to storing profiles and selected analysis snapshots' : 'Stopped advanced data sharing; saved profiles retained', null, { version: CONSENT_VERSION, accepted: body.accepted });
+      db.prepare('INSERT INTO premium_metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('analysis-paused:' + actor.tornId, body.accepted ? '0' : '1');
+      store.audit(actor, 'features.analysis_preference', actor.tornId, body.accepted ? 'Resumed advanced analysis after the data notice' : 'Paused advanced analysis; saved profiles retained', null, { enabled: body.accepted });
     });
     return { access: access(actor) };
   }
@@ -115,7 +122,7 @@ function createFeatureService(store) {
       store.audit(actor, 'features.permission', body.tornId + ':' + d.id, body.reason.trim(), before || null, { allowed: body.allowed });
     }); return { ok: true };
   }
-  function exportData(actor) { verified(actor); return { consent: db.prepare('SELECT accepted_at,version FROM premium_feature_consents WHERE torn_id=?').get(actor.tornId) || null, modules: Object.fromEntries(catalog.premium.map((d) => [d.id, { workspace: workspace(actor, d.id), history: history(actor, d.id) }])) }; }
+  function exportData(actor) { verified(actor); return { consent: db.prepare('SELECT accepted_at,version FROM premium_feature_consents WHERE torn_id=?').get(actor.tornId) || null, analysisEnabled: analysisEnabled(actor), modules: Object.fromEntries(catalog.premium.map((d) => [d.id, { workspace: workspace(actor, d.id), history: history(actor, d.id) }])) }; }
   return { access, requireFeature, workspace, save, select, remove, run, consent, override, exportData };
 }
 module.exports = { createFeatureService };
