@@ -23,12 +23,19 @@
     root.dataset.premiumAppearance = 'true'; root.dataset.density = p.density; root.dataset.cardStyle = p.cards;
     try { localStorage.removeItem('lrx.appearance.disabled.' + owner()); } catch {}
   }
+  // Settings → General → App: "Premium membership connection" (app.premium) and "Premium module cards" (app.premiumPromos)
+  const premiumOff = () => typeof feat === 'function' && !feat('app.premium');
+  const promosOff = () => typeof feat === 'function' && !feat('app.premiumPromos');
   function paint() {
+    const hidePromos = promosOff();
     for (const host of document.querySelectorAll('[data-feature-slot]')) {
-      if (host.dataset.featureOpen) continue;
+      const hide = hidePromos && !host.closest('#premium-content');
+      host.hidden = hide;
+      if (hide && host.dataset.featureOpen) { window.LRXAdvanced?.close?.(); continue; }
+      if (hide || host.dataset.featureOpen) continue;
       const d = catalog.byId[host.dataset.featureSlot]; if (!d) continue;
-      const allowed = can(d.id), expired = snapshot?.subscription?.status === 'expired';
-      host.innerHTML = `<article class="fx-entry ${allowed ? 'is-available' : 'is-locked'}"><div class="fx-entry-mark" aria-hidden="true">◇</div><div class="fx-entry-copy"><div><h3>${esc(d.title[state.lang === 'en' ? 1 : 0])}</h3><span class="fx-badge">Premium</span></div><p>${esc(d.description[state.lang === 'en' ? 1 : 0])}</p><small>${allowed ? tr('Üyeliğinize dahil', 'Included in your membership') : expired ? tr('Üyeliğiniz sona erdi. Kayıtlı profilleriniz korunuyor.', 'Membership expired. Your saved profiles are retained.') : tr('Kilitli · mevcut temel araçlar ücretsiz kalır', 'Locked · existing tools remain free')}</small></div><button type="button" class="btn sm ${allowed ? 'primary' : 'ghost'}" data-advanced-open="${d.id}">${allowed ? tr('Aç', 'Open') : tr('Detaylar', 'Details')} <span aria-hidden="true">↗</span></button></article>`;
+      const allowed = can(d.id), expired = snapshot?.subscription?.status === 'expired', off = !!snapshot?.disabled || premiumOff();
+      host.innerHTML = `<article class="fx-entry ${allowed ? 'is-available' : 'is-locked'}"><div class="fx-entry-mark" aria-hidden="true">◇</div><div class="fx-entry-copy"><div><h3>${esc(d.title[state.lang === 'en' ? 1 : 0])}</h3><span class="fx-badge">Premium</span></div><p>${esc(d.description[state.lang === 'en' ? 1 : 0])}</p><small>${allowed ? tr('Üyeliğinize dahil', 'Included in your membership') : off ? tr('Premium bağlantısı kapalı · Ayarlar → Genel → Uygulama', 'Premium connection is off · Settings → General → App') : expired ? tr('Üyeliğiniz sona erdi. Kayıtlı profilleriniz korunuyor.', 'Membership expired. Your saved profiles are retained.') : tr('Kilitli · mevcut temel araçlar ücretsiz kalır', 'Locked · existing tools remain free')}</small></div><button type="button" class="btn sm ${allowed ? 'primary' : 'ghost'}" data-advanced-open="${d.id}">${allowed ? tr('Aç', 'Open') : tr('Detaylar', 'Details')} <span aria-hidden="true">↗</span></button></article>`;
     }
   }
   function changed() {
@@ -50,15 +57,20 @@
     changed(); return snapshot;
   }
   async function status(force = false) {
+    // Connection switched off in Settings: nothing is requested; the server enforces the same rule.
+    if (premiumOff()) return snapshot?.disabled ? snapshot : accept({ configured: true, connected: false, disabled: true, code: 'PREMIUM_DISABLED', freeApiAccess: true });
     if (pending) return pending;
     if (!force && snapshot && performance.now() - fetched < 15000) return snapshot;
     const stamp = generation;
     const task = api('/api/premium/status').then((data) => stamp === generation ? accept(data) : null).catch((e) => { if (stamp === generation) { deadline = 0; changed(); } throw e; }).finally(() => { if (pending === task) pending = null; });
     pending = task; return task;
   }
+  // A rejected call drops cached access and refetches status at most once per 30 s. Without the limit,
+  // status granting access while a call keeps failing re-triggered restoreAppearance()/resume() in a tight request loop.
+  let invalidatedAt = -Infinity;
   async function call(action, body = {}) {
     try { const value = await api('/api/premium/feature-' + action, { method: 'POST', body: JSON.stringify(body) }); if (value.access && snapshot) accept({ ...snapshot, featureAccess: value.access }); return value; }
-    catch (e) { if ([401, 403, 503].includes(e.status)) { deadline = 0; changed(); status(true).catch(() => {}); } throw e; }
+    catch (e) { if ([401, 403, 503].includes(e.status) && performance.now() - invalidatedAt >= 30000) { invalidatedAt = performance.now(); deadline = 0; changed(); status(true).catch(() => {}); } throw e; }
   }
   async function restoreAppearance() {
     try {
@@ -78,7 +90,7 @@
     const id = b.dataset.advancedOpen;
     if (!can(id)) { showView('premium'); return; }
     b.disabled = true;
-    try { await loadModule(); await window.LRXAdvanced.open(id, b.closest('[data-feature-slot]')); } catch (error) { toast(error.message); } finally { b.disabled = false; }
+    try { await loadModule(); await window.LRXAdvanced.open(id, b.closest('[data-feature-slot]')); } catch (error) { toast(window.LRXAdvanced?.errorText ? window.LRXAdvanced.errorText(error) : error.message); } finally { b.disabled = false; }
   });
   window.addEventListener('lrx-base-theme-selected', () => {
     clearAppearance(); try { localStorage.setItem('lrx.appearance.disabled.' + owner(), '1'); } catch {}
@@ -87,8 +99,17 @@
   window.addEventListener('lrx-premium-reset', () => { generation++; deadline = 0; snapshot = null; pending = null; fetched = 0; restoreOwner = null; clearAppearance(); changed(); window.dispatchEvent(new Event('lrx-feature-identity-changed')); setTimeout(() => status(true).catch(() => {}), 0); });
   const previousLang = window.onLangChanged; window.onLangChanged = () => { previousLang?.(); paint(); };
   window.PremiumAccess = { can, status, accept, call, applyAppearance, clearAppearance, snapshot: () => snapshot, repaint: paint };
+  if (typeof FEATURE_HOOKS !== 'undefined') FEATURE_HOOKS.push(paint);
   paint(); setTimeout(() => status().catch(() => {}), 1800);
-  setInterval(() => { changed(); if (document.visibilityState === 'visible' || snapshot?.featureAccess?.automations?.length) status().catch(() => {}); }, 30000);
-  setInterval(changed, 1000);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') status(true).catch(() => {}); });
+  // While the window is hidden the snapshot is not refreshed, so an expired 60 s deadline only means "stale":
+  // do not clear the theme or repaint until a fresh status has been fetched after the window is shown again.
+  let resuming = false;
+  const evaluate = () => { if (document.visibilityState === 'visible' && !resuming) changed(); };
+  setInterval(() => { evaluate(); if (document.visibilityState === 'visible' || snapshot?.featureAccess?.automations?.length) status().catch(() => {}); }, 30000);
+  setInterval(evaluate, 1000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    resuming = true;
+    status(true).catch(() => {}).finally(() => { resuming = false; changed(); });
+  });
 })();

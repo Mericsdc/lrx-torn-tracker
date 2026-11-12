@@ -35,3 +35,18 @@ test('managed key proxy blocks other hosts, redirects and disabled scripts', asy
   await assert.rejects(proxy.run({ url: 'https://ffscouter.com/api/v1/check-key?key=x' }), { status: 403 });
   assert.equal(count, 1);
 });
+test('bridge only serves the endpoints the bundled FF Scouter uses and never leaks the key', async () => {
+  const config = { apiKey: 'MainApiKey123456', features: {} };
+  let count = 0;
+  const proxy = createFFScriptProxy(() => config, async () => { count++; return new Response('{}', { headers: { 'x-echo': 'k=MainApiKey123456' } }); });
+  for (const [url, method] of [['https://ffscouter.com/api/v1/get-stats?key=x', 'DELETE'], ['https://ffscouter.com/api/v1/x', 'PUT'], ['https://ffscouter.com/account/delete', 'POST'],
+    ['https://api.torn.com/user/1/2/3?key=x', 'GET'], ['https://api.torn.com/v2/user/1/extra/path?key=x', 'GET']]) {
+    await assert.rejects(proxy.run({ url, method }), { status: 403 }, url);
+  }
+  const ok = await proxy.run({ url: 'https://ffscouter.com/api/v1/get-stats?key=' + MANAGED_KEY });
+  assert.ok(!ok.responseHeaders.includes(config.apiKey));
+  await proxy.run({ url: 'https://api.torn.com/v2/user/4242?selections=profile&key=x' });
+  const gone = new AbortController(); gone.abort();
+  await assert.rejects(proxy.run({ url: 'https://api.torn.com/user/?key=x' }, gone.signal), { status: 499 });
+  assert.equal(count, 2);
+});

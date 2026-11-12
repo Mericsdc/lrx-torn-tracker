@@ -8,9 +8,10 @@ function createWarGroups(dataDir) {
   let saved = {};
   try { saved = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)) saved = {};
-  const fail = (message) => { const e = new Error(message); e.status = 400; throw e; };
+  // Stable codes let the renderer show the message in the user's language (war-groups-ui.js).
+  const fail = (code, message) => { const e = new Error(message); e.status = 400; e.code = code; throw e; };
   const factionKey = (id) => {
-    if (!Number.isSafeInteger(Number(id)) || Number(id) <= 0) fail('Invalid faction ID');
+    if (!Number.isSafeInteger(Number(id)) || Number(id) <= 0) fail('GROUP_FACTION_INVALID', 'Invalid faction ID');
     return String(Number(id));
   };
   const get = (id) => {
@@ -24,28 +25,28 @@ function createWarGroups(dataDir) {
     const group = next.groups.find((g) => g.id === input.groupId);
     if (input.action === 'create' || input.action === 'rename') {
       const name = typeof input.name === 'string' ? input.name.trim() : '';
-      if (!name || name.length > 40) fail('Group name must be 1–40 characters');
-      if (next.groups.some((g) => g.id !== group?.id && g.name.toLowerCase() === name.toLowerCase())) fail('Group name already exists');
+      if (!name || name.length > 40) fail('GROUP_NAME_LENGTH', 'Group name must be 1–40 characters');
+      if (next.groups.some((g) => g.id !== group?.id && g.name.toLowerCase() === name.toLowerCase())) fail('GROUP_NAME_TAKEN', 'Group name already exists');
       if (input.action === 'create') {
-        if (next.groups.length >= 24) fail('Maximum 24 groups per faction');
+        if (next.groups.length >= 24) fail('GROUP_LIMIT', 'Maximum 24 groups per faction');
         next.groups.push({ id: randomUUID(), name });
       } else {
-        if (!group) fail('Group not found');
+        if (!group) fail('GROUP_NOT_FOUND', 'Group not found');
         group.name = name;
       }
     } else if (input.action === 'remove') {
-      if (!group) fail('Group not found');
+      if (!group) fail('GROUP_NOT_FOUND', 'Group not found');
       next.groups = next.groups.filter((g) => g.id !== group.id);
       for (const [player, assigned] of Object.entries(next.assignments)) if (assigned === group.id) delete next.assignments[player];
     } else if (input.action === 'assign') {
-      if (input.groupId !== '' && !group) fail('Group not found');
-      if (!Array.isArray(input.playerIds) || !input.playerIds.length || input.playerIds.length > 1000) fail('Choose 1–1000 players');
+      if (input.groupId !== '' && !group) fail('GROUP_NOT_FOUND', 'Group not found');
+      if (!Array.isArray(input.playerIds) || !input.playerIds.length || input.playerIds.length > 1000) fail('GROUP_PLAYER_COUNT', 'Choose 1–1000 players');
       for (const id of input.playerIds) {
-        if (!Number.isSafeInteger(id) || id <= 0) fail('Invalid player ID');
+        if (!Number.isSafeInteger(id) || id <= 0) fail('GROUP_PLAYER_INVALID', 'Invalid player ID');
         if (group) next.assignments[id] = group.id;
         else delete next.assignments[id];
       }
-    } else fail('Unknown group action');
+    } else fail('GROUP_ACTION_UNKNOWN', 'Unknown group action');
     const updated = { ...saved, [key]: next };
     fs.writeFileSync(file + '.tmp', JSON.stringify(updated));
     fs.renameSync(file + '.tmp', file);

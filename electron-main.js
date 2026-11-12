@@ -68,6 +68,11 @@ function main() {
   const TOP_BAR_HEIGHT = 88; // 44px workspace-bar + 44px browser-toolbar
 
   let mainWindow = null;
+  let appOrigin = null; // http://127.0.0.1:<port>, set when the main window loads
+  // Privileged IPC only answers the app's own page in the main window.
+  const fromAppPage = (event) => {
+    try { return !!appOrigin && !!mainWindow && event.sender === mainWindow.webContents && event.senderFrame === mainWindow.webContents.mainFrame && new URL(event.senderFrame.url).origin === appOrigin; } catch { return false; }
+  };
   let tornRuntimeReady = Promise.resolve();
   const tabs = new Map(); // tabId -> { id, view, url, loggedIn }
   const pendingTabCreates = new Set();
@@ -149,7 +154,7 @@ function main() {
 
   async function repairUidCookie(id) {
     const t = tabs.get(id);
-    if (!t) return;
+    if (!t || !featureEnabled('torn.sessionGuard')) return;
     const wc = t.view.webContents;
     if (wc.isDestroyed() || !isTornUrl(wc.getURL())) return;
     try {
@@ -162,6 +167,7 @@ function main() {
       if (r.uids.length && r.uids.every((u) => u === real)) return;
       if (t.loggedIn !== true || !r.real || t.uidRepairBusy) return;
       t.uidRepairBusy = true;
+      try {
       const ses = wc.session;
       const urls = new Set((await ses.cookies.get({ name: 'uid' }))
         .filter((c) => /(^|\.)torn\.com$/i.test(c.domain))
@@ -173,8 +179,8 @@ function main() {
       });
       try { await ses.cookies.flushStore(); } catch {}
       log('uid çerezi onarıldı:', `[${r.uids.map(uidShape).join(', ') || 'yok'}] → ${uidShape(real)}`);
+      } finally { t.uidRepairBusy = false; }
     } catch (e) { log('uid onarım hatası:', e.message); }
-    finally { t.uidRepairBusy = false; }
   }
 
   function sendToRenderer(channel, payload) {
@@ -313,24 +319,31 @@ function main() {
     const wc = t.view.webContents;
     if (wc.isDestroyed()) return;
     const url = wc.getURL();
+    // Helpers read window.__lrxLang ('en' | 'tr') for the text they add to Torn pages; sent with each helper in one call
+    const lang = `window.__lrxLang=${JSON.stringify(appLang())};`;
     for (const h of TORN_HELPERS) {
       if (!h.match.test(url) || ![].concat(h.feature).some(featureEnabled) || (h.needsFocus && !tabViewed(id))) continue;
       if (h.event && !seasonalActive(h.event)) continue; // etkinlik günü değil
+      if (wc.isDestroyed() || wc.getURL() !== url) return; // the page changed meanwhile; its own load runs the helpers again
       try {
-        // Helpers read window.__lrxLang ('en' | 'tr') for the text they add to Torn pages
-        await wc.executeJavaScript(`window.__lrxLang=${JSON.stringify(appLang())};`, true);
-        if (h.run) await h.run(wc);
-        else await wc.executeJavaScript((h.prelude ? h.prelude() : '') + helperSrc(h.name), true);
+        if (h.run) await h.run(wc, t, lang);
+        else await wc.executeJavaScript(lang + (h.prelude ? h.prelude() : '') + helperSrc(h.name), true);
         if (h.after) h.after(id);
-      } catch (e) { log(`helper ${h.name}:`, e.message); }
+      } catch (e) {
+        // Navigating or reloading while a helper runs destroys its frame: expected, not an error
+        if (!/WebFrame was removed|Render frame was disposed|Object has been destroyed|Execution context was destroyed/i.test(e.message)) log(`helper ${h.name}:`, e.message);
+      }
     }
   }
 
   // Şirket stok sayfası: Torn'un "Delivered in" sayaçlarını oku → teslim süresi tahmini yerine gerçek süre
-  async function syncStockDeliveries(wc) {
+  async function syncStockDeliveries(wc, t, lang = '') {
     const names = stockProductNames();
-    if (!names.length) return;
-    const res = await wc.executeJavaScript(`${helperSrc('company-stock')}(${JSON.stringify(names)})`, true);
+    if (!names.length || t?.stockBusy) return; // focus and hash events can fire together: one read at a time
+    if (t) t.stockBusy = true;
+    let res;
+    try { res = await wc.executeJavaScript(`${lang}${helperSrc('company-stock')}(${JSON.stringify(names)})`, true); }
+    finally { if (t) t.stockBusy = false; }
     // { shipments: [{ name, amount, secs }], deliveryHours: { ürün: saat } } · eski biçim: yalnızca dizi
     const rows = Array.isArray(res) ? res : res?.shipments;
     if (!Array.isArray(rows)) return;
@@ -349,7 +362,7 @@ function main() {
       const info = await wc.executeJavaScript('window.__lrxWar ? window.__lrxWar.scan() : null', true);
       if (!info?.active) return;
       const statuses = await warMemberStatuses(info.factionIds || []);
-      if (!wc.isDestroyed() && tabViewed(id)) await wc.executeJavaScript(`window.__lrxWar && window.__lrxWar.update(${JSON.stringify(statuses)}, ${JSON.stringify(warGroupLabels(info.factionIds || []))})`, true);
+      if (!wc.isDestroyed() && tabViewed(id)) await wc.executeJavaScript(`window.__lrxWar && window.__lrxWar.update(${JSON.stringify(statuses)}, ${JSON.stringify(featureEnabled('war.groups') ? warGroupLabels(info.factionIds || []) : {})})`, true);
     } catch {} finally { t.warBusy = false; }
   }
   setInterval(() => {
@@ -405,7 +418,7 @@ function main() {
     }
   });
   ipcMain.handle('clipboard-read', (event) => {
-    if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error('Clipboard access denied');
+    if (!fromAppPage(event)) throw new Error('Clipboard access denied');
     return clipboard.readText();
   });
 
@@ -587,61 +600,34 @@ function main() {
     }
     return false;
   }
-  const chatJs = (name, step) => `(async () => {
-    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    const until = async (fn, ms) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(150); } return null; };
+  // Torn rules: the app never clicks Torn's buttons or sends a message for the user.
+  // It only fills the text into a chat box the user already opened; the user presses Enter.
+  const chatJs = (name) => `(() => {
     const target = ${JSON.stringify(String(name || '').toLowerCase())};
-    const boxes = () => [...document.querySelectorAll("#chatRoot [class*='item___']")].filter((b) => b.querySelector('textarea, button'));
-    const findBox = () => boxes().find((b) => {
+    const box = [...document.querySelectorAll("#chatRoot [class*='item___']")].find((b) => {
       const h = b.querySelector("button [class*='title___'], button [class*='name___'], [class*='chat-box-header__name']");
-      return h && h.textContent.trim().toLowerCase().includes(target);
+      return h && b.querySelector('textarea') && h.textContent.trim().toLowerCase().includes(target);
     });
-    if (${JSON.stringify(step)} === 'open') {
-      let box = findBox();
-      if (!box) {
-        const btn = await until(() => document.querySelector("a[class*='profile-button-initiateChat'], a[class*='initiateChat'], [class*='profile-button'][aria-label*='chat' i], [class*='profile-button'][title*='chat' i]"), 12000);
-        if (!btn) return { ok: false, step: 'button' };
-        btn.click();
-        box = await until(findBox, 8000);
-      }
-      if (!box) return { ok: false, step: 'box' };
-      let ta = box.querySelector('textarea');
-      if (!ta) { box.querySelector('button')?.click(); ta = await until(() => box.querySelector('textarea'), 3000); }
-      if (!ta) return { ok: false, step: 'textarea' };
-      ta.scrollIntoView({ block: 'nearest' });
-      ta.focus();
-      return { ok: true };
-    }
-    const box = findBox();
     const ta = box && box.querySelector('textarea');
-    if (!ta || !ta.value.trim()) return { ok: false, step: 'text' };
-    const send = box.querySelector("[class*='chat-box-footer__send-icon-wrapper__'], button[class*='iconWrapper___']");
-    if (send) { send.click(); await sleep(400); return { ok: true, sent: !ta.value.trim(), via: 'button' }; }
-    return { ok: true, sent: false, via: 'none' };
+    if (!ta) return { ok: false, step: 'box' };
+    ta.scrollIntoView({ block: 'nearest' });
+    ta.focus();
+    return { ok: true };
   })()`;
 
   ipcMain.handle('torn-chat-send', async (_event, { tabId, name, message }) => {
+    if (!fromAppPage(_event)) return { ok: false, step: 'denied' };
     const t = tabs.get(tabId);
     if (!t) return { ok: false, step: 'tab' };
     const wc = t.view.webContents;
     try {
       if (!(await waitProfileLoaded(wc))) return { ok: false, step: 'load' };
-      const opened = await wc.executeJavaScript(chatJs(name, 'open'), true);
-      if (!opened?.ok) return opened || { ok: false, step: 'open' };
+      const opened = await wc.executeJavaScript(chatJs(name), true);
+      if (!opened?.ok) return opened || { ok: false, step: 'box' };
       wc.focus();
       await sleep(150);
       await wc.insertText(String(message || '').replace(/\s*\n+\s*/g, ' ').trim());
-      await sleep(300);
-      const res = await wc.executeJavaScript(chatJs(name, 'send'), true);
-      if (res?.ok && !res.sent) {
-        // Gönder butonu bulunamadı → gerçek Enter tuşu
-        wc.focus();
-        wc.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
-        wc.sendInputEvent({ type: 'char', keyCode: '\r' });
-        wc.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' });
-        return { ok: true, sent: true, via: 'enter' };
-      }
-      return res;
+      return { ok: true, sent: false };
     } catch (e) {
       log('torn-chat-send err:', e.message);
       return { ok: false, step: 'error', error: e.message };
@@ -706,7 +692,8 @@ function main() {
     if (restartPending()) sendToRenderer('update-pending', { latest: updater.currentVersion() });
   });
   let updating = false;
-  ipcMain.handle('update-apply', async () => {
+  ipcMain.handle('update-apply', async (event) => {
+    if (!fromAppPage(event)) return { ok: false, error: 'denied' };
     if (updating) return { ok: false, error: T('Güncelleme zaten sürüyor', 'An update is already in progress') };
     updating = true;
     try {
@@ -728,6 +715,7 @@ function main() {
   });
 
   ipcMain.handle('set-torn-cookies', async (_event, { phpSessId, uid, pass, raw }) => {
+    if (!fromAppPage(_event)) throw new Error('denied');
     const tornSession = session.fromPartition(PARTITION);
     const exp = Math.floor(Date.now() / 1000) + 365 * 86400;
     const pairs = [];
@@ -764,8 +752,10 @@ function main() {
   }
   const T = (trStr, enStr) => (appLang() === 'tr' ? trStr : enStr);
 
+  var lastFeatures = null; // var: featureEnabled() is hoisted and may run before this line
   function featureEnabled(key) {
-    try { return JSON.parse(fs.readFileSync(path.join(persistentDataDir, 'config.json'), 'utf8')).features?.[key] !== false; } catch { return true; }
+    try { lastFeatures = JSON.parse(fs.readFileSync(path.join(persistentDataDir, 'config.json'), 'utf8')).features || {}; } catch {}
+    return lastFeatures?.[key] !== false;
   }
 
   async function setupTornTools(tornSession) {
@@ -808,8 +798,8 @@ function main() {
       const tornSession = session.fromPartition(PARTITION);
       setupTornSession(tornSession);
       tornRuntimeReady = (async () => {
-        await normalizeTornSession(tornSession);
-        await setupTornTools(tornSession);
+        try { await normalizeTornSession(tornSession); } catch (e) { log('Torn session normalize:', e.message); }
+        try { await setupTornTools(tornSession); } catch (e) { log('TornTools setup:', e.message); sendToRenderer('torntools-status', { ...tornTools, status: 'error', error: e.message }); }
         let features = {};
         try { features = JSON.parse(fs.readFileSync(path.join(persistentDataDir, 'config.json'), 'utf8')).features || {}; } catch {}
         await serverPromise;
@@ -862,9 +852,22 @@ function main() {
         return { action: 'deny' };
       });
 
+      // The main window holds the privileged preload API: it may only show the app's own page.
+      // A dropped link or a stray navigation opens in a Torn tab (http/https) or is ignored.
+      appOrigin = `http://127.0.0.1:${port}`;
+      const keepAppPage = (e, url) => {
+        let origin = '';
+        try { origin = new URL(url).origin; } catch {}
+        if (origin === appOrigin) return;
+        e.preventDefault();
+        if (/^https?:\/\//i.test(url)) sendToRenderer('open-tab', url);
+      };
+      mainWindow.webContents.on('will-navigate', keepAppPage);
+      mainWindow.webContents.on('will-redirect', keepAppPage);
+
       mainWindow.show();
       mainWindow.focus();
-      mainWindow.loadURL(`http://127.0.0.1:${port}`);
+      mainWindow.loadURL(appOrigin);
       log('mainWindow ready on port', port);
     } catch (err) {
       log('createWindow ERROR:', err);

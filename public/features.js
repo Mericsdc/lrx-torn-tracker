@@ -13,6 +13,7 @@ const FEATURE_DEFS = [
   { group: 'pages', key: 'page.networth', def: true, tr: ['Networth', 'Servet dökümü ve günlük değişim'], en: ['Networth', 'Wealth breakdown and daily change'] },
   { group: 'pages', key: 'page.travel', def: true, tr: ['Seyahat Kârı', "Kâr, stok ve restock zamanları (YATA + Prometheus) · seviye 15'ten itibaren görünür"], en: ['Travel Profit', 'Profit, stock and restock times (YATA + Prometheus) · shown from level 15'] },
   { group: 'pages', key: 'page.war', def: true, tr: ['Savaş Hedefleri', 'Fair Fight hedef önerileri'], en: ['War Targets', 'Fair Fight target suggestions'] },
+  { group: 'pages', parent: 'page.war', key: 'war.groups', def: true, tr: ['Hedef grupları', 'Rakipleri gruplara ayır ve gruba göre filtrele · bu bilgisayarda saklanır'], en: ['Target groups', 'Sort enemies into groups and filter by group · saved on this computer'] },
   { group: 'pages', key: 'page.crimes', def: true, tr: ['Suç Merkezi', 'Shoplifting güvenliği (API) ve nerve başına kazanç'], en: ['Crime Hub', 'Shoplifting security (API) and money per nerve'] },
   { group: 'pages', parent: 'page.crimes', key: 'crimes.shoplift', def: true, tr: ["Shoplifting güvenliği", "Mağaza güvenlik durumu ve ★ alarmı"], en: ["Shoplifting security", "Store security status and ★ alerts"] },
   { group: 'pages', parent: 'page.crimes', key: 'crimes.value', def: true, tr: ["Nerve başına kazanç tablosu", "Bütün suçların $/N değerleri (Emforus tablosu)"], en: ["Money per nerve table", "$/N for every crime (Emforus sheet)"] },
@@ -57,6 +58,7 @@ const FEATURE_DEFS = [
   { group: 'torn', key: 'torn.pokerHelper', def: true, tr: ['Poker oranları', "Hold'em masasında elin adı ve kazanma yüzdesi · tavsiye vermez, oynamaz"], en: ['Poker odds', "Hand name and win chance at the Hold'em table · no advice, never plays"] },
   { group: 'torn', key: 'torn.fastSlots', def: true, tr: ['Hızlı Slot', 'Kumarhane slotunda animasyonsuz spin · her tıklama tek spin'], en: ['Fast Slots', 'Casino slots without the reel animation · one spin per click'] },
   { group: 'torn', key: 'torn.stockSync', def: true, tr: ['Stok teslim süresini Torn\'dan oku', 'Şirket stok sayfasındaki "Delivered in" sayaçları'], en: ['Read stock delivery times from Torn', '"Delivered in" timers on the company stock page'] },
+  { group: 'torn', key: 'torn.sessionGuard', def: true, tr: ['Torn oturum koruması', "Oturum aktarıldıktan sonra Torn'un güvenlik anahtarını eşitler; böylece Torn sayfaları oturumunu kapatmaz (yeniden başlatınca)"], en: ['Torn session guard', "Keeps Torn's security token in sync after a session import so Torn pages don't log you out (after restart)"] },
 
   { group: 'events', event: 'easter', key: 'torn.eggFinder', def: true, tr: ['Yumurta bulucu', 'Baktığın sayfada yumurta varsa ortada büyütüp kırmızı çerçeveyle gösterir · tıklamaz'], en: ['Egg finder', 'If the page you are viewing has an egg, shows it enlarged in the middle with a red border · never clicks'] },
   { group: 'events', event: 'halloween', key: 'torn.halloweenHelper', def: true, tr: ['Şeker dükkânı işareti', "Sweet Shop'ta şeker toplamak için gereken Halloween Basket'i işaretler · satın almaz"], en: ['Sweet Shop marker', 'Marks the Halloween Basket you need for treats in the Sweet Shop · never buys'] },
@@ -69,6 +71,9 @@ const FEATURE_DEFS = [
   { group: 'app', key: 'app.tabSleep', def: true, tr: ['Kullanılmayan sekmeleri uyut', '20 dk açılmayan Torn sekmesi RAM\'den boşaltılır, tıklayınca kaldığı yerden açılır'], en: ['Sleep unused tabs', 'Torn tabs unused for 20 min are unloaded from RAM and reopen where you left off when clicked'] },
   { group: 'app', key: 'app.feedback', def: true, tr: ['Geri bildirim butonu', 'Üst çubukta: istek, öneri ve hatalar e-posta ile geliştiriciye gider'], en: ['Feedback button', 'In the top bar: requests, suggestions and bugs go to the developer by email'] },
   { group: 'app', key: 'app.updates', def: true, tr: ['Otomatik güncelleme kontrolü', 'Açılışta ve dakikada bir kontrol · yeni sürümde bildirim'], en: ['Automatic update check', 'Checks on startup and every minute · prompts for new versions'] },
+  { group: 'app', key: 'app.weav3r', def: true, tr: ['Weav3r kısayolu', 'Üst çubukta weav3r.dev kısayolu'], en: ['Weav3r shortcut', 'weav3r.dev shortcut in the top bar'] },
+  { group: 'app', key: 'app.premium', def: true, tr: ['Premium üyelik bağlantısı', "Üyeliğini otomatik eşleştirir: API key'in yalnızca Torn ID'ni doğrulamak için lrxe8.com/torn-premium adresine gönderilir ve orada saklanmaz. Kapalıyken üyelik servisine hiçbir şey gönderilmez."], en: ['Premium membership connection', 'Matches your membership automatically: your API key is sent to lrxe8.com/torn-premium only to verify your Torn ID and is not stored there. Off: nothing is sent to the membership service.'] },
+  { group: 'app', key: 'app.premiumPromos', def: true, tr: ['Premium modül kartları', 'Savaş, Seyahat, Merit, Araçlar ve Ayarlar sayfalarındaki Premium kartları · Premium sayfası her zaman açık kalır'], en: ['Premium module cards', 'Premium cards on the War, Travel, Merits, Tools and Settings pages · the Premium page always stays available'] },
 ];
 const FEATURE_DEF_MAP = Object.fromEntries(FEATURE_DEFS.map((f) => [f.key, f]));
 const EXTRA_VIEWS = { job: 'page.job', gym: 'page.gym', networth: 'page.networth', travel: 'page.travel', war: 'page.war', level: 'page.levelling', guide: 'page.levelling', crimes: 'page.crimes', awards: 'page.awards', tools: 'page.tools', faction: 'page.faction' };
@@ -120,6 +125,7 @@ function applyFeatures() {
   applyNavVisibility();
   document.body.classList.toggle('no-anim', !feat('app.animations'));
   const tt = $('#tt-open-btn'); if (tt) tt.hidden = !feat('app.torntools');
+  const w3 = $('#weav3r-open-btn'); if (w3) w3.hidden = !feat('app.weav3r');
   const ub = $('#update-btn'); if (ub) ub.hidden = !window.electronAPI?.updateCheck || !feat('app.updates');
   window.renderUpdateBtn?.();
   renderFeatureSettings();
@@ -171,8 +177,11 @@ function bindSettings() {
     if (!inp) return;
     const key = inp.dataset.feature;
     if (key.startsWith('notify') && inp.checked && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
-    setFeature(key, inp.checked);
+    const saved = setFeature(key, inp.checked);
+    // Premium durumu, sunucu yeni ayarı kaydettikten sonra yenilensin
+    if (key === 'app.premium') saved.finally(() => window.dispatchEvent(new Event('lrx-premium-reset')));
     if (key === 'app.torntools') toast(tr('TornTools değişikliği uygulama yeniden başlatılınca geçerli olur', 'TornTools change applies after restarting the app'));
+    if (key === 'torn.sessionGuard') toast(tr('Torn oturum koruması değişikliği uygulama yeniden başlatılınca geçerli olur', 'Torn session guard change applies after restarting the app'));
   });
   host.addEventListener('click', (e) => {
     const tab = e.target.closest('[data-set-tab]');

@@ -104,17 +104,22 @@ async function throttle() {
 }
 
 const cache = new Map(); // key -> { t, ttl, data, promise }
+// Bumped whenever the API key changes: a Torn reply that was already on its way for the previous key
+// must not be cached or written into the new player's history.
+let keyGen = 0;
+function resetKeyCaches() { keyGen++; cache.clear(); ffCache.clear(); estCache.clear(); }
 async function cached(key, ttl, loader) {
   const c = cache.get(key);
   if (c && c.data !== undefined && Date.now() - c.t < ttl) return c.data;
   if (c && c.promise) return c.promise;
+  const gen = keyGen;
   const promise = (async () => {
     try {
       const data = await loader();
-      cache.set(key, { t: Date.now(), data });
+      if (gen === keyGen) cache.set(key, { t: Date.now(), data });
       return data;
     } catch (e) {
-      cache.delete(key);
+      if (gen === keyGen) cache.delete(key);
       throw e;
     }
   })();
@@ -157,10 +162,12 @@ async function getEducationNames() {
 async function getOverview(force = false) {
   const q = 'user/?selections=profile,cooldowns,education,battlestats,bars,icons,personalstats,travel,money,timestamp';
   if (force) cache.delete('torn:' + q);
+  const gen = keyGen;
   const [u, eduNames] = await Promise.all([
     torn(q, 25_000),
     getEducationNames().catch(() => history.eduNames || {}),
   ]);
+  if (gen !== keyGen) throw new ApiError(T('API key değişti, yeniden yükleniyor.', 'API key changed, reloading.'), 'KEY_CHANGED');
 
   const icons = u.icons || {};
   const iconList = Object.values(icons).map(String);
@@ -1075,7 +1082,7 @@ async function getAwards() {
 async function getMeritAllocation() {
   return cached('merits:allocation', 5 * 60_000, async () => {
     const [own, catalog] = await Promise.all([torn('v2/user/merits', 5 * 60_000), torn('v2/torn/merits', 6 * 3600_000)]);
-    if (!Array.isArray(own.merits?.upgrades) || !Array.isArray(catalog.merits)) throw new Error('Merit data unavailable');
+    if (!Array.isArray(own.merits?.upgrades) || !Array.isArray(catalog.merits)) throw new Error(T('Merit verisi alınamadı.', 'Merit data unavailable.'));
     const levels = new Map(own.merits.upgrades.map((r) => [r.id, r.level]));
     return { available: own.merits.available, used: own.merits.used, awards: own.merits.honors + own.merits.medals,
       tracks: catalog.merits.map((m) => ({ id: String(m.id), name: m.name, description: m.description, level: levels.get(m.id) ?? 0 })), at: Date.now(), source: 'desktop-api-snapshot' };
@@ -1776,6 +1783,12 @@ async function handleApi(req, res, url) {
     if (p.startsWith('/api/premium/')) {
       try {
         const action = p.slice('/api/premium/'.length);
+        // Settings → App → Premium membership connection. Off: the API key and every request stay on this computer.
+        if (config.features?.['app.premium'] === false) {
+          if (action === 'status' && req.method === 'GET') return send(res, 200, { configured: true, connected: false, disabled: true, code: 'PREMIUM_DISABLED', freeApiAccess: true });
+          if (action === 'disconnect' && req.method === 'POST') { premiumClient.reset(); return send(res, 200, { ok: true }); }
+          return send(res, 403, { error: 'PREMIUM_DISABLED', code: 'PREMIUM_DISABLED' });
+        }
         if (action === 'status' && req.method === 'GET') return send(res, 200, await premiumClient.status());
         if (action === 'connect' && req.method === 'POST') return send(res, 200, await premiumClient.connect(await readBody(req)));
         if (action === 'disconnect' && req.method === 'POST') { premiumClient.reset(); return send(res, 200, { ok: true }); }
@@ -1783,7 +1796,9 @@ async function handleApi(req, res, url) {
       } catch (error) { return send(res, error.status || 503, { error: error.code || 'PREMIUM_SERVICE_ERROR', code: error.code || 'PREMIUM_SERVICE_ERROR' }); }
     }
     if (p === '/api/ff-script-request' && req.method === 'POST') {
-      return send(res, 200, await ffScriptProxy.run(await readBody(req)));
+      const gone = new AbortController();
+      res.on('close', () => { if (!res.writableEnded) gone.abort(); });
+      return send(res, 200, await ffScriptProxy.run(await readBody(req), gone.signal));
     }
     if (p === '/api/config' && req.method === 'GET') {
       return send(res, 200, {
@@ -1809,6 +1824,7 @@ async function handleApi(req, res, url) {
         if (/^[a-zA-Z0-9_.-]{1,40}$/.test(k) && typeof v === 'boolean') config.features[k] = v;
       }
       saveConfig();
+      if (b.features?.['app.premium'] === false) premiumClient.reset();
       return send(res, 200, { ok: true, features: config.features });
     }
     if (p === '/api/stats') return send(res, 200, { history: dailyList(history.stats), battle: history.lastOverview?.battle || null });
@@ -1853,10 +1869,10 @@ async function handleApi(req, res, url) {
           return send(res, 400, { error: T('API key 16 karakterlik harf/rakam olmalı.', 'API keys must be 16 letters or digits.') });
         }
       }
-      if (b.theme != null && !THEMES.has(b.theme)) return send(res, 400, { error: 'Invalid theme' });
+      if (b.theme != null && !THEMES.has(b.theme)) return send(res, 400, { error: T('Geçersiz tema.', 'Invalid theme.') });
       if (typeof b.apiKey === 'string' && b.apiKey.trim()) {
         if (b.apiKey.trim() !== config.apiKey) premiumClient.reset();
-        config.apiKey = b.apiKey.trim(); cache.clear(); ffCache.clear(); estCache.clear();
+        config.apiKey = b.apiKey.trim(); resetKeyCaches();
         ffStatus = { ok: null, error: null, checkedAt: 0 };
       }
       if (typeof b.ffscouterKey === 'string') { config.ffscouterKey = b.ffscouterKey.trim(); ffCache.clear(); ffStatus = { ok: null, error: null, checkedAt: 0 }; }
@@ -1902,7 +1918,7 @@ async function handleApi(req, res, url) {
       }
       if (config.apiKey !== key) premiumClient.reset();
       config.apiKey = key;
-      cache.clear(); ffCache.clear(); estCache.clear();
+      resetKeyCaches();
       ffStatus = { ok: null, error: null, checkedAt: 0 };
       saveConfig(); schedulePoll();
       return send(res, 200, { ok: true, player: { id: user.player_id, name: user.name, level: user.level }, accessType: info.access_type, resetData: !!(prevPlayer && prevPlayer !== user.player_id) });
@@ -1912,7 +1928,7 @@ async function handleApi(req, res, url) {
       config.apiKey = '';
       config.ffscouterKey = '';
       config.logKey = '';
-      cache.clear(); ffCache.clear(); estCache.clear();
+      resetKeyCaches();
       delete history.lastOverview; delete history.lastCompanyReport;
       saveConfig(); saveHistory();
       return send(res, 200, { ok: true });
@@ -1965,7 +1981,7 @@ async function handleApi(req, res, url) {
       const fid = Number(url.searchParams.get('faction'));
       if (req.method === 'GET') return send(res, 200, warGroups.get(fid));
       if (req.method === 'POST') return send(res, 200, warGroups.mutate(fid, await readBody(req)));
-      return send(res, 405, { error: 'Method not allowed' });
+      return send(res, 405, { error: T('Bu işlem desteklenmiyor.', 'Method not allowed.') });
     }
     if (p === '/api/player') {
       const id = Number(url.searchParams.get('id'));
@@ -2008,7 +2024,7 @@ const server = http.createServer(async (req, res) => {
   try { url = new URL(req.url, 'http://127.0.0.1'); pathname = decodeURIComponent(url.pathname); }
   catch { res.writeHead(400); return res.end('Invalid URL'); }
   if (url.pathname === '/api/ff-script-request') {
-    if (req.headers.authorization !== 'Bearer ' + ffScriptProxy.token) return send(res, 403, { error: 'FF Scouter bridge access denied' });
+    if (req.headers.authorization !== 'Bearer ' + ffScriptProxy.token) return send(res, 403, { error: T('FF Scouter köprüsüne erişim reddedildi.', 'FF Scouter bridge access denied.') });
     return handleApi(req, res, url);
   }
   // Local APIs must not be writable by an unrelated web page.

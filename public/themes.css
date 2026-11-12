@@ -73,6 +73,8 @@ html[data-theme="light"] .glass::before, html[data-theme="light"] .glass::after 
 .auth-input-actions .btn { color:#eef2f3; }
 .auth { overflow-y:auto; align-items:safe center; }
 .auth-card { margin:auto; }
+/* The login screen is always dark: keep its own colors under every theme and Premium palette. */
+html[data-theme] .auth { color-scheme:dark; --text:#eef2f3; --muted:#829096; --muted-2:#525e64; --gold:#c9a96a; --gold-2:#e3cc97; --gold-soft:rgba(201,169,106,.10); --gold-border:rgba(201,169,106,.34); --tq:#d6dce3; --tq-2:#9aa4ae; --tq-soft:rgba(214,220,227,.10); --tq-border:rgba(214,220,227,.30); --stroke:rgba(255,255,255,.07); --stroke-2:rgba(255,255,255,.13); --field:#080c10; --danger:#dc4c64; }
 input,textarea { user-select:text; }
 #update-modal { z-index:1100; background:color-mix(in srgb,var(--bg) 80%,transparent); }
 .workspace-update-btn { flex-shrink:0; height:30px; padding:4px 18px 4px 10px; font-size:11px; white-space:nowrap; }

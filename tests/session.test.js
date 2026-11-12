@@ -28,3 +28,17 @@ test('restart closes child views and every window before exiting old process', (
     windows: [{ isDestroyed: () => false, contentView: { children: [{ webContents: { isDestroyed: () => false, close: () => calls.push('view-close') } }] }, destroy: () => calls.push('window-destroy') }] });
   assert.deepEqual(calls, ['relaunch', 'view-close', 'window-destroy', 'exit:0']);
 });
+test('a rejected login cookie puts the previous session back instead of signing the user out', async () => {
+  let jar = [{ name: 'PHPSESSID', domain: '.torn.com', path: '/', value: 'working' }, { name: 'uid', domain: '.torn.com', path: '/', value: '42' }];
+  const session = { cookies: {
+    get: async () => jar.map((c) => ({ ...c })),
+    remove: async (url, name) => { jar = jar.filter((c) => !(c.name === name && url.includes(c.domain.replace(/^\./, '')))); },
+    set: async (c) => { if (c.value === 'bad') throw new Error('rejected'); jar.push({ name: c.name, domain: c.domain || new URL(c.url).hostname, path: c.path, value: c.value }); },
+    flushStore: async () => {} } };
+  await assert.rejects(replaceTornCookies(session, [{ name: 'uid', domain: '.torn.com', value: '7' }, { name: 'PHPSESSID', domain: '.torn.com', value: 'bad' }]), /rejected/);
+  assert.deepEqual(jar.map((c) => c.name + '=' + c.value).sort(), ['PHPSESSID=working', 'uid=42']);
+  // A rejected extra cookie (e.g. __Host- with a domain) is skipped, the login still imports
+  const n = await replaceTornCookies({ cookies: { ...session.cookies, set: async (c) => { if (c.name.startsWith('__Host-')) throw new Error('rejected'); jar.push({ name: c.name, domain: c.domain, path: c.path, value: c.value }); } } },
+    [{ name: 'PHPSESSID', domain: '.torn.com', value: 'new' }, { name: '__Host-x', domain: '.torn.com', value: '1' }]);
+  assert.equal(n, 1); assert.ok(jar.some((c) => c.name === 'PHPSESSID' && c.value === 'new'));
+});

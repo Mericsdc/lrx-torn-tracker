@@ -107,8 +107,10 @@
       return best && (!bufferFull || firstSeen - best < 60_000) ? best : firstSeen;
     };
 
-    const started = Date.now();
-    while (Date.now() - started < 20000) {
+    const started = Date.now(), href = location.href;
+    while (Date.now() - started < 10000) {
+      // Focused tab only: stop as soon as the user leaves this view or the page
+      if (document.hidden || location.href !== href) return null;
       const root = shipmentsRoot();
       if (root) {
         let shipments = readShipments(root);

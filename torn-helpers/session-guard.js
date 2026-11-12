@@ -32,7 +32,12 @@
     if (typeof input === 'string' || input instanceof URL) input = fix(String(input));
     else if (input instanceof Request) {
       const url = fix(input.url);
-      if (url !== input.url) input = new Request(url, input);
+      if (url !== input.url) {
+        // new Request(url, request) throws for a streamed body ("duplex"), so copy the body as a Blob.
+        const body = input.method === 'GET' || input.method === 'HEAD' ? undefined : await input.clone().blob();
+        input = new Request(url, { method: input.method, headers: input.headers, body, credentials: input.credentials, cache: input.cache, redirect: input.redirect,
+          referrer: input.referrer, referrerPolicy: input.referrerPolicy, integrity: input.integrity, keepalive: input.keepalive, signal: input.signal });
+      }
       if (local && /application\/x-www-form-urlencoded/i.test(input.headers.get('Content-Type') || '') && input.method !== 'GET' && input.method !== 'HEAD') {
         input = new Request(input, { body: fixBody(await input.clone().text()) });
       }
@@ -52,7 +57,8 @@
     if (!sidebar || event.button !== 0) return;
     const bar = event.target.closest('[class*="bar__"]');
     const anchor = event.target.closest('a[href]');
-    let href = anchor?.href;
+    // href="#" / "javascript:" are Torn's own toggles (menus, collapsible lists): leave them to Torn.
+    let href = /^\s*(#|javascript:)/i.test(anchor?.getAttribute('href') || '') ? '' : anchor?.href;
     if (bar?.className.includes('energy__')) href = document.body?.dataset.country === 'south-africa' ? '/index.php?page=hunting' : '/gym.php';
     if (bar?.className.includes('nerve___')) href = '/page.php?sid=crimes';
     if (!href) return;

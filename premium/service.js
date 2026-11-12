@@ -47,7 +47,7 @@ function createPremiumService(config, dependencies = {}) {
     if (action === 'feature-permission') return features.override(actor, body);
     if (action === 'members') {
       if (config.mode === 'live' && config.receiverKey) {
-        for (const member of store.members(body).members.filter((member) => !member.nameCheckedAt || member.nameCheckedAt < store.now() - 21600).slice(0, 5)) {
+        for (const member of store.members(body).members.filter((member) => !member.nameCheckedAt || member.nameCheckedAt < store.now() - 21600).slice(0, 2)) {
           try { await client.profile(config.receiverKey, member.tornId); } catch { break; }
         }
       }
@@ -83,7 +83,9 @@ function createPremiumService(config, dependencies = {}) {
     }
     if (action === 'settings') {
       if (body.enabled === true && !worker.gate().allowed) fail(worker.gate().reason, 409);
-      return store.updateSettings(actor, body);
+      const updated = store.updateSettings(actor, body);
+      if (body.enabled === true) store.db.prepare('UPDATE premium_checkpoint SET consecutive_failures=0,next_check_at=0 WHERE id=1 AND gap_detected=0').run();
+      return updated;
     }
     if (action === 'subscription') return store.adjustSubscription(actor, body);
     if (action === 'review') {

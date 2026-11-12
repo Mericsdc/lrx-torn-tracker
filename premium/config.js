@@ -26,6 +26,9 @@ function readConfig(env = process.env) {
     privacyContact: String(env.PREMIUM_PRIVACY_CONTACT || '').trim(),
     controllerName: String(env.PREMIUM_CONTROLLER_NAME || '').trim(),
     recordRetentionPolicy: String(env.PREMIUM_RECORD_RETENTION_POLICY || '').trim(),
+    // Behind the local Cloudflare connector every request comes from loopback; the real client is in CF-Connecting-IP.
+    // Trusted only for loopback sockets. Set PREMIUM_TRUST_PROXY=0 to always use the socket address.
+    trustProxy: env.PREMIUM_TRUST_PROXY !== '0' && env.PREMIUM_TRUST_PROXY !== 'false',
   };
 }
 module.exports = { readConfig };

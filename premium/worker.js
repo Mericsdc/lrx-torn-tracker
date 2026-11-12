@@ -13,7 +13,7 @@ function liveGate(config) {
 }
 function createWorker(store, client, config, { random = Math.random, maxPages = 10 } = {}) {
   const owner = crypto.randomBytes(18).toString('hex');
-  let inFlight = null, timer = null, stopped = true;
+  let inFlight = null, timer = null, stopped = true, lastMaintenance = 0;
   const gate = () => liveGate(config);
 
   async function collectLive(checkpoint) {
@@ -74,7 +74,7 @@ function createWorker(store, client, config, { random = Math.random, maxPages = 
   }
   async function pollOnce({ force = false, syntheticTest = false } = {}) {
     store.expire();
-    store.maintenance(config.reviewRetentionDays || 30);
+    if (store.now() - lastMaintenance >= 600) { store.maintenance(config.reviewRetentionDays || 30); lastMaintenance = store.now(); }
     const cfg = store.settings(), before = store.checkpoint();
     if (!cfg.enabled && !(config.mode === 'test' && syntheticTest)) return { status: 'disabled' };
     const access = gate();
@@ -141,7 +141,7 @@ function createWorker(store, client, config, { random = Math.random, maxPages = 
     stopped = false;
     const loop = async () => {
       if (stopped) return;
-      try { await tick(); } catch { store.recordError('WORKER_FAILED'); }
+      try { await tick(); } catch { try { store.recordError('WORKER_FAILED'); } catch {} }
       if (!stopped) { timer = setTimeout(loop, 1000); timer.unref?.(); }
     };
     loop();

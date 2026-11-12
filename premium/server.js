@@ -21,13 +21,20 @@ function readBody(req) {
     req.on('error', () => reject(Object.assign(new Error('REQUEST_ABORTED'), { status: 400, code: 'REQUEST_ABORTED' })));
   });
 }
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+function clientAddress(req, config) {
+  const socket = req.socket.remoteAddress || '';
+  const forwarded = String(req.headers['cf-connecting-ip'] || '').trim();
+  if (config.trustProxy && LOOPBACK.has(socket) && /^[0-9a-fA-F:.]{2,45}$/.test(forwarded)) return forwarded;
+  return socket;
+}
 function send(res, status, value) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'" });
   res.end(JSON.stringify(value));
 }
 function createHttpServer(config, dependencies = {}) {
   const service = createPremiumService(config, dependencies);
-  const attempts = new Map();
+  const attempts = new Map(); const globalAttempts = { until: 0, count: 0 };
   const server = http.createServer(async (req, res) => {
     try {
       if (req.url.length > 2048) fail('REQUEST_URL_LIMIT', 414);
@@ -52,7 +59,11 @@ function createHttpServer(config, dependencies = {}) {
         rights: 'Authenticated users can export their account data and request an erasure assessment. Payment disputes and duplicate-prevention retention must be assessed before erasing records.',
       });
       if (['/v1/auth/torn', '/v1/auth/test'].includes(url.pathname) && req.method === 'POST') {
-        const remote = req.socket.remoteAddress || '';
+        if (url.pathname.endsWith('/test') && config.mode === 'live') fail('TEST_LOGIN_DISABLED', 403);
+        const remote = clientAddress(req, config);
+        // Global ceiling so many distinct addresses cannot flood Torn verification
+        if (!globalAttempts.until || globalAttempts.until <= service.store.now()) { globalAttempts.until = service.store.now() + 60; globalAttempts.count = 0; }
+        if (++globalAttempts.count > 300) fail('AUTH_RATE_LIMIT', 429);
         const bucket = attempts.get(remote);
         if (!bucket && attempts.size >= 1000) {
           for (const [key, entry] of attempts) if (entry.until <= service.store.now()) attempts.delete(key);
@@ -101,7 +112,8 @@ if (require.main === module) {
     const config = readConfig();
     const { server, service } = createHttpServer(config);
     server.listen(config.port, config.host, () => { service.worker.start(); console.log('Premium service listening; mode=' + config.mode + '; port=' + server.address().port); });
-    const stop = () => server.close(async () => { await service.close(); process.exit(0); });
+    let stopping = false;
+    const stop = () => { if (stopping) return; stopping = true; server.close(async () => { try { await service.close(); } finally { process.exit(0); } }); };
     process.on('SIGINT', stop); process.on('SIGTERM', stop);
   } catch { console.error('Premium service configuration or database initialization failed. Check the documented environment variables.'); process.exitCode = 1; }
 }

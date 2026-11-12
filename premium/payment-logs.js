@@ -8,6 +8,7 @@ function normalizeLogs(payload) {
 function parseItemLog(log, now) {
   if (!log || typeof log.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(log.id) || !Number.isSafeInteger(log.timestamp) || log.timestamp <= 0 || log.timestamp > now + 60) throw new TornError('ITEM_LOG_SCHEMA');
   if (log.details?.id !== 4103) throw new TornError('ITEM_LOG_TYPE');
+  if (!Array.isArray(log.data?.items) || !log.data.items.some((item) => item?.id === 206)) return null;
   const senderId = log.data?.sender, items = log.data?.items;
   if (!Number.isSafeInteger(senderId) || senderId <= 0 || !Array.isArray(items) || !items.length || items.length > 1000) throw new TornError('ITEM_LOG_SCHEMA');
   let quantity = 0;
@@ -26,7 +27,7 @@ async function collectItemLogs(store, client, key, checkpoint, now, owner, maxPa
   const unresolved = store.db.prepare("SELECT min(event_timestamp) AS at FROM premium_transactions WHERE source='torn-v2-events' AND parsed_verified=0 AND status='review'").get().at;
   const baseline = checkpoint.baseline_at ?? now;
   let from = Math.max(baseline + 1, Number(saved?.value || baseline) - 120);
-  if (unresolved != null && unresolved > baseline) from = Math.min(from, unresolved);
+  if (!saved && unresolved != null && unresolved > baseline) from = Math.min(from, unresolved);
   let params = { from }, covered = false;
   const logs = [], seen = new Set();
   for (let pageIndex = 0; pageIndex < maxPages; pageIndex++) {

@@ -86,18 +86,18 @@ const I18N = {
   'auth.showHide': ['Göster / gizle', 'Show / hide'],
   'auth.login': ['Giriş Yap', 'Log In'],
   'auth.getKey': ['Limited API key oluştur →', 'Create a Limited API key →'],
-  'auth.privacy': ["Key bu bilgisayarda saklanır; Torn API ve ayrı key yoksa FFScouter için kullanılır. Üyelik durumunuz girişte otomatik eşleştirilir; key bu kontrol için üyelik servisine gönderilir ve orada saklanmaz.", 'Your key is stored on this computer and used with Torn API and, unless separately configured, FFScouter. App login automatically matches your membership; the key is sent to the membership service for this check and is not stored there.'],
+  'auth.privacy': ["Key bu bilgisayarda saklanır; Torn API ve (ayrı key yoksa) FFScouter ile kullanılır. Premium bağlantısı ayarı açıkken (varsayılan) Torn ID'ni doğrulamak için otomatik olarak lrxe8.com/torn-premium adresine gönderilir ve orada saklanmaz. Bunu Ayarlar'dan kapatabilirsin.", 'Your key is stored on this computer and used with the Torn API and (without a separate key) FFScouter. With the Premium connection setting on (default), it is sent automatically to lrxe8.com/torn-premium to verify your Torn ID and is not stored there. You can turn this off in Settings.'],
   'auth.creditTitle': ['Torn profili', 'Torn profile'],
   // Torn API kullanım koşulları (ToS) tablosu — key'in girildiği ekranda gösterilmesi gerekir
   'tos.title': ['API kullanım koşulları (Torn ToS)', 'API terms of use (Torn ToS)'],
   'tos.storage': ['Veri saklama', 'Data storage'],
-  'tos.storageV': ['Takip verileri yereldir. Üyelik otomatik eşleştirilir; Torn ID, oyuncu adı, ödeme ve üyelik kayıtları üyelik servisinde saklanır. Saklama bilgileri Premium ekranındadır.', 'Tracker data is local. Automatic membership matching stores Torn ID, player name, payment and subscription records at the membership service; retention details appear on the Premium screen.'],
+  'tos.storageV': ['Takip verileri ve key bu bilgisayarda kalır. Premium bağlantısı açıkken üyelik servisi Torn ID, oyuncu adı, ödeme ve üyelik süresi kayıtlarını saklar; saklama bilgileri Premium sayfasındadır.', 'Tracker data and your key stay on this computer. With the Premium connection on, the membership service stores your Torn ID, player name, payments and membership period; retention details are on the Premium page.'],
   'tos.sharing': ['Veri paylaşımı', 'Data sharing'],
-  'tos.sharingV': ["Savaş tahminleri için oyuncu ID'leri FFScouter'a gönderilir. Premium kayıtlarına hesap sahibi ve yetkili üyelik servisi yöneticileri erişir; kayıtlar halka açılmaz.", 'Player IDs are sent to FFScouter for war estimates. Premium records are accessible to the account owner and authorized membership operators; they are not public.'],
+  'tos.sharingV': ["Savaş tahminleri için oyuncu ID'leri FFScouter'a gönderilir. TornW3B scripti (açıksa) açık artırma ilanlarını weav3r.dev'e senkronlar. Premium kayıtlarını yalnızca sen ve yetkili üyelik yöneticileri görür.", 'Player IDs go to FFScouter for war estimates. The TornW3B script (if enabled) syncs auction listings to weav3r.dev. Premium records are visible only to you and authorized membership operators.'],
   'tos.purpose': ['Kullanım amacı', 'Purpose of use'],
   'tos.purposeV': ['Kişisel takip ve isteğe bağlı uygulama üyeliği. API verilerine erişim ve mevcut özellikler ücretsizdir; gelecekteki ücretler ek analizler için olabilir.', 'Personal tracking and optional application membership. API data access and existing features stay free; future remuneration may concern additional insights.'],
   'tos.keyStorage': ['Key saklama ve paylaşım', 'Key storage & sharing'],
-  'tos.keyStorageV': ["Yerel config.json içinde. Torn API'ye ve ayrı key yoksa FFScouter'a gönderilir. Premium'a ayrıca bağlanırsanız üyelik servisi anahtarı hesap doğrulaması için geçici kullanır, saklamaz.", 'Stored in local config.json. Sent to Torn API and, without a separate key, FFScouter. If you separately connect Premium, the membership service uses it transiently for account verification and does not store it.'],
+  'tos.keyStorageV': ["Yerelde (config.json) saklanır. Torn API ve ayrı key yoksa FFScouter ile kullanılır. Premium bağlantısı açıkken (varsayılan) Torn ID doğrulaması için otomatik olarak lrxe8.com/torn-premium adresine gönderilir, orada saklanmaz. Ayarlar'dan kapatılabilir.", 'Stored locally (config.json). Used with the Torn API and, without a separate key, FFScouter. Premium connection on (default): sent automatically to lrxe8.com/torn-premium to verify your Torn ID, not stored there. Turn it off in Settings.'],
   'tos.access': ['Key erişim seviyesi', 'Key access level'],
   'tos.accessV': ['Limited Access. Log okuyan özellikler için isteğe bağlı ayrı bir "log" key.', 'Limited Access. An optional separate "log" key for features that read logs.'],
   'set.logout': ['Çıkış Yap', 'Log Out'],
@@ -254,7 +254,7 @@ function formatRehabMsg(name, addiction) {
     .replace(/\{name\}/gi, decode(name))
     .replace(/\{addiction\}/gi, String(addiction));
 }
-/* Rehab mesajını Torn private chat'ten gönder (Electron). Olmazsa Mesaj ekranı + pano. */
+/* Rehab mesajını hazırla: açık chat kutusuna yazar ya da panoya kopyalar. Gönderme her zaman kullanıcıda (Torn kuralları). */
 const chatSending = new Set();
 async function sendRehabChat(emp, btn) {
   const name = decode(emp.name);
@@ -267,13 +267,13 @@ async function sendRehabChat(emp, btn) {
   if (chatSending.has(emp.id)) return;
   chatSending.add(emp.id);
   btn?.classList.add('spin');
-  toast(tr(`${name} için chat açılıyor…`, `Opening chat with ${name}…`));
+  toast(tr(`${name} profili açılıyor…`, `Opening ${name}'s profile…`));
   try {
     const url = `https://www.torn.com/profiles.php?XID=${emp.id}`;
     const tab = openInTab(url, { activate: true, reuse: true });
     const r = await window.electronAPI.tornChatSend({ tabId: tab.id, name, message: msg });
-    if (r?.ok && r.sent !== false) toast(tr(`✓ Rehab mesajı ${name} kişisine chat'ten gönderildi`, `✓ Rehab message sent to ${name} via chat`));
-    else if (r?.ok) toast(tr(`Mesaj chat kutusuna yazıldı · Enter ile gönder`, `Message typed into chat · press Enter to send`));
+    if (r?.ok) toast(tr(`Mesaj chat kutusuna yazıldı · göndermek için Enter'a bas`, `Message typed into the chat box · press Enter to send it`));
+    else if (r?.step === 'box') await copyText(msg, tr(`Mesaj kopyalandı · profilde Chat'e tıkla, Ctrl+V ile yapıştır ve gönder`, `Message copied · click Chat on the profile, paste with Ctrl+V and send`));
     else if (r?.step === 'load' && state.tornLoggedIn === false) await fallback(tr("Torn'a giriş yapılmamış", 'not logged in to Torn'));
     else await fallback(r?.step || tr('hata', 'error'));
   } catch (e) {
@@ -303,12 +303,20 @@ function setAlert(key, html, type = 'danger') {
   $('#alert-area').innerHTML = [...alerts.values()].map((a) => `<div class="alert ${a.type}">${a.html}</div>`).join('');
 }
 
+// Sunucu Torn kotası için bekleyebilir (throttle) ya da üyelik servisine birkaç istek zincirleyebilir: bu yollara daha uzun süre tanı
+const SLOW_API = /^\/api\/(?:premium\/|targets|estimate|faction)/;
 async function api(path, opts = {}) {
-  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(60_000), ...opts });
+  const { timeout, ...init } = opts;
+  let res;
+  try { res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(timeout ?? (SLOW_API.test(path) ? 150_000 : 60_000)), ...init }); }
+  catch (e) {
+    if (e?.name !== 'TimeoutError') throw e;
+    const t = new Error(tr('Sunucu zamanında yanıt vermedi. Tekrar dene.', 'The server did not respond in time. Please try again.')); t.name = 'TimeoutError'; t.code = 'TIMEOUT'; throw t;
+  }
   const json = await res.json().catch(() => ({}));
   if (!res.ok) { const e = new Error(json.error || `HTTP ${res.status}`); e.status = res.status; e.code = json.code; throw e; }
   if (path === '/api/premium/connect') window.PremiumAccess?.accept(json);
-  if (['/api/logout', '/api/premium/disconnect'].includes(path) || (path === '/api/config' && opts.body && /"apiKey"/.test(opts.body))) window.dispatchEvent(new Event('lrx-premium-reset'));
+  if (['/api/logout', '/api/premium/disconnect', '/api/auth'].includes(path) || (path === '/api/config' && opts.body && /"apiKey"/.test(opts.body))) window.dispatchEvent(new Event('lrx-premium-reset'));
   return json;
 }
 

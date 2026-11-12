@@ -2,16 +2,29 @@
   let faction = null, data = { groups: [], assignments: {} }, filter = '*';
   let loading = false, busy = false, selected = new Set(), visible = [], error = '';
   const host = $('#war-groups');
-  const current = () => faction === state.factionId;
+  const enabled = () => feat('war.groups'); // Settings → Pages → War Targets → Target groups
+  const current = () => enabled() && faction === state.factionId;
+  const errorText = (e) => ({
+    GROUP_FACTION_INVALID: tr('Geçersiz faction ID.', 'Invalid faction ID.'),
+    GROUP_NAME_LENGTH: tr('Grup adı 1–40 karakter olmalı.', 'Group name must be 1–40 characters.'),
+    GROUP_NAME_TAKEN: tr('Bu adda bir grup zaten var.', 'A group with this name already exists.'),
+    GROUP_LIMIT: tr('Bir faction için en fazla 24 grup oluşturulabilir.', 'Maximum 24 groups per faction.'),
+    GROUP_NOT_FOUND: tr('Grup bulunamadı.', 'Group not found.'),
+    GROUP_PLAYER_COUNT: tr('1 ile 1000 arasında oyuncu seç.', 'Choose 1–1000 players.'),
+    GROUP_PLAYER_INVALID: tr('Geçersiz oyuncu ID.', 'Invalid player ID.'),
+    GROUP_ACTION_UNKNOWN: tr('Bilinmeyen grup işlemi.', 'Unknown group action.'),
+  })[e?.code] || e?.message || tr('Hedef grupları kaydedilemedi.', 'Could not save target groups.');
+  const lockRows = (on) => document.querySelectorAll('#war-table [data-group-target],#war-table [data-group-player]').forEach((el) => { el.disabled = on; });
   const options = (value, includeAll = false) =>
     (includeAll ? `<option value="*" ${value === '*' ? 'selected' : ''}>${tr('Tüm gruplar', 'All groups')}</option>` : '') +
     `<option value="" ${value === '' ? 'selected' : ''}>${tr('Grupsuz', 'Ungrouped')}</option>` +
-    data.groups.map((g) => `<option value="${g.id}" ${value === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('');
+    data.groups.map((g) => `<option value="${esc(g.id)}" ${value === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('');
   function render() {
-    if (!state.factionId) { host.innerHTML = ''; return; }
+    host.hidden = !enabled();
+    if (!state.factionId || !enabled()) { host.innerHTML = ''; return; }
     if (!current() || loading) { host.textContent = tr('Hedef grupları yükleniyor…', 'Loading target groups…'); return; }
     if (error) {
-      host.innerHTML = `<div class="alert warn">${esc(error)} <button type="button" class="btn sm" data-group-retry>${tr('Tekrar dene', 'Retry')}</button></div>`;
+      host.innerHTML = `<div class="alert warn">${esc(errorText(error))} <button type="button" class="btn sm" data-group-retry>${tr('Tekrar dene', 'Retry')}</button></div>`;
       return;
     }
     const draft = $('#group-name')?.value || '';
@@ -39,20 +52,21 @@
   }
   window.loadWarGroups = async (force = false) => {
     const fid = state.factionId;
-    if (!fid || (faction === fid && !force)) return;
+    if (!enabled() || !fid || (faction === fid && !force)) return;
     faction = fid; filter = '*'; selected.clear(); data = { groups: [], assignments: {} };
-    loading = true; error = ''; render();
+    loading = true; error = null; render();
     try {
       const result = await api('/api/war-groups?faction=' + fid);
       if (faction !== fid) return;
       data = result;
-    } catch (e) { if (faction === fid) error = e.message; }
+    } catch (e) { if (faction === fid) error = e; }
     finally { if (faction === fid) { loading = false; render(); if (state.targets?.faction.id == fid) renderTargets(); } }
   };
   async function mutate(body) {
     if (busy || !current()) return;
     const fid = faction;
-    busy = true; render();
+    // Row selects stay disabled while saving, so a change can't be silently dropped
+    busy = true; render(); lockRows(true);
     try {
       const result = await api('/api/war-groups?faction=' + fid, { method: 'POST', body: JSON.stringify(body) });
       if (faction !== fid) return;
@@ -60,8 +74,8 @@
       if (filter && filter !== '*' && !data.groups.some((g) => g.id === filter)) filter = '*';
       selected.clear();
       toast(tr('Hedef grupları kaydedildi', 'Target groups saved'));
-    } catch (e) { toast(e.message); }
-    finally { busy = false; render(); if (current() && state.targets?.faction.id == faction) renderTargets(); }
+    } catch (e) { toast(errorText(e)); }
+    finally { busy = false; lockRows(false); render(); if (current() && state.targets?.faction.id == faction) renderTargets(); }
   }
   window.filterWarTargets = (rows) => !current() || filter === '*' ? rows : rows.filter((m) => (data.assignments[m.id] || '') === filter);
   window.warGroupName = (id) => current() ? data.groups.find((g) => g.id === data.assignments[id])?.name || '' : '';
@@ -106,4 +120,15 @@
   });
   const oldLang = window.onLangChanged;
   window.onLangChanged = () => { oldLang?.(); render(); };
+  // Settings toggle: show / hide the group bar and the table's Group column right away
+  let shown = null;
+  FEATURE_HOOKS.push(() => {
+    const on = enabled();
+    if (on === shown) return;
+    const first = shown === null; shown = on;
+    if (first) { host.hidden = !on; return; }
+    if (on) window.loadWarGroups();
+    render();
+    if (state.targets) renderTargets();
+  });
 })();

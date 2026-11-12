@@ -47,11 +47,12 @@ function createTornClient(store, { fetchImpl = fetch } = {}) {
       response = await fetchImpl(url.toString(), { headers: { Authorization: 'ApiKey ' + key, 'User-Agent': 'LRX-TornTracker-Premium/1.0' }, redirect: 'error', signal: AbortSignal.timeout(20_000) });
     } catch { throw new TornError('UPSTREAM_NETWORK'); }
     if (response.status === 429) throw new TornError('UPSTREAM_RATE_LIMIT', { retryAfter: retrySeconds(response.headers.get('retry-after'), store.now()) });
-    if (!response.ok) throw new TornError('UPSTREAM_HTTP_' + response.status, { retryable: response.status >= 500 || response.status === 408 });
+    // Torn reports key problems as JSON error codes; an HTTP error page (e.g. a CDN 403) is transient
+    if (!response.ok) throw new TornError('UPSTREAM_HTTP_' + response.status);
     const data = await limitedJson(response);
     if (data?.error) {
       const code = Number(data.error.code);
-      const fatal = [1, 2, 7, 10, 13, 16, 18].includes(code);
+      const fatal = [1, 2, 10, 13, 16, 18].includes(code);
       if (fatal) store.db.prepare('INSERT INTO premium_metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('invalid-key:' + digest, String(store.now() + 600));
       throw new TornError('TORN_' + (Number.isSafeInteger(code) ? code : 'ERROR'), { retryable: !fatal, retryAfter: [5, 8].includes(code) ? 120 : 60 });
     }
@@ -60,7 +61,7 @@ function createTornClient(store, { fetchImpl = fetch } = {}) {
   async function identity(key) {
     const data = await request('/v2/key/info', key);
     const id = data?.info?.user?.id;
-    if (!Number.isSafeInteger(id) || id <= 0) throw new TornError('IDENTITY_SCHEMA', { retryable: false });
+    if (!Number.isSafeInteger(id) || id <= 0) throw new TornError('IDENTITY_SCHEMA');
     const digest = crypto.createHash('sha256').update(key).digest('hex');
     const existing = store.db.prepare('SELECT value FROM premium_metadata WHERE key=?').get('key-owner:' + digest);
     if (!existing) {

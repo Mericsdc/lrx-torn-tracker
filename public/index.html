@@ -46,14 +46,14 @@
         </form>
         <div class="auth-help">
           <a href="#" id="auth-get-key" data-i18n="auth.getKey">Create a Limited API key →</a>
-          <small data-i18n="auth.privacy">Your key is stored locally and used with Torn API and FFScouter. Optional Premium connection requires a separate acknowledgement before sending it transiently to the membership service for identity verification.</small>
+          <small data-i18n="auth.privacy">Your key is stored on this computer and used with the Torn API and (without a separate key) FFScouter. With the Premium connection setting on (default), it is sent automatically to lrxe8.com/torn-premium to verify your Torn ID and is not stored there. You can turn this off in Settings.</small>
           <details class="auth-tos">
             <summary data-i18n="tos.title">API terms of use (Torn ToS)</summary>
             <table>
-              <tr><th data-i18n="tos.storage">Data storage</th><td data-i18n="tos.storageV">Tracker data is local. Optional membership stores verified Torn ID, payments and subscription periods centrally; see Premium for retention details.</td></tr>
-              <tr><th data-i18n="tos.sharing">Data sharing</th><td data-i18n="tos.sharingV">Player IDs go to FFScouter for war estimates. Premium records are private to their owner and authorized membership operators.</td></tr>
+              <tr><th data-i18n="tos.storage">Data storage</th><td data-i18n="tos.storageV">Tracker data and your key stay on this computer. With the Premium connection on, the membership service stores your Torn ID, player name, payments and membership period; retention details are on the Premium page.</td></tr>
+              <tr><th data-i18n="tos.sharing">Data sharing</th><td data-i18n="tos.sharingV">Player IDs go to FFScouter for war estimates. The TornW3B script (if enabled) syncs auction listings to weav3r.dev. Premium records are visible only to you and authorized membership operators.</td></tr>
               <tr><th data-i18n="tos.purpose">Purpose of use</th><td data-i18n="tos.purposeV">Personal tracking and optional membership. API data and existing features remain free; future remuneration may concern additional insights.</td></tr>
-              <tr><th data-i18n="tos.keyStorage">Key storage &amp; sharing</th><td data-i18n="tos.keyStorageV">Stored locally. Used with Torn and FFScouter. Optional Premium sends the key transiently to the membership service for identity verification, without storing it there.</td></tr>
+              <tr><th data-i18n="tos.keyStorage">Key storage &amp; sharing</th><td data-i18n="tos.keyStorageV">Stored locally (config.json). Used with the Torn API and, without a separate key, FFScouter. Premium connection on (default): sent automatically to lrxe8.com/torn-premium to verify your Torn ID, not stored there. Turn it off in Settings.</td></tr>
               <tr><th data-i18n="tos.access">Key access level</th><td data-i18n="tos.accessV">Limited Access. An optional separate "log" key for features that read logs.</td></tr>
             </table>
           </details>
@@ -95,7 +95,7 @@
       <button class="ws-quick-btn" id="tt-open-btn" title="TornTools">
         <span>🧰</span><span>TornTools</span><small class="tt-state" id="tt-open-state">…</small>
       </button>
-      <button class="ws-quick-btn" data-open-url="https://weav3r.dev/" data-tab-label="Weav3r" title="Weav3r · TornW3B">
+      <button class="ws-quick-btn" id="weav3r-open-btn" data-open-url="https://weav3r.dev/" data-tab-label="Weav3r" title="Weav3r · TornW3B">
         <span>🌐</span><span>Weav3r</span>
       </button>
     </div>
