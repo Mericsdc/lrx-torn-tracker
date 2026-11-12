@@ -45,27 +45,15 @@ test('a paid membership is ready before login but another account cannot claim o
   assert.equal(service.store.entitlement(999999).remainingDays, 30);
 });
 
-test('public landing serves static files safely while API routes keep authentication', async (t) => {
+test('public prefix serves only the JSON API (the website is lrxe8.com/torn-tracker) and keeps authentication', async (t) => {
   const { base, upstreamCalls } = await fixture(t, true, 'https://lrxe8.com/torn-premium');
-  const page = await fetch(base + '/torn-premium');
-  assert.equal(page.status, 200);
-  assert.match(page.headers.get('content-type'), /^text\/html/);
-  assert.match(page.headers.get('content-security-policy'), /frame-ancestors 'none'/);
-  assert.match(await page.text(), /One click/);
-  const head = await fetch(base + '/torn-premium', { method: 'HEAD' });
-  assert.equal(head.status, 200); assert.equal(await head.text(), '');
-  for (const [asset, type] of [['styles/site.css', 'text/css'], ['site.js', 'text/javascript'], ['assets/overview.png', 'image/png'], ['assets/mona-sans.woff2', 'font/woff2']]) {
-    const response = await fetch(base + '/torn-premium/site/' + asset);
-    assert.equal(response.status, 200, asset); assert.ok(response.headers.get('content-type').startsWith(type));
-    await response.arrayBuffer();
+  for (const route of ['/torn-premium', '/torn-premium/site/site.js', '/torn-premium/site/../package.json', '/torn-premium/download/windows', '/torn-premium/.openai/hosting.json']) {
+    const response = await fetch(base + route, { redirect: 'manual' });
+    assert.ok([401, 404].includes(response.status), route);
+    assert.match(response.headers.get('content-type'), /^application\/json/, route);
+    assert.match(response.headers.get('content-security-policy'), /default-src 'none'/, route);
+    await response.text();
   }
-  for (const asset of ['.openai/hosting.json', '../package.json', 'assets/missing.png', 'build.mjs', 'assets/%2e%2e%2fpackage.json']) {
-    const response = await fetch(base + '/torn-premium/site/' + asset);
-    assert.ok([401,404].includes(response.status), asset); await response.text();
-  }
-  const download = await fetch(base + '/torn-premium/download/windows', {redirect:'manual'});
-  assert.equal(download.status, 302);
-  assert.equal(download.headers.get('location'), 'https://github.com/Mericsdc/lrx-torn-tracker/releases/latest/download/LRX-Torn-Tracker-Windows-x64.zip');
   assert.equal((await fetch(base + '/torn-premium/v1/admin')).status, 401);
   assert.equal((await fetch(base + '/torn-premium/v1/me')).status, 401);
   assert.equal(upstreamCalls(), 0);

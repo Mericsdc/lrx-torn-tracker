@@ -24,3 +24,8 @@ stage/
 # OS
 Thumbs.db
 .DS_Store
+
+# Website tool output (screenshots, checks, original avatar downloads)
+website/shots/
+website/checks/
+website/originals/

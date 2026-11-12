@@ -4,7 +4,7 @@ const os = require('os');
 const { fork } = require('child_process');
 const assert = require('assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
-const { buildBattleStats } = require('../battle-stats');
+const { buildBattleStats } = require('../src/server/battle-stats');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'lrx-ui-'));
 fs.writeFileSync(path.join(temp, 'config.json'), JSON.stringify({ features: { 'page.travel': false, 'app.splash': false, 'app.animations': false } }));
 const child = fork(path.join(__dirname, 'preview-server.js'), { env: { ...process.env, TORN_DATA_DIR: temp, TORN_API_KEY: '' }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });

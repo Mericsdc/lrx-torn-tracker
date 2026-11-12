@@ -40,7 +40,7 @@ not apply to code that must remain under a copyleft license. In particular,
 FF Scouter and its covered wrappers retain GPL-3.0 permissions; TornW3B,
 React/React DOM and other MIT components retain MIT permissions; Mona Sans
 retains the SIL Open Font License. TornTools retains its upstream license.
-See userscripts/NOTICE.txt, userscripts/GPL-3.0.txt and website/assets/OFL.txt.
+See userscripts/NOTICE.txt, userscripts/GPL-3.0.txt and website/OFL.txt.
 
 5. No warranty
 

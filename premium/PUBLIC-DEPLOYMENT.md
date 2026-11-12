@@ -20,7 +20,7 @@ The existing remote synthetic-test unit/database was left unchanged. The desktop
 
 The already-running `lrxe8.com` tunnel was configured through the operator's authenticated Cloudflare dashboard. No root password, Cloudflare API credential, new DNS zone, firewall change or new tunnel was needed.
 
-The landing page was added on 2026-11-11; see `../WEBSITE.md` for publication IDs and maintenance. Current route order:
+The landing page was added on 2026-11-11; see `../docs/WEBSITE.md` for publication IDs and maintenance. Current route order:
 
 1. Hostname `lrxe8.com`, path `^/torn-premium/?$|^/torn-premium/site/`, service `https://lrx-torn-tracker.workspace-433160.chatgpt.site` (Host header and TLS origin name equal that hostname, certificate verification on).
 2. Hostname `lrxe8.com`, path `^/torn-premium(/.*)?$`, service `http://127.0.0.1:3742`.

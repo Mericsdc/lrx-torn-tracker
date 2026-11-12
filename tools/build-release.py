@@ -15,7 +15,6 @@ import urllib.request
 import zipfile
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-VERSION = '1.6.12'
 RUNTIME_URL = 'https://github.com/Mericsdc/lrx-torn-tracker/releases/download/v1.6.9/LRX-Torn-Tracker-win32-x64-1.6.9.zip'
 RUNTIME_SHA = '84aca86b641190673c539045a8d746d11dff5ee2ef75a6cccd81e91af720714e'
 COMMIT = os.environ.get('RELEASE_COMMIT', 'HEAD')
@@ -36,7 +35,9 @@ with zipfile.ZipFile(io.BytesIO(source)) as archive:
     archive.extractall(source_dir)
 
 package = json.loads((source_dir / 'package.json').read_text(encoding='utf-8'))
-assert package['version'] == VERSION
+VERSION = package['version']  # the release version is the committed package.json version
+notes_file = source_dir / 'docs' / 'releases' / (VERSION + '.md')
+assert notes_file.is_file(), 'Missing release notes: docs/releases/' + VERSION + '.md'
 allowed = json.loads(subprocess.check_output([
     'node', '-e', 'process.stdout.write(JSON.stringify(require("./tools/make-update").listFiles(process.cwd())))'
 ], cwd=source_dir))
@@ -77,7 +78,7 @@ with zipfile.ZipFile(io.BytesIO(runtime)) as archive:
 assert (portable / 'TornTracker.exe').is_file()
 assert (portable / 'locales' / 'en-US.pak').is_file()
 
-notes = (app / ('RELEASE-NOTES-' + VERSION + '.md')).read_text(encoding='utf-8')
+notes = notes_file.read_text(encoding='utf-8')
 (STAGE / 'notes.md').write_text(notes, encoding='utf-8')
 subprocess.run(['node', 'tools/make-update.js', notes], cwd=app, check=True)
 output = STAGE / 'updates'

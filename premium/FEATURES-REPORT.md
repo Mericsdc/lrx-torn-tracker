@@ -45,11 +45,11 @@ Mevcut ödeme ve abonelik tabloları değiştirilmez. 3→4 geçişinin abonelik
 ## Dosyalar
 
 - Merkezi servis: `premium/feature-service.js`, `premium/insights.js`, `premium/service.js`, `premium/server.js`, `premium/database.js`, `premium/store.js`, migration 004.
-- Köprü ve Free API: `premium-client.js`, `premium-url.js`, `server.js`. Ortak HTTPS adresinin alt yolunu korur; hatırlanan izin tam servis adresine bağlıdır.
+- Köprü ve Free API: `src/server/premium-client.js`, `src/server/premium-url.js`, `src/server/server.js`. Ortak HTTPS adresinin alt yolunu korur; hatırlanan izin tam servis adresine bağlıdır.
 - Arayüz: `public/feature-catalog.js`, `feature-access.js/css`, `advanced-modules.js/css`, `travel-math.js`, `features.js`, `events.js`, `app.js`, `premium.js`, `workspace.js`, `war-groups-ui.js`, `index.html`.
 - Testler: `tests/premium/features.test.js`, `tests/premium/client.test.js`, `tests/feature-modules-ui-smoke.js`, `tests/unit/travel-math.test.mjs`, `vitest.config.mjs`.
 - Geliştirme/paketleme: `package.json`, `package-lock.json`, `.gitignore`, `.github/workflows/tests.yml`, `tools/check-syntax.js`, `tools/build-preview.js`, `tools/make-update.js`.
-- Belgeler: `TESTING.md`, `premium/FEATURE-MATRIX.md`, `premium/FEATURES-REPORT.md`, `premium/PUBLIC-DEPLOYMENT.md`, `premium/README.md`, `premium/PRIVACY.md`.
+- Belgeler: `docs/TESTING.md`, `premium/FEATURE-MATRIX.md`, `premium/FEATURES-REPORT.md`, `premium/PUBLIC-DEPLOYMENT.md`, `premium/README.md`, `premium/PRIVACY.md`.
 
 Bu liste bu geliştirmeyi kapsar; çalışma ağacında önceki Premium işinden kalan değişiklikler de bulunur.
 

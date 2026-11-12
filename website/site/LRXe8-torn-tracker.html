@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LRX Torn Tracker</title>
+  <meta name="description" content="A free Windows companion for Torn City: timers, war targets, travel profit and display-only Torn helpers, powered by your own Limited API key.">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#040405">
+  <meta property="og:title" content="LRX Torn Tracker">
+  <meta property="og:description" content="Your Torn day on one screen. Free for Windows.">
+  <meta property="og:image" content="https://lrxe8.com/assets/LRXe8-tt-login-1600.webp">
+  <link rel="icon" type="image/png" href="/assets/LRXe8-tt-logo-64.png">
+  <link rel="preload" href="/assets/LRXe8-tt-logo.png" as="image">
+  <link rel="stylesheet" href="/assets/LRXe8-tt.css">
+  <script src="/assets/LRXe8-tt-boot.js"></script>
+  <script src="/assets/LRXe8-tt-shape-waves.js" defer></script>
+  <script src="/assets/LRXe8-tt-carousel.js" defer></script>
+  <script src="/assets/LRXe8-tt.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main" data-i18n="skip">Skip to content</a>
+
+  <header class="top" id="top">
+    <div class="top-in">
+      <a class="brand" href="#hero" aria-label="LRX Torn Tracker">
+        <img src="/assets/LRXe8-tt-logo-64.png" alt="" width="34" height="34">
+        <span class="brand-t"><b>LRX</b> Torn Tracker</span>
+      </a>
+      <nav class="nav" id="nav" aria-label="Sections">
+        <a href="#screens" data-i18n="navScreens">The app</a>
+        <a href="#features" data-i18n="navFeatures">Features</a>
+        <a href="#rules" data-i18n="navRules">Torn rules</a>
+        <a href="#credits" data-i18n="navCredits">Credits</a>
+        <a href="#releases" data-i18n="navReleases">Release notes</a>
+        <a href="#download" data-i18n="navDownload">Download</a>
+      </nav>
+      <div class="top-actions">
+        <div class="lang" role="group" aria-label="Language">
+          <button type="button" data-lang="en" aria-pressed="true">EN</button>
+          <button type="button" data-lang="tr" aria-pressed="false">TR</button>
+        </div>
+        <a class="btn-silver btn-sm" href="#download"><span data-i18n="getIt">Download</span></a>
+        <button class="menu" type="button" id="menu" aria-expanded="false" aria-controls="nav"><span class="sr" data-i18n="menu">Menu</span><i></i><i></i></button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="hero" aria-labelledby="hero-title">
+      <canvas class="hero-waves" id="hero-waves" aria-hidden="true"></canvas>
+      <div class="hero-glow" aria-hidden="true"></div>
+      <div class="hero-card">
+        <div class="logo-wrap"><img class="logo" src="/assets/LRXe8-tt-logo.png" alt="LRX Torn Tracker logo" width="264" height="264"><span class="sheen" aria-hidden="true"></span></div>
+        <p class="kicker"><b>LRX</b> <span>Torn Tracker</span></p>
+        <div class="rule" aria-hidden="true"></div>
+        <h1 id="hero-title" data-i18n="heroTitle">Your Torn day, on one screen.</h1>
+        <p class="hero-sub" data-i18n-html="heroSub">Timers, war targets, travel profit and Torn itself in one Windows app. It runs on <b>your own Limited Access API key</b>, and it stays on your PC.</p>
+        <a class="btn-silver" href="https://github.com/Mericsdc/lrx-torn-tracker/releases/latest/download/LRX-Torn-Tracker-Windows-x64.zip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/></svg><span data-i18n="download">Download for Windows</span></a>
+        <ul class="facts" aria-label="Facts">
+          <li data-i18n="factFree">Free</li><li>Windows 10/11</li><li><span class="mono">v1.6.12</span></li><li data-i18n="factEnTr">English · Türkçe</li>
+        </ul>
+      </div>
+      <a class="dev-chip" href="https://www.torn.com/profiles.php?XID=4037017" rel="noopener"><span>Ezlira <span class="mono">[4037017]</span></span><small data-i18n="development">Development</small></a>
+    </section>
+
+    <section class="screens wrap" id="screens" aria-labelledby="screens-title">
+      <div class="head">
+        <p class="eyebrow" data-i18n="screensEyebrow">Inside the app</p>
+        <h2 id="screens-title" data-i18n="screensTitle">Built the way Torn is played.</h2>
+        <p class="lead" data-i18n="screensLead">Real screens from the app, with demo data. Switch between them.</p>
+      </div>
+      <div class="shot-tabs" role="tablist" aria-label="App screens">
+        <button type="button" role="tab" id="tab-overview" aria-controls="shot-panel" aria-selected="true" data-shot="overview" data-i18n="shotOverview">Overview</button>
+        <button type="button" role="tab" id="tab-war" aria-controls="shot-panel" aria-selected="false" tabindex="-1" data-shot="war" data-i18n="shotWar">War targets</button>
+        <button type="button" role="tab" id="tab-travel" aria-controls="shot-panel" aria-selected="false" tabindex="-1" data-shot="travel" data-i18n="shotTravel">Travel profit</button>
+        <button type="button" role="tab" id="tab-settings" aria-controls="shot-panel" aria-selected="false" tabindex="-1" data-shot="settings" data-i18n="shotSettings">Torn helpers</button>
+        <button type="button" role="tab" id="tab-login" aria-controls="shot-panel" aria-selected="false" tabindex="-1" data-shot="login" data-i18n="shotLogin">Sign-in</button>
+      </div>
+      <figure class="shot" id="shot-panel" role="tabpanel" aria-labelledby="tab-overview">
+        <div class="shot-frame">
+          <img id="shot-img" src="/assets/LRXe8-tt-overview-1600.webp" srcset="/assets/LRXe8-tt-overview-960.webp 960w, /assets/LRXe8-tt-overview-1600.webp 1600w" sizes="(max-width: 1240px) 94vw, 1180px" width="1600" height="1000" alt="Overview screen: drug, education and day-reset timers, bars and battle stats">
+        </div>
+        <figcaption id="shot-cap" data-i18n="capOverview">Drug, booster and education cooldowns, bars and the 18:00 TCT reset, next to your battle stats with and without the Xanax penalty.</figcaption>
+      </figure>
+    </section>
+
+    <section class="features wrap" id="features" aria-labelledby="features-title">
+      <div class="head">
+        <p class="eyebrow" data-i18n="featEyebrow">Features</p>
+        <h2 id="features-title" data-i18n="featTitle">Less busywork. More Torn.</h2>
+      </div>
+      <div class="grid">
+        <article class="card"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg></span><h3 data-i18n="f1t">Timers that matter</h3><p data-i18n="f1d">Drug, booster, medical and education cooldowns, bars and the day reset in Torn City Time.</p></article>
+        <article class="card"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></span><h3 data-i18n="f2t">Pick fair fights</h3><p data-i18n="f2d">FFScouter estimates, fair-fight points, hospital timers and your own target groups for any faction.</p></article>
+        <article class="card"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2.5 13.5 21 6l-4.5 13-4-5.5-6 2.5z"/><path d="m12.5 13.5 8.5-7.5"/></svg></span><h3 data-i18n="f3t">Fly for profit</h3><p data-i18n="f3d">Profit per hour for every country, stock on arrival and restock times, with departure alerts.</p></article>
+        <article class="card"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01"/></svg></span><h3 data-i18n="f4t">Torn in tabs</h3><p data-i18n="f4d">Torn opens in built-in tabs. TornTools, FF Scouter and TornW3B are there as optional add-ons.</p></article>
+        <article class="card"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.8"/></svg></span><h3 data-i18n="f5t">Helpers that only show</h3><p data-i18n="f5d">War and hospital timers, crime hints and price warnings appear on the Torn page you are viewing.</p></article>
+        <article class="card"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></span><h3 data-i18n="f6t">And the rest</h3><p data-i18n="f6d">Crime Hub, merit planner, networth history, gym and level guides, faction reports.</p></article>
+      </div>
+      <p class="premium-note" data-i18n-html="premiumNote"><b>Premium is optional.</b> It adds advanced workspaces, paid with in-game Xanax. Everything above stays free.</p>
+    </section>
+
+    <section class="rules wrap" id="rules" aria-labelledby="rules-title">
+      <div class="rules-card">
+        <div class="head">
+          <p class="eyebrow" data-i18n="rulesEyebrow">Torn rules</p>
+          <h2 id="rules-title" data-i18n="rulesTitle">Plays by the rules. You press every button.</h2>
+        </div>
+        <ol class="rule-list">
+          <li><span class="num mono">01</span><div><h3 data-i18n="r1t">Your key stays on your PC</h3><p data-i18n="r1d">A Limited Access key, saved locally. It is used with the Torn API and FFScouter. With the Premium connection on (default), it is also sent to lrxe8.com to verify your Torn ID and is not stored there.</p></div></li>
+          <li><span class="num mono">02</span><div><h3 data-i18n="r2t">Display only</h3><p data-i18n="r2d">Helpers never click, attack, buy or send anything for you. They only add information to the page.</p></div></li>
+          <li><span class="num mono">03</span><div><h3 data-i18n="r3t">Only the tab you look at</h3><p data-i18n="r3d">Helpers run on the focused Torn tab and make no extra requests to Torn's pages.</p></div></li>
+          <li><span class="num mono">04</span><div><h3 data-i18n="r4t">A switch for everything</h3><p data-i18n="r4d">Every helper, add-on and connection can be turned off in Settings.</p></div></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="credits" id="credits" aria-labelledby="credits-title">
+      <div class="wrap head">
+        <p class="eyebrow" data-i18n="credEyebrow">Credits</p>
+        <h2 id="credits-title" data-i18n="credTitle">Good tools. Great people behind them.</h2>
+        <p class="lead" data-i18n="credLead">Thank you to the players whose work helps make this possible.</p>
+      </div>
+      <div class="flex" id="flex" data-ready="false">
+        <p class="flex-title" id="flex-title"></p>
+        <div class="flex-stage">
+          <canvas class="flex-gl" id="flex-gl" aria-hidden="true"></canvas>
+          <button class="flex-nav prev" type="button" id="flex-prev"><span class="sr" data-i18n="prev">Previous</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg></button>
+          <button class="flex-nav next" type="button" id="flex-next"><span class="sr" data-i18n="next">Next</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button>
+        </div>
+        <p class="flex-meta"><span class="flex-count mono" id="flex-count"></span><a id="flex-link" href="https://www.torn.com/profiles.php?XID=1844049" rel="noopener" data-i18n="profile">View Torn profile</a></p>
+        <ul class="people" id="people" aria-label="Credited players">
+          <li data-id="1844049" data-role-en="FF Scouter" data-role-tr="FF Scouter"><a href="https://www.torn.com/profiles.php?XID=1844049" rel="noopener"><span class="pic" data-initials="GL"><img src="/assets/LRXe8-tt-credit-1844049.webp" alt="" width="320" height="440" loading="lazy"></span><b>Glasnost</b> <span class="mono">[1844049]</span><small>FF Scouter</small></a></li>
+          <li data-id="1853324" data-role-en="TornW3B · weav3r.dev" data-role-tr="TornW3B · weav3r.dev"><a href="https://www.torn.com/profiles.php?XID=1853324" rel="noopener"><span class="pic" data-initials="W3"><img src="/assets/LRXe8-tt-credit-1853324.webp" alt="" width="320" height="440" loading="lazy"></span><b>Weav3r</b> <span class="mono">[1853324]</span><small>TornW3B · weav3r.dev</small></a></li>
+          <li data-id="2114440" data-role-en="TornTools" data-role-tr="TornTools"><a href="https://www.torn.com/profiles.php?XID=2114440" rel="noopener"><span class="pic" data-initials="DK"><img src="/assets/LRXe8-tt-credit-2114440.webp" alt="" width="320" height="440" loading="lazy"></span><b>DeKleineKobini</b> <span class="mono">[2114440]</span><small>TornTools</small></a></li>
+          <li data-id="3354782" data-role-en="FF Scouter V2" data-role-tr="FF Scouter V2"><a href="https://www.torn.com/profiles.php?XID=3354782" rel="noopener"><span class="pic" data-initials="XE"><img src="/assets/LRXe8-tt-credit-3354782.webp" alt="" width="320" height="440" loading="lazy"></span><b>xentac</b> <span class="mono">[3354782]</span><small>FF Scouter V2</small></a></li>
+          <li data-id="2402357" data-role-en="FF Scouter V2" data-role-tr="FF Scouter V2"><a href="https://www.torn.com/profiles.php?XID=2402357" rel="noopener"><span class="pic" data-initials="MA"><img src="/assets/LRXe8-tt-credit-2402357.webp" alt="" width="320" height="440" loading="lazy"></span><b>mavri</b> <span class="mono">[2402357]</span><small>FF Scouter V2</small></a></li>
+          <li data-id="2670953" data-role-en="FF Scouter V2" data-role-tr="FF Scouter V2"><a href="https://www.torn.com/profiles.php?XID=2670953" rel="noopener"><span class="pic" data-initials="RD"><img src="/assets/LRXe8-tt-credit-2670953.webp" alt="" width="320" height="440" loading="lazy"></span><b>rDacted</b> <span class="mono">[2670953]</span><small>FF Scouter V2</small></a></li>
+          <li data-id="4037017" data-role-en="LRX Torn Tracker" data-role-tr="LRX Torn Tracker"><a href="https://www.torn.com/profiles.php?XID=4037017" rel="noopener"><span class="pic" data-initials="EZ"><img src="/assets/LRXe8-tt-credit-4037017.webp" alt="" width="320" height="440" loading="lazy"></span><b>Ezlira</b> <span class="mono">[4037017]</span><small>LRX Torn Tracker</small></a></li>
+        </ul>
+      </div>
+      <p class="wrap note" data-i18n-html="credNote">Independent projects, credited with thanks. No endorsement is implied, and their licenses stay in place. <a href="https://github.com/Mericsdc/lrx-torn-tracker/blob/main/userscripts/NOTICE.txt" rel="noopener">Third-party notices</a></p>
+    </section>
+
+    <section class="releases wrap" id="releases" aria-labelledby="releases-title">
+      <div class="head">
+        <p class="eyebrow" data-i18n="relEyebrow">Release notes</p>
+        <h2 id="releases-title" data-i18n="relTitle">What changed, version by version.</h2>
+        <p class="lead" data-i18n="relLead">Updates install from inside the app. Your key, settings and data stay where they are.</p>
+      </div>
+      <div class="rel-list">
+        <details class="rel" open>
+          <summary><span class="rel-v mono">v1.6.12</span><span class="rel-t" data-i18n="rel12t">Torn rules and privacy</span><time class="rel-d mono" datetime="2026-11-12">2026-11-12</time><span class="rel-latest" data-i18n="relLatest">Latest</span></summary>
+          <ul data-i18n-html="rel12">
+            <li>The Rehab message button no longer clicks anything on Torn. It types into a chat box you opened, and you press Enter yourself.</li>
+            <li>New setting <b>Settings → App → Premium membership connection</b>. Turn it off and your key is never sent to the membership service.</li>
+            <li>The Torn ToS table and the sign-in notice now list exactly what is shared, and with whom.</li>
+            <li>Importing a Torn session no longer signs you out when a single cookie is rejected.</li>
+            <li>Torn's own menus work again with the session guard, which now has its own setting.</li>
+            <li>Switching API keys can no longer mix another player's data into your history.</li>
+            <li>The light theme no longer makes the sign-in screen hard to read.</li>
+          </ul>
+        </details>
+        <details class="rel">
+          <summary><span class="rel-v mono">v1.6.11</span><span class="rel-t" data-i18n="rel11t">Automatic membership</span><time class="rel-d mono" datetime="2026-11-11">2026-11-11</time></summary>
+          <ul data-i18n-html="rel11">
+            <li>Signing in to the app connects Premium with your saved Torn account. No extra buttons or checkboxes.</li>
+            <li>Membership sessions renew on their own after they expire or the app restarts. Temporary failures never affect the free tools.</li>
+            <li>Sending Xanax activates membership right away, even before the sender opens the app. Two Xanax add 30 days.</li>
+            <li>A transfer is never counted twice, and no other account can claim your membership.</li>
+          </ul>
+        </details>
+        <details class="rel">
+          <summary><span class="rel-v mono">v1.6.10</span><span class="rel-t" data-i18n="rel10t">Automatic Xanax payments</span><time class="rel-d mono" datetime="2026-11-11">2026-11-11</time></summary>
+          <ul data-i18n-html="rel10">
+            <li>Xanax payments are matched from Torn's official item logs, including notices that only say "some Xanax".</li>
+            <li>Older unmatched transfers were settled automatically at the price that applied when they were sent.</li>
+            <li>Membership cards and the member list show real Torn names. Search works with names and IDs.</li>
+            <li>Premium tools open directly for members. Saved profiles survive pauses, expiry and renewal.</li>
+          </ul>
+        </details>
+        <details class="rel">
+          <summary><span class="rel-v mono">v1.6.9</span><span class="rel-t" data-i18n="rel9t">Premium workspaces</span><time class="rel-d mono" datetime="2026-11-11">2026-11-11</time></summary>
+          <ul data-i18n-html="rel9">
+            <li>Optional Premium workspaces: appearance profiles, helper filters, player comparisons, event goals, travel strategies and saved merit plans.</li>
+            <li>The membership connection runs over public HTTPS at lrxe8.com, with no VPN or extra setup.</li>
+            <li>Saved Premium settings come back when you renew.</li>
+            <li>All existing tools stay free.</li>
+          </ul>
+        </details>
+      </div>
+    </section>
+
+    <section class="download wrap" id="download" aria-labelledby="download-title">
+      <div class="dl-card">
+        <div>
+          <p class="eyebrow" data-i18n="dlEyebrow">Download</p>
+          <h2 id="download-title" data-i18n="dlTitle">From download to Torn in a minute.</h2>
+          <ol class="steps">
+            <li data-i18n="s1">Extract the ZIP anywhere.</li>
+            <li data-i18n="s2">Open TornTracker.exe.</li>
+            <li data-i18n-html="s3">Paste your own <b>Limited Access</b> API key.</li>
+          </ol>
+          <div class="dl-actions">
+            <a class="btn-silver" href="https://github.com/Mericsdc/lrx-torn-tracker/releases/latest/download/LRX-Torn-Tracker-Windows-x64.zip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/></svg><span data-i18n="download">Download for Windows</span></a>
+            <a class="gold-link" href="#releases"><span data-i18n="notes">Release notes</span> →</a>
+          </div>
+          <p class="small" data-i18n="dlSmall">Windows 10/11, ZIP. Updates install from inside the app. A Mac version is in development.</p>
+        </div>
+        <div class="faq">
+          <details><summary data-i18n="q1">Is it free?</summary><p data-i18n="a1">Yes. All current tools and Torn API data access are free. Premium is optional and paid with in-game Xanax.</p></details>
+          <details><summary data-i18n="q2">Which API key do I need?</summary><p data-i18n="a2">A Limited Access key you create in Torn's preferences. The app links you there on the sign-in screen.</p></details>
+          <details><summary data-i18n="q3">Is it allowed in Torn?</summary><p data-i18n="a3">It uses the official API with your own key, and its helpers only display information. It is an independent project, not an official Torn product.</p></details>
+          <details><summary data-i18n="q4">Can I use it on Mac?</summary><p data-i18n="a4">Not yet. The Mac version is in development; only the Windows build can be downloaded.</p></details>
+          <details><summary data-i18n="q5">How do I send an idea or a bug?</summary><p data-i18n-html="a5">Use the Feedback button in the app, or open an issue on <a href="https://github.com/Mericsdc/lrx-torn-tracker/issues" rel="noopener">GitHub</a>.</p></details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap foot-in">
+      <a class="brand" href="#hero"><img src="/assets/LRXe8-tt-logo-64.png" alt="" width="28" height="28"><span class="brand-t"><b>LRX</b> Torn Tracker</span></a>
+      <nav class="foot-links" aria-label="Links">
+        <a href="https://github.com/Mericsdc/lrx-torn-tracker" rel="noopener">GitHub</a>
+        <a href="https://github.com/Mericsdc/lrx-torn-tracker/blob/main/LICENSE" rel="noopener" data-i18n="license">License</a>
+        <a href="https://github.com/Mericsdc/lrx-torn-tracker/blob/main/premium/PRIVACY.md" rel="noopener" data-i18n="terms">Membership privacy</a>
+        <a href="https://github.com/Mericsdc/lrx-torn-tracker/blob/main/userscripts/NOTICE.txt" rel="noopener" data-i18n="notices">Third-party notices</a>
+        <a href="/">lrxe8.com</a>
+      </nav>
+      <p class="small" data-i18n-html="footNote">Made by <a href="https://www.torn.com/profiles.php?XID=4037017" rel="noopener">Ezlira [4037017]</a>. An independent Torn companion, not an official Torn product.</p>
+    </div>
+  </footer>
+</body>
+</html>

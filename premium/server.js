@@ -2,7 +2,6 @@ const http = require('node:http');
 const { readConfig } = require('./config');
 const { createPremiumService } = require('./service');
 const { fail } = require('./store');
-const { serveSite } = require('./site');
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -48,7 +47,6 @@ function createHttpServer(config, dependencies = {}) {
         if (req.headers.origin !== expected) fail('ORIGIN_DENIED', 403);
       }
       if (req.method === 'POST' && !/^application\/json(?:;|$)/i.test(req.headers['content-type'] || '')) fail('JSON_REQUIRED', 415);
-      if (serveSite(req, res, url.pathname)) return;
       if (url.pathname === '/health' && req.method === 'GET') return send(res, 200, { ok: true, mode: config.mode });
       if (url.pathname === '/v1/info' && req.method === 'GET') return send(res, 200, service.info());
       if (url.pathname === '/terms' && req.method === 'GET') return send(res, 200, {

@@ -4,8 +4,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { buildBattleStats } = require('../battle-stats');
-const { createWarGroups } = require('../war-groups');
+const { buildBattleStats } = require('../src/server/battle-stats');
+const { createWarGroups } = require('../src/server/war-groups');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'lrx-tests-'));
 process.env.TORN_DATA_DIR = temp;
 process.env.TORN_API_KEY = '';
@@ -19,7 +19,7 @@ global.fetch = async (url) => {
   const info = { access_level: keyMode === 'custom' ? 0 : keyMode === 'public' ? 1 : 3, access_type: keyMode === 'custom' ? 'Custom' : 'Limited Access', selections: { user: ['profile', 'battlestats', 'bars', 'cooldowns'] } };
   return { json: async () => String(url).includes('/key/') ? keyMode === 'nested' ? { info } : info : { player_id: 123, name: 'Test player', level: 20 } };
 };
-const { server, flushData } = require('../server');
+const { server, flushData } = require('../src/server/server');
 const ready = new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 async function request(route, body, headers = {}) {
   await ready;

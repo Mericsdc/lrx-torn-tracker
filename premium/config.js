@@ -1,5 +1,5 @@
 const path = require('node:path');
-const { serviceUrl } = require('../premium-url');
+const { serviceUrl } = require('../src/server/premium-url');
 const bool = (value) => value === '1' || value === 'true';
 function readConfig(env = process.env) {
   const mode = env.PREMIUM_MODE || 'test';

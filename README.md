@@ -1,104 +1,101 @@
-<p align="center"><img src="assets/logo-512.png" width="160" alt="LRX Torn Tracker"></p>
+<p align="center"><img src="assets/logo-512.png" width="150" alt="LRX Torn Tracker"></p>
 
 <h1 align="center">LRX Torn Tracker</h1>
 
-<p align="center">A Windows desktop companion for <a href="https://www.torn.com">Torn City</a>: company stock, daily reports, employees, income, timers, Fair Fight war-target suggestions, TornTools and a built-in Torn browser in one window.</p>
+<p align="center">
+  A free Windows companion for <a href="https://www.torn.com">Torn City</a>: timers, war targets, travel profit, company stock and display-only Torn helpers, with Torn itself in built-in tabs.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Mericsdc/lrx-torn-tracker/releases/latest/download/LRX-Torn-Tracker-Windows-x64.zip"><b>Download for Windows</b></a>
+  &nbsp;·&nbsp; <a href="https://lrxe8.com/torn-tracker">Website</a>
+  &nbsp;·&nbsp; <a href="docs/releases">Release notes</a>
+  &nbsp;·&nbsp; <a href="https://github.com/Mericsdc/lrx-torn-tracker/issues">Report a bug</a>
+</p>
 
 ---
 
+## Get started
+
+1. Download [`LRX-Torn-Tracker-Windows-x64.zip`](https://github.com/Mericsdc/lrx-torn-tracker/releases/latest/download/LRX-Torn-Tracker-Windows-x64.zip) (Windows 10/11).
+2. Extract it anywhere and open `TornTracker.exe`.
+3. Paste your own **Limited Access** Torn API key. The link on the sign-in screen opens Torn's key page with the right options filled in.
+
+Updates install from inside the app: the update button downloads the newest release, checks its SHA-256 and restarts. Your key, settings and data stay where they are. A Mac version is in development.
+
 ## Features
 
-### Version 1.6.8
+| Area | What you get |
+| --- | --- |
+| **Overview** | Drug, booster, medical and education cooldowns, bars, the 18:00 TCT reset, battle stats with and without the Xanax penalty |
+| **War targets** | FFScouter estimates, hospital countdowns, a fair-fight payout ranking (win chance × FF) and your own target groups per faction |
+| **Travel** | Profit per hour for every country, stock on arrival, restock times and departure alerts |
+| **Company** | Stock against a target cover, daily report, employee addiction alerts and an income statement |
+| **Faction** | Your Organized Crime status; with OC permission also members outside an OC, delayed OCs and weekly top-10 tables |
+| **Crime Hub** | Shoplifting alerts, money per nerve for every crime, burglary targets and a jail bust tracker |
+| **Merits, events, tools** | Missing honors and medals, the Torn calendar, event guides, networth history, gym and level guides, a purchase price guard |
+| **Torn in tabs** | Built-in Torn tabs with Profile/Attack shortcuts, Google sign-in through your own Chrome or Edge, and optional TornTools, FF Scouter V2 and TornW3B |
+| **Torn page helpers** | Crime XP and $/nerve badges, war and hospital timers, jail bust difficulty, poker odds, below-cost listing warnings, event helpers |
 
-- Checks for updates on startup, including the first launch before entering an API key, and every minute while the app is running.
-- A newly available version opens the themed "Update released — would you like to update now?" dialog once per release in each app session. Choosing Later leaves the update button pulsing until installation, including in the workspace bar while a Torn tab is active; reduced-motion and disabled-animation preferences use a static indicator.
-- Checks resume after returning to the app or regaining connectivity. Hidden windows and other open dialogs defer the prompt. Concurrent checks share one request, and temporary network failures preserve an already-known update.
-- Installation still requires the user's choice; the existing automatic-check setting is respected. Foreground native Torn tabs hand keyboard focus to the update dialog when it opens.
+Five themes (Obsidian, Ocean, Forest, Amethyst, Light), English by default with Turkish optional, and a Feedback button that emails the developer (only what you type and the app version are sent).
 
-### Version 1.6.7
+**Premium is optional.** It adds advanced workspaces (appearance profiles, helper filters, player comparisons, event goals, travel strategies, merit plans) and is paid with in-game Xanax. Every tool listed above stays free.
 
-- Redesigned the update window to use the same card surfaces, fonts and buttons as the main interface in all five themes.
-- Current and latest versions appear together; release notes render headings, lists, bold text and code without accepting upstream HTML.
-- Long notes scroll inside the window, keeping actions visible down to 480×400. Download progress and recoverable errors stay in the same dialog.
-- The top update button and Settings → Updates open the same screen, including an up-to-date state. Keyboard navigation includes the notes area and restores focus when the window closes.
+## Torn rules and your data
 
-### Version 1.6.6
+- **Your key stays on your PC.** It is saved in the local `data/` folder and used with the Torn API and FFScouter. With **Settings → App → Premium membership connection** on (the default), it is also sent to lrxe8.com to verify your Torn ID and is not stored there. Turn the setting off and nothing is sent to the membership service.
+- **Display only.** Helpers never click, attack, buy or send anything. They add information to the Torn page you are looking at; you press every button.
+- **Only the tab you look at.** Helpers run on the focused Torn tab and make no extra requests to Torn's pages.
+- **A switch for everything.** Every page, notification, helper, add-on and connection can be turned off in Settings.
+- **Log Out** in Settings removes the local key and ends the membership session.
 
-- FF Scouter now automatically uses the saved FFScouter key, falling back to the saved Torn API key. Its Torn API calls use the main Torn key. Changes and logout take effect for subsequent requests without entering another key.
-- Keys are added by an authenticated local proxy; the upstream script receives an opaque marker. The original vendor source is preserved, and its generated adapter displays a read-only managed-key field.
-- Verified on real Torn profile and active ranked-war pages: displayed Fair Fight scores and stat estimates match live FFScouter responses.
+This is an independent project, not an official Torn product. Membership data handling is described in [premium/PRIVACY.md](premium/PRIVACY.md).
 
-### Version 1.6.5
+## Release notes
 
-- Torn sidebar navigation is handled once per click, with a navigation-loop limit. Cookie imports replace old session/RFC cookies; duplicate cookies are normalized before opening Torn. The guard updates existing RFC tokens on outgoing Torn requests and forms without retrying failed actions.
-- Updates use a dialog styled with the selected app theme. After installation, storage is flushed, native views and windows are destroyed, the old process exits and Electron relaunches the app.
-- FF Scouter V2 3.4 and TornW3B Bazaars 4.1.8 are bundled from the requested upstream sources. Switches are under Settings → Torn helpers; restart after changing them. FF Scouter uses the app's saved key automatically. Its React dependency is isolated from Torn's React globals. Scripts, hashes and licenses are under `userscripts/`.
-- This release also includes all of the 1.6.4 changes below.
+Each version has its notes in [`docs/releases/`](docs/releases) and on the [website](https://lrxe8.com/torn-tracker#releases). The latest is [v1.6.12](docs/releases/1.6.12.md).
 
-### Version 1.6.4
+## Project structure
 
-- Weav3r opens in a built-in tab from the top shortcuts. Opening a second browser tab collapses the shortcuts with an animation; the menu button restores them.
-- War Targets supports named groups for each faction, individual or bulk assignment, filtering, renaming and removal. Groups are saved locally in `data/war-groups.json`; assigned labels also appear on the viewed Torn war roster.
-- Settings → Appearance offers Obsidian, Ocean, Forest, Amethyst and Light themes, saved across restarts.
-- Settings → Torn helpers → Live fight analysis shows both players' life and observed life loss/recovery on the attack page. It pauses while the page is not focused. It uses the viewed page or Torn responses already requested by that page, and makes no game actions or additional requests. Values are health changes, not attributed hit damage or win predictions. Real combat verification remains outstanding; DOM/schema changes may require an adapter update.
-- API-key entry preserves case, cursor position and every typed character. The login has a character counter, Caps Lock warning, Paste button and native editing context menu. Network/time-out errors are distinguished from invalid keys.
-- Windows can be resized down to 480×400 and start within the current display's work area.
-- Active Xanax is removed from the current modifier once before calculating both scenarios from base stats. Generic Drugs descriptions and the active Xanax icon are supported; addiction remains in the calculation.
-- Fixed stale faction responses, zero-stat ratios, malformed local requests, cross-origin local writes, sleeping-tab titles, modal view visibility on resize and duplicate initialization when a port is occupied.
-
-Validation: `npm test` runs isolated server and calculation tests. `tests/ui-smoke.js` and `tests/electron-smoke.js` use Playwright (set `PLAYWRIGHT_MODULE` to the installed module path). They use temporary profiles and fixture data, not the installed account. Restart the app after updating these files.
-
-- **Overview**: Xanax/drug cooldown, education, end-of-day timers, bars, and battle stats with and without Xanax.
-- **Company**: stock levels with a target cover (days), daily report, employee addiction alerts, and an income statement.
-- **War targets**: FFScouter estimates, a hospital-release countdown next to each name, and a **Fair Fight payout** ranking (`expected points = win chance × FF`). The best Ideal, Easy and Risky targets are highlighted.
-- **Faction**: your own Organized Crime status (role, item, planning). The leader, the co-leader and positions with the **Organised Crimes** permission also see members outside an OC, delayed OCs with missing items, and weekly top-10 tables (activity, gym energy, Xanax, crimes, blood bags, OCs).
-- **Crime Hub**: shoplifting security alerts, money per nerve for every crime (Emforus sheet), burglary targets and a jail bust tracker.
-- **Merit Tracker**: missing honors and medals with your progress, closest first.
-- **Tools and events**: the Torn calendar with your personal start times, yearly event guides (Easter Egg Hunt, Trick or Treat, Christmas Town) and a purchase price guard.
-- **Torn page helpers** (they only add colors and labels to the page you are viewing and never click anything): crime XP and $/N badges, crime buttons colored from worst to best, burglary notes, jail bust difficulty, poker odds, a below-cost listing warning and event helpers.
-- **Settings**: every page, notification and helper can be turned on or off.
-- **Languages**: English by default, Turkish optional (EN / TR switch in the top bar). The switch also applies to the Torn page helpers.
-- **Feedback**: the 💬 button in the top bar sends a request, a suggestion or a bug report to the developer by email. Only the form fields and the app version are sent, never your API key.
-- **Built-in Torn browser**: tabs you can drag to reorder, a context bar (Profile / Attack), and Google sign-in through your own Chrome or Edge.
-- **TornTools**: the Chrome Web Store extension is downloaded and loaded inside the app.
-- **Updates**: the update button downloads the newest GitHub release, checks its SHA-256 and installs it.
-
-## Setup (users)
-
-1. Download `LRX-Torn-Tracker-win32-x64-<version>.zip` from [Releases](https://github.com/Mericsdc/lrx-torn-tracker/releases/latest).
-2. Extract it to any folder and run `TornTracker.exe`.
-3. On the login screen, enter your own **Limited Access** Torn API key.
-   - To create a key: Torn → Preferences → API Keys → Add new key → choose **Limited Access**.
-   - The "Limited API key oluştur →" link on the login screen opens this page with the fields already filled in.
-
-> 🔒 Your API key is stored in local `data/config.json` and used with `api.torn.com` (and `ffscouter.com` for war estimates). App login automatically connects membership using the configured HTTPS service. It receives the key transiently to verify its Torn owner and does not store it. No separate Premium verification, acceptance or remember checkbox is required. Data-use details remain available in Premium. Feedback uses `formsubmit.co` and contains what you type in the form. Use **Settings → Çıkış Yap** to remove the local key and clear the membership session.
+```
+src/
+  main/            Electron app: windows, Torn tabs, helpers injection, updater, TornTools, Google sign-in bridge
+  server/          Local API server (localhost:3737): Torn API calls, FFScouter, war groups, Premium client
+  app-paths.js     Shared app folder, data folder and EN/TR message helper
+public/            The app's interface (HTML, CSS, browser JavaScript)
+torn-helpers/      Display-only scripts shown on Torn pages
+userscripts/       Bundled third-party userscripts with pinned hashes and licenses
+userscript-extension/, extension-shim/   How userscripts and TornTools run inside the app
+premium/           Optional membership service (runs on the server, not in the app)
+assets/            Icons and the crime value snapshot
+website/           Source of lrxe8.com/torn-tracker
+docs/              Release notes, testing and website guides
+tests/             Node, Vitest, Playwright and Electron checks
+tools/             Syntax check, update packages and release build
+```
 
 ## Development
 
-```bash
-npm install
-npm start          # Electron app
-npm run web        # Server only: http://localhost:3737
-npm run build:exe  # Windows package into dist/
-```
-
-See [TESTING.md](TESTING.md) for Vitest, the existing service tests and local preview builds. The additional Free/Premium modules are documented in [the implementation report](premium/FEATURES-REPORT.md) and [feature matrix](premium/FEATURE-MATRIX.md). The shared membership API is published at https://lrxe8.com/torn-premium; the application uses that publisher default, and users need no Tailscale or SSH. Real Xanax collection is disabled. See [deployment details](premium/PUBLIC-DEPLOYMENT.md).
-
-To publish an update package:
+Development and CI use Node 24 (22.14 also works; the local server alone runs on Node 18+).
 
 ```bash
-node tools/make-update.js "Release notes"
+npm ci             # install (use --ignore-scripts for tests only, without the Electron download)
+npm start          # run the Electron app from source
+npm run web        # local server only: http://localhost:3737
+npm run check      # syntax check
+npm run test:all   # all automated tests
 ```
 
-This writes `torntracker-app-<version>.zip` and `latest.json` to the `updates/` folder. Upload both files to a GitHub Release. The app reads `releases/latest/download/latest.json` by default.
+More in [docs/TESTING.md](docs/TESTING.md). The website is described in [docs/WEBSITE.md](docs/WEBSITE.md) and the membership service in [premium/README.md](premium/README.md).
 
-## Privacy
+**Releasing:** bump the version in `package.json` and `package-lock.json`, add `docs/releases/<version>.md`, commit, then run `python tools/build-release.py` (or the manual *Publish release* workflow). It builds the Windows ZIP and the update package from the exact commit and checks them before anything is uploaded.
 
-- The repository contains **no** API keys or personal data. The `data/` folder is in `.gitignore`.
-- Tracker data stays on the user's computer. Optional membership stores verified Torn ID, payments and subscription records centrally, accessible only to the account owner and authorized service operators.
-- Torn IDs linked to account/payments are treated as personal data. See [privacy findings](premium/PRIVACY.md) and [service setup, migrations, environment variables and validation](premium/README.md).
-- Existing app features and Torn API data access remain free. No paid insights have been assigned; the premium infrastructure defaults to synthetic tests and accepts no real payment until Torn approval and live operator configuration.
+The repository contains no API keys or personal data. `data/` and environment files are ignored by Git and never packaged.
 
 ## License
 
-New original contributions and the website use the [Original Additions License](LICENSE). Personal use of official releases is permitted; redistribution or commercial reuse of covered new contributions requires permission. Earlier MIT releases keep their existing rights: [legacy MIT terms](LICENSES/LEGACY-MIT.txt). Third-party and copyleft components retain their own licenses; see [notices](userscripts/NOTICE.txt). A license states permissions and cannot technically prevent copying from a public repository.
+New original work, including the website, is under the [Original Additions License](LICENSE): personal use of official releases is allowed; redistribution or commercial reuse needs permission. Earlier MIT releases keep their rights ([legacy MIT terms](LICENSES/LEGACY-MIT.txt)). Third-party components keep their own licenses ([notices](userscripts/NOTICE.txt)).
+
+## Türkçe
+
+LRX Torn Tracker, Torn City için ücretsiz bir Windows uygulamasıdır: süreler, savaş hedefleri, seyahat kârı, şirket stoku ve yalnızca bilgi gösteren Torn yardımcıları tek pencerede. ZIP'i [indir](https://github.com/Mericsdc/lrx-torn-tracker/releases/latest/download/LRX-Torn-Tracker-Windows-x64.zip), çıkar, `TornTracker.exe`'yi aç ve kendi **Limited Access** API key'ini gir. Key bilgisayarında kalır; yardımcılar hiçbir şeye tıklamaz ve her özellik Ayarlar'dan kapatılabilir. Uygulama dili varsayılan İngilizcedir, üst çubuktaki EN / TR düğmesiyle Türkçeye geçebilirsin. Sürüm notları [`docs/releases/`](docs/releases) klasöründe ve [web sitesinde](https://lrxe8.com/torn-tracker#releases).

@@ -3,20 +3,20 @@
   "productName": "TornTracker",
   "version": "1.6.12",
   "description": "LRX Torn Tracker – Torn City masaüstü takip uygulaması: şirket stoku, günlük rapor, çalışanlar, gelir tablosu, sayaçlar, Fair Fight savaş hedef önerileri, TornTools ve yerleşik Torn tarayıcısı.",
-  "main": "electron-main.js",
+  "main": "src/main/electron-main.js",
   "scripts": {
     "check": "node tools/check-syntax.js",
     "build:preview": "node tools/build-preview.js",
     "test:all": "npm test && npm run test:premium",
     "test": "npm run test:node && npm run test:unit",
-    "test:node": "node --test tests/core.test.js tests/session.test.js tests/ff-script.test.js",
+    "test:node": "node --test tests/core.test.js tests/session.test.js tests/ff-script.test.js tests/updater.test.js",
     "test:unit": "vitest run",
     "test:watch": "vitest",
     "test:premium": "node --test tests/premium/*.test.js",
     "premium:serve": "node premium/server.js",
     "premium:validate-receiver": "node premium/validate-receiver.js",
     "start": "electron .",
-    "web": "node server.js",
+    "web": "node src/server/server.js",
     "build:exe": "npx @electron/packager . TornTracker --platform=win32 --arch=x64 --out=dist --overwrite --ignore=\"^/dist\""
   },
   "engines": {

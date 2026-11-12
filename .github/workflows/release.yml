@@ -1,0 +1,47 @@
+# Builds and publishes the version in package.json. Runs only when started by hand from the Actions tab.
+# Before running: bump package.json and package-lock.json, add docs/releases/<version>.md, commit and push.
+name: Publish release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      RELEASE_COMMIT: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-fund
+      - run: npm run check
+      - run: npm run test:all
+      - name: Build and verify clean Windows and update packages
+        run: python3 tools/build-release.py
+      - name: Publish verified assets together
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: Mericsdc/lrx-torn-tracker
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v$VERSION"
+          if gh release view "$TAG" --json isDraft > stage/existing-release.json 2>/dev/null; then
+            test "$(python3 -c 'import json; print(json.load(open("stage/existing-release.json"))["isDraft"])')" = 'True'
+          else
+            gh release create "$TAG" --target "$RELEASE_COMMIT" --title "LRX Torn Tracker $VERSION" --notes-file stage/notes.md --draft
+          fi
+          gh release upload "$TAG" stage/updates/latest.json "stage/updates/torntracker-app-$VERSION.zip" "stage/updates/LRX-Torn-Tracker-win32-x64-$VERSION.zip" stage/updates/LRX-Torn-Tracker-Windows-x64.zip stage/updates/SHA256SUMS.txt --clobber
+          gh release edit "$TAG" --draft=false --latest

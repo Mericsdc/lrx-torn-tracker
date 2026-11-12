@@ -24,7 +24,7 @@ The optional central service in this folder uses Node's built-in SQLite API, wit
 | `store.js` | Atomic awards, balances, versioned prices, subscriptions, audit, exports and privacy queue |
 | `auth.js`, `service.js`, `server.js`, `worker.js` | Verified identities, roles, HTTP API and scheduled polling |
 | `feature-service.js`, `insights.js`, `migrations/004-feature-modules.sql` | Central feature authorization, advanced calculations, data notices, pause preferences, profiles and bounded observations |
-| `../premium-client.js`, `../server.js` | Desktop connection and owner/session isolation |
+| `../src/server/premium-client.js`, `../src/server/server.js` | Desktop connection and owner/session isolation |
 | `../public/premium.js`, `premium.css`, `index.html`, `themes.css` | User/admin screens, membership card, five existing themes, narrow layout |
 | `../public/feature-catalog.js`, `feature-access.js/css`, `advanced-modules.js/css`, `travel-math.js` | Shared catalog/arithmetic, lightweight access display and on-demand module panels |
 | `../public/app.js`, `../README.md` | Updated optional-service disclosures |

@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createFFScriptProxy, MANAGED_KEY } = require('../ff-script-proxy');
+const { createFFScriptProxy, MANAGED_KEY } = require('../src/server/ff-script-proxy');
 test('FF Scouter uses current saved key, separate-key priority and Torn fallback', async () => {
   const config = { apiKey: 'MainApiKey123456', ffscouterKey: '' };
   const seen = []; let throttled = 0;

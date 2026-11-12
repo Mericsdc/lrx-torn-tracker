@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { replaceTornCookies, normalizeTornSession } = require('../torn-session');
-const { restartApplication } = require('../restart');
+const { replaceTornCookies, normalizeTornSession } = require('../src/main/torn-session');
+const { restartApplication } = require('../src/main/restart');
 test('cookie import removes stale auth/token cookies and retains unrelated domains', async () => {
   const removed = [], set = [];
   const session = { cookies: { get: async () => [

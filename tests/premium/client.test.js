@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createPremiumClient } = require('../../premium-client');
+const { createPremiumClient } = require('../../src/server/premium-client');
 const token = 'a'.repeat(43), key = 'AbCdEfGh12345678';
 const reply = (data, status = 200) => new Response(JSON.stringify(data), { status });
 function fixture(extra = {}) {
