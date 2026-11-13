@@ -67,6 +67,7 @@ const FEATURE_DEFS = [
 
   { group: 'app', key: 'app.animations', def: true, tr: ['Animasyonlar', 'Geçişler, sayaç animasyonları, kart efektleri'], en: ['Animations', 'Transitions, counter animations, card effects'] },
   { group: 'app', key: 'app.splash', def: true, tr: ['Açılış ekranı', 'Uygulama açılırken LRX logosu'], en: ['Splash screen', 'LRX logo on startup'] },
+  { group: 'app', key: 'app.newYear', def: true, tr: ['Yılbaşı süsü', '20 Aralık – 6 Ocak arası giriş ekranında yılbaşı ağacı ve kar'], en: ['New Year decoration', 'Christmas tree and snow on the sign-in screen, 20 Dec – 6 Jan'] },
   { group: 'app', key: 'app.torntools', def: true, tr: ['TornTools', 'Yerleşik Torn sekmelerinde TornTools eklentisi (yeniden başlatınca)'], en: ['TornTools', 'TornTools extension in Torn tabs (after restart)'] },
   { group: 'app', key: 'app.tabSleep', def: true, tr: ['Kullanılmayan sekmeleri uyut', '20 dk açılmayan Torn sekmesi RAM\'den boşaltılır, tıklayınca kaldığı yerden açılır'], en: ['Sleep unused tabs', 'Torn tabs unused for 20 min are unloaded from RAM and reopen where you left off when clicked'] },
   { group: 'app', key: 'app.loopGuard', def: true, tr: ['Kendi kendine dönen sekmeyi durdur', "Sen dokunmadan bir dakikada 8'den fazla sayfa açan Torn sekmesini durdurur · çok hızlı döngüler her zaman durdurulur"], en: ['Stop self-navigating tabs', 'Stops a Torn tab that opens more than 8 pages in a minute without you touching it · very fast loops are always stopped'] },

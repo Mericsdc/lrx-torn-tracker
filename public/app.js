@@ -2318,6 +2318,25 @@ const prefersReducedMotion = () => document.body.classList.contains('no-anim') |
 const NEW_KEY_URL = 'https://www.torn.com/preferences.php#tab=api?step=addNewKey&title=LRX%20Torn%20Tracker&type=3';
 
 let authWaves = null;
+let authNewYear = null;
+// New Year scene beside the card (20 Dec - 6 Jan, Settings -> App -> New Year decoration). The splash is short,
+// so it shows the finished tree; the login form shows it building.
+function startAuthNewYear(mode) {
+  const canvas = $('#auth-newyear');
+  if (!canvas || !window.LRXNewYear) return;
+  if (typeof feat === 'function' && !feat('app.newYear')) {
+    authNewYear?.stop();
+    canvas.width = canvas.width; // clears a scene drawn before the setting was turned off
+    return;
+  }
+  authNewYear ||= window.LRXNewYear.create(canvas, {
+    lang: () => state.lang,
+    card: () => $('#auth-card'),
+    reduced: prefersReducedMotion,
+    force: window.LRXNewYear.forced(location.search),
+  });
+  authNewYear.start(mode === 'splash' ? 'finished' : 'build');
+}
 function showAuth(mode = 'login') {
   const scr = $('#auth-screen');
   scr.hidden = false;
@@ -2325,6 +2344,7 @@ function showAuth(mode = 'login') {
     if (!authWaves && window.LRXShapeWaves) authWaves = window.LRXShapeWaves.create($('#auth-waves'));
     authWaves?.start();
   } catch (e) { console.warn('ShapeWaves', e); }
+  try { startAuthNewYear(mode); } catch (e) { console.warn('NewYear', e); }
   scr.classList.remove('leaving', 'splash', 'login');
   scr.classList.add(mode);
   document.body.classList.add('auth-open');
@@ -2338,7 +2358,7 @@ function hideAuth(delay = 0) {
     scr.classList.add('leaving');
     document.body.classList.remove('auth-open');
     document.body.classList.add('app-enter');
-    setTimeout(() => { scr.hidden = true; scr.classList.remove('leaving'); authWaves?.stop(); resolve(); }, prefersReducedMotion() ? 0 : 650);
+    setTimeout(() => { scr.hidden = true; scr.classList.remove('leaving'); authWaves?.stop(); authNewYear?.stop(); resolve(); }, prefersReducedMotion() ? 0 : 650);
     setTimeout(() => document.body.classList.remove('app-enter'), 1600);
   }, delay));
 }

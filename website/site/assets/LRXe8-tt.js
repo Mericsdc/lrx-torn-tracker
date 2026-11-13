@@ -188,6 +188,29 @@
     } catch (e) { console.warn('waves', e); }
   }
 
+  /* ---------- Hero: New Year scene (20 Dec - 6 Jan, or ?newyear=1 for a preview) ---------- */
+  const newYearCanvas = $('#hero-newyear');
+  if (window.LRXNewYear && newYearCanvas) {
+    try {
+      const scene = window.LRXNewYear.create(newYearCanvas, {
+        lang: () => (document.documentElement.lang === 'tr' ? 'tr' : 'en'),
+        card: () => $('.hero-card'),
+        reduced: () => Boolean(reduced),
+        force: window.LRXNewYear.forced(location.search),
+      });
+      // Runs only while the tab is visible and the hero is in view; coming back to the tab must not restart it off-screen.
+      let heroInView = true;
+      scene.start('build');
+      if ('IntersectionObserver' in window) {
+        new IntersectionObserver((en) => {
+          heroInView = en[0].isIntersecting;
+          if (heroInView && !document.hidden) scene.start(); else scene.stop();
+        }).observe($('#hero'));
+      }
+      document.addEventListener('visibilitychange', () => (document.hidden || !heroInView ? scene.stop() : scene.start()));
+    } catch (e) { console.warn('newyear', e); }
+  }
+
   /* ---------- Credits ---------- */
   const people = $$('.people li').map((li) => ({
     li, id: li.dataset.id, name: li.querySelector('b').textContent.trim(),

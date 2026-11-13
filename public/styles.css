@@ -833,6 +833,8 @@ body.auth-open { overflow: hidden; }
 /* ShapeWaves town background (login / splash) */
 .auth { background: radial-gradient(900px 520px at 50% 38%, rgba(201, 169, 106, 0.06), transparent 60%), #000; }
 .auth-waves { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+/* New Year scene (20 Dec - 6 Jan): above the town, below the card. */
+.auth-newyear { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
 .auth-glow { opacity: .55; z-index: 0; }
 .auth-card { z-index: 1; }
 .auth.splash .auth-card { background: radial-gradient(closest-side, rgba(0, 0, 0, 0.75), transparent); }

@@ -10,6 +10,7 @@ The public page is **https://lrxe8.com/torn-tracker**. Its source is in [`websit
 | `website/site/assets/LRXe8-tt.js` | Turkish text, language switch, screenshot tabs, scroll effects |
 | `website/site/assets/LRXe8-tt-carousel.js` | WebGL credits carousel (falls back to a plain list) |
 | `website/site/assets/LRXe8-tt-shape-waves.js` | The app's pixel-city background |
+| `website/site/assets/LRXe8-tt-newyear.js` | New Year tree, snow and stars beside the hero card, 20 Dec – 6 Jan only. A byte copy of the app's `public/new-year.js` (a unit test checks they match). Add `?newyear=1` to the URL to preview it on any day. |
 | `website/site/assets/*.webp` | App screenshots (EN and TR) and the credited players' Torn profile pictures |
 | `website/tools/` | Preview, checks, screenshots and avatar tools (below) |
 | `website/OFL.txt` | License of the bundled JetBrains Mono font subset |
