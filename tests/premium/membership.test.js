@@ -31,6 +31,16 @@ test('in-app synthetic two-Xanax action awards 30 days and replay adds zero days
   assert.equal(service.store.settings().enabled, 0); assert.equal(service.info().livePayments, false);
   assert.equal(service.store.entitlement(4037017).permanent, true);
 });
+test('admin snapshot carries the Xanax received from every member; a member snapshot does not', async (t) => {
+  const { service } = fixture(t); service.store.registerVerifiedUser(4037017);
+  assert.equal(service.me(ADMIN).receivedTotal, 0);
+  await service.adminAction(ADMIN, 'test-payment', { quantity: 2 });
+  const second = await service.adminAction(ADMIN, 'test-payment', { quantity: 4 });
+  assert.equal(service.me(ADMIN).receivedTotal, 6);
+  const member = service.me({ tornId: second.tornId, admin: false });
+  assert.equal('receivedTotal' in member, false, 'members never see the owner total');
+  assert.equal(member.balance.total_received, 4);
+});
 test('member directory exposes remaining days and lifetime state with filters, search and pagination', async (t) => {
   const { service } = fixture(t); service.store.registerVerifiedUser(4037017);
   const paid = await service.adminAction(ADMIN, 'test-payment', { quantity: 2 });

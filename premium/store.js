@@ -315,6 +315,8 @@ function createStore(filename, options = {}) {
   return {
     db, transaction, mode, now, settings, checkpoint, entitlement, registerVerifiedUser, ingest, ingestItemLog, settlePendingItemLogs, historyFor, player, cachePlayerName,
     balance: (id) => one('SELECT * FROM premium_payment_balances WHERE torn_id=?', id) || { torn_id: id, available_xanax: 0, total_received: 0 },
+    // Verified Xanax received from every sender since the start (the owner's "Total Xanax received").
+    receivedTotal: () => Number(one('SELECT coalesce(sum(total_received),0) AS total FROM premium_payment_balances').total),
     updateSettings, adjustSubscription, review, acquireLease, ownsLease, releaseLease, checkpointUpdate, recordError, apiBudget, rebaseline,
     expire: () => run("UPDATE premium_subscriptions SET status='expired',updated_at=? WHERE status='active' AND expires_at<=?", now(), now()),
     audit, assertAdmin, requestErasure, exportData, members, close: database.close,

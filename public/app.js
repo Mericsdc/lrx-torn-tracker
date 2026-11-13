@@ -493,6 +493,7 @@ function renderOverview() {
   tick();
   renderWarMe();
   animateNumbers($('#view-overview'));
+  window.onOverviewRendered?.(); // e.g. the Premium page's profile card
 }
 
 // Takip ekranı gerçekten görünüyor mu? (pencere küçültülmemiş ve bir Torn sekmesi üstünü kapatmıyor)

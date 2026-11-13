@@ -45,17 +45,52 @@
     const label = sub.permanent ? tr('KALICI ÜYELİK', 'LIFETIME MEMBERSHIP') : sub.active ? tr('PREMIUM ÜYE', 'PREMIUM MEMBER') : tr('LRX ÜYELİĞİ', 'LRX MEMBERSHIP');
     // Lifetime members see their own name, never another member's.
     const holder = d.account ? esc(d.account.name || d.account.tornId) : '';
-    return `<header class="pm-hero"><div class="pm-hero-copy"><div class="pm-eyebrow"><span class="pm-live-dot"></span> LRX / ${tr('ÜYELİK', 'MEMBERSHIP')} ${d.mode === 'test' ? badge(tr('Test ortamı', 'Test workspace')) : ''}</div><h2>${tr('Üyeliğiniz.', 'Your membership.')}<br><em>${sub.permanent ? tr('Daima sizin.', 'Always yours.') : tr('Bir üst seviyede.', 'Elevated.')}</em></h2><p>${sub.permanent ? (holder ? tr(`${holder} için kalıcı Premium erişimi. Süre sınırı olmadan.`, `Permanent Premium access for ${holder}. Yours without an expiry date.`) : tr('Kalıcı Premium erişimi. Süre sınırı olmadan.', 'Permanent Premium access. Yours without an expiry date.')) : tr('Üyelik süreniz, ödemeleriniz ve hesabınız tek bir yerde.', 'Your membership, payments and account. All in one place.')}</p><div class="pm-hero-actions">${button('refresh', tr('Yenile', 'Refresh'), 'pm-ghost', `aria-label="${esc(tr('Üyeliği yenile', 'Refresh membership'))}"`)}</div></div><div class="pm-member-card ${sub.permanent ? 'is-founder' : ''}"><div class="pm-card-top"><span>LRX <b>PREMIUM</b></span>${icon('crown')}</div><div class="pm-card-number">${sub.permanent ? '∞' : sub.active ? esc(sub.remainingDays) : '—'}<span>${sub.permanent ? tr('ÖMÜR BOYU', 'LIFETIME ACCESS') : sub.active ? tr('GÜN KALDI', sub.remainingDays === 1 ? 'DAY REMAINING' : 'DAYS REMAINING') : tr('ÜYELİK DURUMU', 'MEMBERSHIP STATUS')}</span></div><div class="pm-card-bottom"><div><small>${esc(label)}</small><strong>${d.account ? esc(d.account.name || (d.account.tornId === 4037017 ? 'Ezlira' : String(d.account.tornId))) + ' <span>[' + esc(d.account.tornId) + ']</span>' : tr('Üyelik durumu otomatik güncellenir', 'Membership updates automatically')}</strong></div><span class="pm-card-seal">${icon(sub.active ? 'shield' : 'crown')}</span></div></div></header>`;
+    return `<header class="pm-hero"><div class="pm-hero-copy"><div class="pm-eyebrow"><span class="pm-live-dot"></span> LRX / ${tr('ÜYELİK', 'MEMBERSHIP')} ${d.mode === 'test' ? badge(tr('Test ortamı', 'Test workspace')) : ''}</div><h2>${tr('Üyeliğiniz.', 'Your membership.')}<br><em>${sub.permanent ? tr('Daima sizin.', 'Always yours.') : tr('Bir üst seviyede.', 'Elevated.')}</em></h2><p>${sub.permanent ? (holder ? tr(`${holder} için kalıcı Premium erişimi. Süre sınırı olmadan.`, `Permanent Premium access for ${holder}. Yours without an expiry date.`) : tr('Kalıcı Premium erişimi. Süre sınırı olmadan.', 'Permanent Premium access. Yours without an expiry date.')) : tr('Üyelik süreniz, ödemeleriniz ve hesabınız tek bir yerde.', 'Your membership, payments and account. All in one place.')}</p><div class="pm-hero-actions">${button('refresh', tr('Yenile', 'Refresh'), 'pm-ghost', `aria-label="${esc(tr('Üyeliği yenile', 'Refresh membership'))}"`)}</div></div><div class="pm-hero-cards"><div class="pm-profile-slot" data-pm-profile hidden></div><div class="pm-member-card ${sub.permanent ? 'is-founder' : ''}"><div class="pm-card-top"><span>LRX <b>PREMIUM</b></span>${icon('crown')}</div><div class="pm-card-number">${sub.permanent ? '∞' : sub.active ? esc(sub.remainingDays) : '—'}<span>${sub.permanent ? tr('ÖMÜR BOYU', 'LIFETIME ACCESS') : sub.active ? tr('GÜN KALDI', sub.remainingDays === 1 ? 'DAY REMAINING' : 'DAYS REMAINING') : tr('ÜYELİK DURUMU', 'MEMBERSHIP STATUS')}</span></div><div class="pm-card-bottom"><div><small>${esc(label)}</small><strong>${d.account ? esc(d.account.name || (d.account.tornId === 4037017 ? 'Ezlira' : String(d.account.tornId))) + ' <span>[' + esc(d.account.tornId) + ']</span>' : tr('Üyelik durumu otomatik güncellenir', 'Membership updates automatically')}</strong></div><span class="pm-card-seal">${icon(sub.active ? 'shield' : 'crown')}</span></div></div></div></header>`;
+  }
+  // The viewer's own Torn profile beside the membership card. It is built only from the overview the app already
+  // fetches (no extra Torn request) and only when that player is the Premium account itself.
+  function httpsUrl(value) { try { const url = new URL(String(value || '')); return url.protocol === 'https:' ? url.href : ''; } catch { return ''; } }
+  function profileCard() {
+    const p = state.overview?.player, account = snapshot?.account;
+    if (!p || !account || Number(p.id) !== Number(account.tornId) || (typeof feat === 'function' && !feat('app.premiumProfile'))) return '';
+    const id = Number(p.id), name = decode(p.name || String(id)), photo = httpsUrl(p.image);
+    const si = typeof statusInfo === 'function' ? statusInfo(p.status) : { cls: 'dim', text: '', color: 'var(--muted)' };
+    const fac = p.faction || {}, tag = fac.faction_tag && fac.faction_tag !== 'None' ? fac.faction_tag : '';
+    return `<article class="pm-profile${photo ? '' : ' is-missing'}" data-open-url="https://www.torn.com/profiles.php?XID=${id}" data-tab-label="${esc(name)} [${id}]" title="${esc(tr('Profili sekmede aç', 'Open profile in a tab'))}">`
+      + `<div class="pm-profile-top"><i class="pm-profile-dot" style="background:${si.color}"></i><strong>${esc(name)}</strong><span>[${id}]</span></div>`
+      + `<div class="pm-profile-frame">${photo ? `<img class="pm-profile-photo" src="${esc(photo)}" alt="${esc(name)}" referrerpolicy="no-referrer" decoding="async">` : ''}<span class="pm-profile-initial" aria-hidden="true">${esc(name.trim().charAt(0).toUpperCase() || '?')}</span></div>`
+      + `<div class="pm-profile-meta"><span>Lv ${Number(p.level) || '—'}</span><span class="chip ${si.cls}">${esc(p.status?.description || si.text)}</span>${tag ? `<span class="pm-profile-tag" title="${esc(fac.faction_name || tag)}">${esc(tag)}</span>` : ''}</div></article>`;
+  }
+  // Updates only the profile slot, so open forms and module workbenches are never re-rendered by an overview refresh.
+  function paintProfile() {
+    const slot = host.querySelector('[data-pm-profile]'); if (!slot) return;
+    const html = profileCard();
+    if (slot.dataset.painted === '1' && slot.lastHtml === html) return;
+    slot.dataset.painted = '1'; slot.lastHtml = html;
+    slot.innerHTML = html; slot.hidden = !html;
+    slot.parentElement.classList.toggle('has-profile', !!html);
+    const img = slot.querySelector('img.pm-profile-photo'); if (!img) return;
+    const missing = () => img.closest('.pm-profile')?.classList.add('is-missing');
+    if (img.complete && !img.naturalWidth) missing(); else img.addEventListener('error', missing, { once: true });
   }
   function nav() {
     const tabs = [['membership', tr('Üyeliğim', 'My membership')], ...(snapshot.account?.admin ? [['members', tr('Üyeler', 'Members')], ['payments', tr('Ödemeler', 'Payments')], ...(snapshot.mode === 'test' ? [['test', tr('Test alanı', 'Test lab')]] : []), ['settings', tr('Ayarlar', 'Settings')]] : [])];
     return `<nav class="pm-tabs" aria-label="Premium">${tabs.map(([id, label]) => `<button type="button" data-premium-tab="${id}" class="${tab === id ? 'selected' : ''}" aria-pressed="${tab === id}">${esc(label)}</button>`).join('')}</nav>`;
   }
   function sectionTitle(eyebrow, title, aside = '') { return `<div class="pm-section-heading"><div><span class="pm-eyebrow">${esc(eyebrow)}</span><h3>${esc(title)}</h3></div>${aside}</div>`; }
+  // The card matching the member's latest applied payment is lit as their plan; otherwise the 2-Xanax (30-day) card stays recommended.
+  const PLANS = [1, 2, 4, 10];
+  function paidPlan(transactions) {
+    const quantity = Number((transactions || []).find((r) => r.status === 'applied')?.quantity);
+    return PLANS.includes(quantity) ? quantity : null;
+  }
   function membership() {
     const d = snapshot, sub = d.subscription || {};
-    return `<div class="pm-overview-stats"><div>${icon('shield')}<span>${tr('Üyelik', 'Membership')}</span><strong>${sub.permanent ? tr('Kalıcı Premium', 'Lifetime Premium') : sub.active ? 'Premium' : tr('Standart', 'Standard')}</strong></div><div>${icon('clock')}<span>${tr('Bitiş tarihi', 'Expires')}</span><strong>${sub.permanent ? tr('Süresiz', 'Never expires') : esc(date(sub.expiresAt))}</strong></div><div>${icon('check')}<span>${tr('Toplam Xanax', 'Total Xanax')}</span><strong>${esc(d.balance?.total_received || 0)} <small>Xanax</small></strong></div></div>
-      <section class="pm-surface">${sectionTitle(tr('ÜYELİK PLANLARI', 'MEMBERSHIP PLANS'), tr('Size uygun süreyi seçin', 'A duration that fits you'))}<div class="pm-plans">${[1, 2, 4, 10].map((q) => `<article class="pm-plan ${q === 2 ? 'featured' : ''}"><div class="pm-plan-label">${q === 2 ? number(q * d.pricing.premiumDays / d.pricing.xanaxPrice) + tr(' GÜNLÜK SEÇENEK', ' DAY OPTION') : 'PREMIUM'}</div><div class="pm-plan-days">${number(q * d.pricing.premiumDays / d.pricing.xanaxPrice)}<small>${tr('gün', 'days')}</small></div><div class="pm-plan-price"><span>${q}</span> Xanax ${icon('arrow')}</div></article>`).join('')}</div><div class="pm-plan-foot"><span>${tr('Alıcı', 'Receiver')}: <b>${esc(d.receiver.name || 'Torn')} [${esc(d.receiver.tornId)}]</b></span>${button('copy-receiver', tr('ID kopyala', 'Copy ID'), 'pm-quiet')}</div><p class="pm-fine-print">${tr('Mevcut özellikler ve Torn API verilerine erişim ücretsizdir. Premium, aşağıdaki gelişmiş analiz ve kişiselleştirme araçlarını ekler.', 'Existing features and Torn API data access remain free. Premium adds the analysis and personalization tools below.')}</p></section>
+    const mine = paidPlan(d.transactions), featured = mine ?? 2;
+    // The owner sees the Xanax received from every member (older services without the field fall back to their own total).
+    const ownerTotal = d.account?.admin && d.receivedTotal != null;
+    return `<div class="pm-overview-stats"><div>${icon('shield')}<span>${tr('Üyelik', 'Membership')}</span><strong>${sub.permanent ? tr('Kalıcı Premium', 'Lifetime Premium') : sub.active ? 'Premium' : tr('Standart', 'Standard')}</strong></div><div>${icon('clock')}<span>${tr('Bitiş tarihi', 'Expires')}</span><strong>${sub.permanent ? tr('Süresiz', 'Never expires') : esc(date(sub.expiresAt))}</strong></div><div>${icon('check')}<span>${ownerTotal ? tr('Toplam alınan Xanax', 'Total Xanax received') : tr('Toplam Xanax', 'Total Xanax')}</span><strong>${esc(ownerTotal ? d.receivedTotal : d.balance?.total_received || 0)} <small>Xanax</small></strong></div></div>
+      <section class="pm-surface">${sectionTitle(tr('ÜYELİK PLANLARI', 'MEMBERSHIP PLANS'), tr('Size uygun süreyi seçin', 'A duration that fits you'))}<div class="pm-plans">${PLANS.map((q) => `<article class="pm-plan ${q === featured ? 'featured' : ''}" data-plan="${q}"><div class="pm-plan-label">${q === mine ? tr('SON PLANINIZ', 'YOUR PLAN') : q === featured ? number(q * d.pricing.premiumDays / d.pricing.xanaxPrice) + tr(' GÜNLÜK SEÇENEK', ' DAY OPTION') : 'PREMIUM'}</div><div class="pm-plan-days">${number(q * d.pricing.premiumDays / d.pricing.xanaxPrice)}<small>${tr('gün', 'days')}</small></div><div class="pm-plan-price"><span>${q}</span> Xanax ${icon('arrow')}</div></article>`).join('')}</div><div class="pm-plan-foot"><span>${tr('Alıcı', 'Receiver')}: <b>${esc(d.receiver.name || 'Torn')} [${esc(d.receiver.tornId)}]</b></span>${button('copy-receiver', tr('ID kopyala', 'Copy ID'), 'pm-quiet')}</div><p class="pm-fine-print">${tr('Mevcut özellikler ve Torn API verilerine erişim ücretsizdir. Premium, aşağıdaki gelişmiş analiz ve kişiselleştirme araçlarını ekler.', 'Existing features and Torn API data access remain free. Premium adds the analysis and personalization tools below.')}</p></section>
       <section class="pm-surface">${sectionTitle(tr('DAHİL ARAÇLAR', 'INCLUDED TOOLS'), tr('Gelişmiş modüller', 'Advanced modules'))}${(window.LRXFeatureCatalog?.premium || []).map((f) => `<div data-feature-slot="${f.id}"></div>`).join('')}</section>
       ${d.connected ? `<section class="pm-surface">${sectionTitle(tr('HESAP HAREKETLERİ', 'ACCOUNT ACTIVITY'), tr('Ödeme geçmişiniz', 'Your payment history'), button('receipts', tr('CSV indir', 'Download CSV'), 'pm-ghost'))}${paymentTable(d.transactions, false)}</section>` : ''}${privacy()}`;
   }
@@ -64,10 +99,10 @@
     return `${!d.connected ? `<p class="pm-fine-print pm-connection-status" role="status">${esc(d.connectionError ? errorText({ code: d.connectionError }) : tr('Üyeliğiniz uygulamadaki Torn hesabınızla otomatik eşleştirilir. Xanax gönderdiğinizde süre kendi Torn ID’nize tanımlanır.', 'Membership matches your Torn account automatically. Sending Xanax credits time to your own Torn ID.'))}</p>` : ''}<details class="pm-surface pm-privacy" data-pm-details="privacy"><summary>${icon('shield')} ${tr('Verileriniz ve gizlilik', 'Your data and privacy')}</summary>${content}${d.connected ? `<div class="pm-actions">${button('data', tr('Verilerimi indir', 'Download my data'), 'pm-ghost')}${button('erasure-request', tr('Silme değerlendirmesi iste', 'Request erasure assessment'), 'pm-quiet')}</div><p class="pm-fine-print">${tr('Silme talepleri incelemeye alınır; bu işlem anında silme yapmaz.', 'Erasure requests are reviewed by an operator; this does not immediately erase records.')}</p>` : ''}</details>`;
   }
   function paymentTable(rows, manage) {
-    return table([tr('Tarih / İşlem', 'Date / Transaction'), ...(manage ? [tr('Oyuncu', 'Player')] : []), 'Xanax', tr('Eklenen süre', 'Time awarded'), tr('Durum', 'Status')], rows.filter(r=>r.status!=='ignored').map((r) => {
+    return table([manage ? tr('Tarih / İşlem', 'Date / Transaction') : tr('Tarih', 'Date'), ...(manage ? [tr('Oyuncu', 'Player')] : []), 'Xanax', tr('Eklenen süre', 'Time awarded'), tr('Durum', 'Status')], rows.filter(r=>r.status!=='ignored').map((r) => {
       const id=r.eventId||r.event_id, status=r.status;
       const label=status==='review'?tr('Miktar otomatik doğrulanıyor', 'Checking the received quantity'):stateName(status);
-      return '<tr><td><b>'+esc(date(r.eventTimestamp||r.event_timestamp))+'</b><small class="pm-event-id">'+esc(id)+'</small></td>'+(manage?'<td>'+esc(r.senderName||admin.users?.find(u=>u.tornId===r.torn_sender_id)?.name||r.torn_sender_id||'—')+'</td>':'')+'<td><b>'+esc(r.quantity??'—')+'</b></td><td>'+number(r.premiumDays??r.premium_days)+' '+tr('gün','days')+'</td><td>'+badge(label,status==='applied'?'good':'')+'</td></tr>';
+      return '<tr><td><b>'+esc(date(r.eventTimestamp||r.event_timestamp))+'</b>'+(manage?'<small class="pm-event-id">'+esc(id)+'</small>':'')+'</td>'+(manage?'<td>'+esc(r.senderName||admin.users?.find(u=>u.tornId===r.torn_sender_id)?.name||r.torn_sender_id||'—')+'</td>':'')+'<td><b>'+esc(r.quantity??'—')+'</b></td><td>'+number(r.premiumDays??r.premium_days)+' '+tr('gün','days')+'</td><td>'+badge(label,status==='applied'?'good':'')+'</td></tr>';
     }));
   }
   function memberView() {
@@ -112,6 +147,7 @@
     if (!d.configured) { paintHost(`<section class="pm-surface pm-not-configured">${icon('crown')}<span class="pm-eyebrow">LRX PREMIUM</span><h2>${tr('Üyeliğiniz için hazır.', 'Ready for your membership.')}</h2><p>${tr('Üyelik servisi bağlandığında durumunuz ve geçmişiniz burada görünecek.', 'Your status and history will appear here once the membership service is connected.')}</p>${button('refresh', tr('Tekrar kontrol et', 'Check again'), 'pm-primary')}</section>`); return; }
     let body = tab === 'membership' ? membership() : !admin ? `<section class="pm-surface"><p class="pm-muted">${tr('Kontrol merkezi yükleniyor…', 'Loading control centre…')}</p></section>` : tab === 'members' ? memberView() : tab === 'payments' ? payments() : tab === 'test' ? testLab() : settings();
     paintHost(hero() + nav() + `<div class="pm-tab-content" id="premium-tab-content">${body}</div><footer class="pm-service-line"><span class="pm-live-dot"></span>${tr('Son başarılı kontrol', 'Last successful check')}: ${esc(date(d.check?.lastSuccessAt))}<span>${d.mode === 'test' ? tr('Sentetik test ortamı', 'Synthetic test workspace') : d.enabled ? tr('Otomatik kontrol açık', 'Automatic checks on') : tr('Kontrol duraklatıldı', 'Checks paused')}</span>${d.check?.error ? badge(d.check.error) : ''}</footer>`);
+    paintProfile();
     window.PremiumAccess?.repaint();
   }
   function featurePermissions() {
@@ -189,6 +225,8 @@
   });
   const previousView = window.onViewShown;
   window.onViewShown = (v) => { previousView?.(v); if (v === 'premium') refresh(); };
+  const previousOverview = window.onOverviewRendered;
+  window.onOverviewRendered = () => { previousOverview?.(); if (snapshot) paintProfile(); };
   const previousLang = window.onLangChanged;
   window.onLangChanged = () => { previousLang?.(); if (state.view === 'premium') render(); };
   $('#refresh-btn').addEventListener('click', () => { if (state.view === 'premium') refresh(); });

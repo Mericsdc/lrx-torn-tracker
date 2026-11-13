@@ -29,7 +29,7 @@ function createPremiumService(config, dependencies = {}) {
   }
   function me(actor) {
     store.expire();
-    return { ...info(), connected: true, account: { ...store.player(actor.tornId), admin: actor.admin, verified: true }, subscription: store.entitlement(actor.tornId), balance: store.balance(actor.tornId), transactions: store.historyFor(actor.tornId), featureAccess: features.access(actor) };
+    return { ...info(), connected: true, account: { ...store.player(actor.tornId), admin: actor.admin, verified: true }, subscription: store.entitlement(actor.tornId), balance: store.balance(actor.tornId), ...(actor.admin ? { receivedTotal: store.receivedTotal() } : {}), transactions: store.historyFor(actor.tornId), featureAccess: features.access(actor) };
   }
   function requirePremium(actor) {
     const entitlement = store.entitlement(actor.tornId);

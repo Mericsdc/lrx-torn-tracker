@@ -9,6 +9,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const { createHttpServer } = require('../premium/server');
 const { readConfig } = require('../premium/config');
 const { parseEvent } = require('../premium/parser');
+const { buildBattleStats } = require('../src/server/battle-stats');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'lrx-premium-ui-'));
 const secret = crypto.randomBytes(32).toString('hex');
 const config = readConfig({ PREMIUM_MODE: 'test', PREMIUM_DB_PATH: ':memory:', PREMIUM_TEST_AUTH_TOKEN: secret });
@@ -106,6 +107,65 @@ async function desktop(tornId) {
   await user.page.locator('.pm-card-number').filter({ hasText: '30' }).waitFor();
   assert.equal(await user.page.locator('[data-premium-action="connect"],#premium-remember,#pm-connect').count(), 0);
   assert.equal(service.store.entitlement(tornId).expiresAt, firstExpiry);
+  // Members see the payment date without the long transaction ID; the admin ledger keeps it for matching Torn logs.
+  assert.equal(await user.page.locator('#premium-content .pm-event-id').count(), 0, 'transaction IDs are hidden from members');
+  assert.equal((await user.page.locator('#premium-content .pm-table th').first().textContent()).trim(), 'Tarih', 'the member column is just the date');
+  assert.ok((await user.page.locator('#premium-content').textContent()).includes('2'), 'the payment row is still listed');
+  await admin.page.locator('[data-premium-tab="payments"]').click();
+  await admin.page.locator('tr').filter({ hasText: 'xss_review' }).waitFor();
+  // The owner sees the Xanax received from every member, not their own (zero) payments.
+  await admin.page.locator('[data-premium-tab="membership"]').click();
+  await admin.page.locator('[data-premium-action="refresh"]').click();
+  const received = service.store.receivedTotal();
+  assert.ok(received >= 2, 'the UI test payment was counted');
+  await admin.page.waitForFunction((n) => new RegExp('Total Xanax received\\s*' + n + '\\b').test(document.querySelector('.pm-overview-stats')?.textContent || ''), received);
+  // A member who paid 4 Xanax sees the 60-day card lit as their plan; before that, the 30-day card stays recommended.
+  assert.equal(await user.page.locator('.pm-plan.featured').getAttribute('data-plan'), '2');
+  await service.adminAction({ tornId: 4037017, admin: true }, 'test-payment', { torn_id: tornId, quantity: 4 });
+  await user.page.locator('[data-premium-action="refresh"]').click();
+  await user.page.locator('.pm-plan.featured[data-plan="4"]').waitFor();
+  assert.equal(await user.page.locator('.pm-plan').count(), 4);
+  assert.equal(await user.page.locator('.pm-plan.featured').count(), 1);
+  assert.match(await user.page.locator('.pm-plan.featured .pm-plan-label').textContent(), /SON PLANINIZ/);
+  // The viewer's own Torn profile sits beside the membership card, built only from the overview the app already has.
+  // The overview arrives through the real /api/overview → renderOverview() path, after the Premium page was painted.
+  let overviewPlayer = null;
+  const overviewFixture = () => ({ player: overviewPlayer, serverTime: Math.floor(Date.now() / 1000), battle: buildBattleStats({ strength: 1000, defense: 1000, speed: 1000, dexterity: 1000 }), bars: {}, cooldowns: {}, drug: { cooldown: 0, xanaxActive: false }, education: { timeLeft: 0, completed: 0, totalCourses: 100 } });
+  await user.page.route((url) => url.pathname === '/api/overview', (route) => route.fulfill({ json: overviewFixture() }));
+  const showProfile = async (player) => { overviewPlayer = player; await user.page.evaluate(() => loadOverview(true)); };
+  await user.page.route('https://profileimages.torn.com/ok.png', (route) => route.fulfill({ path: path.join(__dirname, '..', 'public', 'logo.png') }));
+  const player = { id: tornId, name: '<b>Bold</b>', level: 15, image: 'https://profileimages.torn.com/missing.png', status: { state: 'Okay', description: 'Okay', color: 'green' }, faction: { faction_tag: 'TAG', faction_name: 'Example' } };
+  await showProfile(player);
+  const card = user.page.locator('[data-pm-profile] .pm-profile');
+  await card.waitFor();
+  assert.ok((await card.textContent()).includes('<b>Bold</b>'), 'the name is shown as text');
+  assert.equal(await user.page.locator('[data-pm-profile] b').count(), 0, 'Torn data never becomes markup');
+  assert.ok((await card.textContent()).includes(String(tornId)));
+  assert.equal(await card.getAttribute('data-open-url'), 'https://www.torn.com/profiles.php?XID=' + tornId);
+  assert.equal(await user.page.locator('[data-pm-profile] img.pm-profile-photo').getAttribute('src'), player.image);
+  await user.page.locator('[data-pm-profile] .pm-profile.is-missing').waitFor(); // the photo request failed; the card keeps its layout
+  await showProfile({ ...player, id: tornId + 1 });
+  assert.equal(await user.page.locator('[data-pm-profile] .pm-profile').count(), 0, 'another player is never shown');
+  await showProfile({ ...player, image: 'javascript:alert(1)' });
+  await card.waitFor();
+  assert.equal(await user.page.locator('[data-pm-profile] img').count(), 0, 'only https photos are used');
+  await user.page.evaluate(() => { state.config ||= {}; state.config.features = { ...(state.config.features || {}), 'app.premiumProfile': false }; });
+  await showProfile(player);
+  assert.equal(await user.page.locator('[data-pm-profile] .pm-profile').count(), 0, 'the setting turns the card off');
+  await user.page.evaluate(() => { state.config.features['app.premiumProfile'] = true; });
+  await user.page.setViewportSize({ width: 1440, height: 1050 });
+  await showProfile({ ...player, name: 'ExamplePlayer', image: 'https://profileimages.torn.com/ok.png' });
+  await user.page.locator('[data-pm-profile] .pm-profile:not(.is-missing) img.pm-profile-photo').waitFor();
+  await user.page.waitForFunction(() => document.querySelector('[data-pm-profile] img.pm-profile-photo')?.complete);
+  await user.page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+  await user.page.screenshot({ path: path.join(output, 'premium-profile.png'), fullPage: true });
+  for (const width of [1100, 760, 640]) {
+    await user.page.setViewportSize({ width, height: 900 });
+    await user.page.locator('.pm-hero-cards.has-profile [data-pm-profile] .pm-profile').waitFor(); // the card is present while the layout is measured
+    await user.page.screenshot({ path: path.join(output, 'premium-profile-' + width + '.png'), fullPage: false });
+    const wide = await user.page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth }));
+    assert.ok(wide.scroll <= wide.width + 1, 'no sideways scroll at ' + width + ': ' + JSON.stringify(wide));
+  }
   assert.deepEqual(admin.errors, []); assert.deepEqual(user.errors, []);
   console.log(JSON.stringify({ ok: true, assertions: ['real desktop-to-service authentication', 'automatic connection with collapsed privacy notice and no verification form', 'test mode never sends Torn keys', 'protected founder lifetime membership', 'in-app 2-Xanax test awards 30 days', 'same-event replay awards zero and retains one record', 'member search and remaining days', 'private history and admin isolation', 'informational payment ledger without approval controls', 'five themes', '640px layout', 'TR/EN', 'restart reconnects automatically without a verification form'], screenshots: output }));
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => {
