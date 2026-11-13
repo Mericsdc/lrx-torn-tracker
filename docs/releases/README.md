@@ -4,6 +4,7 @@ Each file is the GitHub release text for that version. The newest version is at 
 
 | Version | Date | Highlights |
 | --- | --- | --- |
+| [1.6.13](1.6.13.md) | 2026-11-13 | Safer updates and TornTools, a stop for self-navigating tabs, an honest Xanax Today count |
 | [1.6.12](1.6.12.md) | 2026-11-12 | Torn rules and privacy: the Rehab message button never clicks, a switch for the Premium connection, session import and guard fixes |
 | [1.6.11](1.6.11.md) | 2026-11-11 | Automatic membership: signing in connects Premium, sessions renew on their own, Xanax activates membership right away |
 | [1.6.10](1.6.10.md) | 2026-11-11 | Automatic Xanax payments from Torn's official item logs, real player names, simpler access |

@@ -33,6 +33,13 @@
     credNote: `Bağımsız projeler, teşekkürle anılır. Herhangi bir onay ima edilmez ve lisansları geçerliliğini korur. <a href="${GH}/blob/main/userscripts/NOTICE.txt" rel="noopener">Üçüncü taraf bildirimleri</a>`,
     relEyebrow: 'Sürüm notları', relTitle: 'Sürüm sürüm neler değişti.', relLead: 'Güncellemeler uygulamanın içinden kurulur. Key\'in, ayarların ve verilerin yerinde kalır.',
     relLatest: 'En yeni',
+    rel13t: 'Daha güvenli güncellemeler ve eklentiler',
+    rel13: '<li>Yarıda kalan bir güncelleme önceki sürümü kendiliğinden geri yükler.</li>'
+      + '<li>TornTools yalnızca paketi TornTools\'un kendi imzasını taşıyorsa kurulur; Chrome da böyle denetler.</li>'
+      + '<li>Kendi kendine sürekli sayfa değiştiren Torn sekmesi, sen sayfaya tıklayana kadar durdurulur. Bunun kendi ayarı var.</li>'
+      + '<li>Bugün Xanax yalnızca kesin olduğunda kesin sayı gösterir; değilse ≥ ya da ≤ ile belirtir.</li>'
+      + '<li>Sen ya da bir hedef hastaneden erken çıkınca da bildirim gelir.</li>'
+      + '<li>Yeni key kaydetme, "1,500k" gibi fiyatlar, FFScouter kaydı ve poker oranı etiketleri düzeltildi.</li>',
     rel12t: 'Torn kuralları ve gizlilik',
     rel12: '<li>Rehab mesajı düğmesi artık Torn\'da hiçbir şeye tıklamıyor. Açtığın chat kutusuna yazar, Enter\'a sen basarsın.</li>'
       + '<li>Yeni ayar <b>Ayarlar → Uygulama → Premium üyelik bağlantısı</b>. Kapatırsan key\'in üyelik servisine hiç gönderilmez.</li>'

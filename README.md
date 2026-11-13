@@ -53,7 +53,7 @@ This is an independent project, not an official Torn product. Membership data ha
 
 ## Release notes
 
-Each version has its notes in [`docs/releases/`](docs/releases) and on the [website](https://lrxe8.com/torn-tracker#releases). The latest is [v1.6.12](docs/releases/1.6.12.md).
+Each version has its notes in [`docs/releases/`](docs/releases) and on the [website](https://lrxe8.com/torn-tracker#releases). The latest is [v1.6.13](docs/releases/1.6.13.md).
 
 ## Project structure
 
