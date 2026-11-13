@@ -103,7 +103,8 @@ function unzip(buf, dest) {
     const csize = buf.readUInt32LE(p + 20);
     const nlen = buf.readUInt16LE(p + 28), xlen = buf.readUInt16LE(p + 30), clen = buf.readUInt16LE(p + 32);
     const lho = buf.readUInt32LE(p + 42);
-    const name = buf.toString('utf8', p + 46, p + 46 + nlen);
+    // ZIP paths use "/"; a "\" is read as a separator too, so "..\x" is caught on every platform, not only on Windows
+    const name = buf.toString('utf8', p + 46, p + 46 + nlen).replace(/\\/g, '/');
     p += 46 + nlen + xlen + clen;
     const out = path.resolve(root, name);
     if (!out.startsWith(root + path.sep)) continue; // zip-slip koruması
