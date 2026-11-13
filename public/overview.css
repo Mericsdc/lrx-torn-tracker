@@ -1,0 +1,60 @@
+/* Overview widget grid (overview-host.js). Spans follow LRXOverviewLayout.SPAN: S 1, M 2, L 3 and W 4 columns; the
+   profile (P) is 1 column and 3 rows. The layout's order is kept at every width; sizes are capped to the columns. */
+.ow-bar:empty { display:none; }
+.ow-wrap { display:flex; align-items:flex-start; gap:16px; min-width:0; }
+#ow-grid { flex:1; min-width:0; grid-template-columns:repeat(4,minmax(0,1fr)); grid-auto-rows:minmax(110px,auto); }
+#ow-grid > .ow-w { min-width:0; }
+#ow-grid > [data-size="S"] { grid-column:span 1; }
+#ow-grid > [data-size="M"] { grid-column:span 2; }
+#ow-grid > [data-size="L"] { grid-column:span 3; }
+#ow-grid > [data-size="W"] { grid-column:span 4; }
+#ow-grid > [data-size="P"] { grid-column:span 1; grid-row:span 3; }
+/* A widget that is not in the layout stays in the DOM (app.js renders into its IDs) but is not displayed.
+   `hidden` on the company summary belongs to company mode and is never used for this. */
+#ow-grid > .ow-w.ow-off { display:none; }
+.ow-empty { grid-column:1 / -1; padding:28px 20px; border:1px dashed var(--stroke-2); border-radius:var(--radius); color:var(--muted); text-align:center; }
+
+/* Four columns make a timer a quarter of the row: a smaller ring leaves its text the room it had. */
+@media (min-width:1201px) {
+  #ow-grid:not(.ow-classic) > .timer-card[data-size="S"] { gap:14px; padding:16px; }
+  #ow-grid:not(.ow-classic) > .timer-card[data-size="S"] :is(.ring-wrap,.ring) { width:64px; height:64px; }
+}
+
+/* Split from the bars card: the status chips are their own widget. */
+#ow-grid > [data-widget="chips"] .mini-row { margin-top:0; padding-top:0; border-top:0; }
+
+/* The profile card is profile-card.js, the same component as on the Premium page. */
+.ow-profile { --pm-accent:#e1c38d; --pm-soft:#e1c38d12; --pm-border:#e1c38d45; }
+#ow-grid > .ow-profile { display:flex; }
+html[data-theme="ocean"] .ow-profile,html[data-theme="forest"] .ow-profile,html[data-theme="amethyst"] .ow-profile { --pm-accent:var(--tq); --pm-soft:var(--tq-soft); --pm-border:var(--tq-border); }
+html[data-theme="light"] .ow-profile { --pm-accent:#8e6326; --pm-soft:#b4853610; --pm-border:#b4853640; }
+.ow-profile > .pm-profile { flex:1; }
+.ow-profile:empty { border:1px solid var(--stroke); border-radius:20px; background:linear-gradient(160deg,var(--panel),var(--panel-end)); }
+.view.active #ow-grid > .ow-profile { animation:riseIn .55s var(--ease-out) both; }
+
+/* Premium tiles until their widget renders them: the title and the lock state. */
+.ow-premium .ow-lock { font-size:12px; }
+
+/* Classic switch (app.overviewLayout off): today's fixed screen on a 6-column grid. */
+#ow-grid.ow-classic { grid-template-columns:repeat(6,minmax(0,1fr)); grid-auto-rows:auto; }
+#ow-grid.ow-classic > .ow-w:is([data-widget="drug"],[data-widget="edu"],[data-widget="day"]) { grid-column:span 2; }
+#ow-grid.ow-classic > .ow-w:is([data-widget="bars"],[data-widget="battle"]) { grid-column:span 3; }
+#ow-grid.ow-classic > .ow-w[data-widget="company"] { grid-column:span 6; }
+
+@media (max-width:1200px) {
+  #ow-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  #ow-grid > :is([data-size="L"],[data-size="W"]) { grid-column:span 2; }
+  #ow-grid.ow-classic > .ow-w:is([data-widget="drug"],[data-widget="edu"],[data-widget="day"]) { grid-column:span 6; }
+}
+@media (max-width:900px) {
+  #ow-grid.ow-classic > .ow-w:is([data-widget="bars"],[data-widget="battle"]) { grid-column:span 6; }
+}
+@media (max-width:639px) {
+  #ow-grid { grid-template-columns:minmax(0,1fr); }
+  #ow-grid > .ow-w[data-size] { grid-column:span 1; }
+  #ow-grid > [data-size="P"] { grid-row:auto; }
+  /* One column: the photo sits beside the name instead of filling a full-width strip. */
+  .ow-profile .pm-profile { display:grid; grid-template-columns:96px minmax(0,1fr); grid-template-rows:auto 1fr; gap:8px 14px; min-height:0; }
+  .ow-profile .pm-profile-frame { grid-column:1; grid-row:1 / 3; flex:none; min-height:0; height:auto; aspect-ratio:3/4; }
+  .ow-profile :is(.pm-profile-top,.pm-profile-meta) { grid-column:2; align-self:start; }
+}

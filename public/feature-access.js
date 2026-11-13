@@ -113,7 +113,7 @@
   });
   window.addEventListener('lrx-premium-reset', () => { generation++; deadline = 0; snapshot = null; pending = null; fetched = 0; restoreOwner = null; knownOwner = null; clearTimeout(renewTimer); clearAppearance(); changed(); window.dispatchEvent(new Event('lrx-feature-identity-changed')); setTimeout(() => status(true).catch(() => {}), 0); });
   const previousLang = window.onLangChanged; window.onLangChanged = () => { previousLang?.(); paint(); };
-  window.PremiumAccess = { can, status, accept, call, applyAppearance, clearAppearance, snapshot: () => snapshot, repaint: paint };
+  window.PremiumAccess = { can, status, accept, call, applyAppearance, clearAppearance, snapshot: () => snapshot, repaint: paint, fresh: () => performance.now() < deadline };
   if (typeof FEATURE_HOOKS !== 'undefined') FEATURE_HOOKS.push(paint);
   paint(); setTimeout(() => status().catch(() => {}), 1800);
   // While the window is hidden the snapshot is not refreshed, so an expired 60 s deadline only means "stale":

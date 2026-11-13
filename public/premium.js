@@ -47,31 +47,20 @@
     const holder = d.account ? esc(d.account.name || d.account.tornId) : '';
     return `<header class="pm-hero"><div class="pm-hero-copy"><div class="pm-eyebrow"><span class="pm-live-dot"></span> LRX / ${tr('ÜYELİK', 'MEMBERSHIP')} ${d.mode === 'test' ? badge(tr('Test ortamı', 'Test workspace')) : ''}</div><h2>${tr('Üyeliğiniz.', 'Your membership.')}<br><em>${sub.permanent ? tr('Daima sizin.', 'Always yours.') : tr('Bir üst seviyede.', 'Elevated.')}</em></h2><p>${sub.permanent ? (holder ? tr(`${holder} için kalıcı Premium erişimi. Süre sınırı olmadan.`, `Permanent Premium access for ${holder}. Yours without an expiry date.`) : tr('Kalıcı Premium erişimi. Süre sınırı olmadan.', 'Permanent Premium access. Yours without an expiry date.')) : tr('Üyelik süreniz, ödemeleriniz ve hesabınız tek bir yerde.', 'Your membership, payments and account. All in one place.')}</p><div class="pm-hero-actions">${button('refresh', tr('Yenile', 'Refresh'), 'pm-ghost', `aria-label="${esc(tr('Üyeliği yenile', 'Refresh membership'))}"`)}</div></div><div class="pm-hero-cards"><div class="pm-profile-slot" data-pm-profile hidden></div><div class="pm-member-card ${sub.permanent ? 'is-founder' : ''}"><div class="pm-card-top"><span>LRX <b>PREMIUM</b></span>${icon('crown')}</div><div class="pm-card-number">${sub.permanent ? '∞' : sub.active ? esc(sub.remainingDays) : '—'}<span>${sub.permanent ? tr('ÖMÜR BOYU', 'LIFETIME ACCESS') : sub.active ? tr('GÜN KALDI', sub.remainingDays === 1 ? 'DAY REMAINING' : 'DAYS REMAINING') : tr('ÜYELİK DURUMU', 'MEMBERSHIP STATUS')}</span></div><div class="pm-card-bottom"><div><small>${esc(label)}</small><strong>${d.account ? esc(d.account.name || (d.account.tornId === 4037017 ? 'Ezlira' : String(d.account.tornId))) + ' <span>[' + esc(d.account.tornId) + ']</span>' : tr('Üyelik durumu otomatik güncellenir', 'Membership updates automatically')}</strong></div><span class="pm-card-seal">${icon(sub.active ? 'shield' : 'crown')}</span></div></div></div></header>`;
   }
-  // The viewer's own Torn profile beside the membership card. It is built only from the overview the app already
-  // fetches (no extra Torn request) and only when that player is the Premium account itself.
-  function httpsUrl(value) { try { const url = new URL(String(value || '')); return url.protocol === 'https:' ? url.href : ''; } catch { return ''; } }
+  // The viewer's own Torn profile beside the membership card (profile-card.js, shared with the Overview), shown only
+  // when the overview's player is the Premium account itself.
   function profileCard() {
     const p = state.overview?.player, account = snapshot?.account;
     if (!p || !account || Number(p.id) !== Number(account.tornId) || (typeof feat === 'function' && !feat('app.premiumProfile'))) return '';
-    const id = Number(p.id), name = decode(p.name || String(id)), photo = httpsUrl(p.image);
-    const si = typeof statusInfo === 'function' ? statusInfo(p.status) : { cls: 'dim', text: '', color: 'var(--muted)' };
-    const fac = p.faction || {}, tag = fac.faction_tag && fac.faction_tag !== 'None' ? fac.faction_tag : '';
-    return `<article class="pm-profile${photo ? '' : ' is-missing'}" data-open-url="https://www.torn.com/profiles.php?XID=${id}" data-tab-label="${esc(name)} [${id}]" title="${esc(tr('Profili sekmede aç', 'Open profile in a tab'))}">`
-      + `<div class="pm-profile-top"><i class="pm-profile-dot" style="background:${si.color}"></i><strong>${esc(name)}</strong><span>[${id}]</span></div>`
-      + `<div class="pm-profile-frame">${photo ? `<img class="pm-profile-photo" src="${esc(photo)}" alt="${esc(name)}" referrerpolicy="no-referrer" decoding="async">` : ''}<span class="pm-profile-initial" aria-hidden="true">${esc(name.trim().charAt(0).toUpperCase() || '?')}</span></div>`
-      + `<div class="pm-profile-meta"><span>Lv ${Number(p.level) || '—'}</span><span class="chip ${si.cls}">${esc(p.status?.description || si.text)}</span>${tag ? `<span class="pm-profile-tag" title="${esc(fac.faction_name || tag)}">${esc(tag)}</span>` : ''}</div></article>`;
+    return LRXProfileCard.html(p);
   }
   // Updates only the profile slot, so open forms and module workbenches are never re-rendered by an overview refresh.
   function paintProfile() {
     const slot = host.querySelector('[data-pm-profile]'); if (!slot) return;
     const html = profileCard();
-    if (slot.dataset.painted === '1' && slot.lastHtml === html) return;
-    slot.dataset.painted = '1'; slot.lastHtml = html;
-    slot.innerHTML = html; slot.hidden = !html;
+    if (!LRXProfileCard.paint(slot, html)) return;
+    slot.hidden = !html;
     slot.parentElement.classList.toggle('has-profile', !!html);
-    const img = slot.querySelector('img.pm-profile-photo'); if (!img) return;
-    const missing = () => img.closest('.pm-profile')?.classList.add('is-missing');
-    if (img.complete && !img.naturalWidth) missing(); else img.addEventListener('error', missing, { once: true });
   }
   function nav() {
     const tabs = [['membership', tr('Üyeliğim', 'My membership')], ...(snapshot.account?.admin ? [['members', tr('Üyeler', 'Members')], ['payments', tr('Ödemeler', 'Payments')], ...(snapshot.mode === 'test' ? [['test', tr('Test alanı', 'Test lab')]] : []), ['settings', tr('Ayarlar', 'Settings')]] : [])];

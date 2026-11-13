@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/themes.css" />
   <link rel="stylesheet" href="/premium.css" />
+  <link rel="stylesheet" href="/overview.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <!-- Loaded as "print" so it never delays the first paint; theme-init.js switches it on once it has arrived. -->
@@ -208,63 +209,72 @@
 
       <section class="view" id="view-premium" aria-label="Premium"><div id="premium-content"></div><p id="premium-feedback" role="status" aria-live="polite"></p></section>
       <!-- ===================== OVERVIEW ===================== -->
+      <!-- A widget grid laid out by overview-host.js. Every card keeps the fixed IDs app.js renders into, shown or not. -->
       <section class="view active" id="view-overview">
-        <div class="grid timers">
-          <article class="glass card timer-card" id="t-drug">
-            <div class="ring-wrap">
-              <svg class="ring" viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" cx="60" cy="60" r="52"/></svg>
-              <div class="ring-center"><span class="ring-icon">💊</span></div>
-            </div>
-            <div class="timer-body">
-              <span class="eyebrow">Xanax / Drug Cooldown</span>
-              <div class="timer-value mono" data-timer="drug">—</div>
-              <div class="timer-sub" data-sub="drug">Loading…</div>
-            </div>
-          </article>
+        <div class="ow-bar" id="ow-bar"></div>
+        <div class="ow-wrap">
+          <div class="grid ow-grid" id="ow-grid">
+            <article class="ow-w ow-profile" data-widget="profile"></article>
 
-          <article class="glass card timer-card" id="t-edu">
-            <div class="ring-wrap">
-              <svg class="ring" viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" cx="60" cy="60" r="52"/></svg>
-              <div class="ring-center"><span class="ring-icon">🎓</span></div>
-            </div>
-            <div class="timer-body">
-              <span class="eyebrow" data-i18n="ov.edu">Education</span>
-              <div class="timer-value mono" data-timer="edu">—</div>
-              <div class="timer-sub" data-sub="edu">Loading…</div>
-            </div>
-          </article>
+            <article class="glass card timer-card ow-w" id="t-drug" data-widget="drug">
+              <div class="ring-wrap">
+                <svg class="ring" viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" cx="60" cy="60" r="52"/></svg>
+                <div class="ring-center"><span class="ring-icon">💊</span></div>
+              </div>
+              <div class="timer-body">
+                <span class="eyebrow">Xanax / Drug Cooldown</span>
+                <div class="timer-value mono" data-timer="drug">—</div>
+                <div class="timer-sub" data-sub="drug">Loading…</div>
+              </div>
+            </article>
 
-          <article class="glass card timer-card" id="t-day">
-            <div class="ring-wrap">
-              <svg class="ring" viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" cx="60" cy="60" r="52"/></svg>
-              <div class="ring-center"><span class="ring-icon">🌙</span></div>
-            </div>
-            <div class="timer-body">
-              <span class="eyebrow" data-i18n="ov.dayReset">Until Day Reset (18:00 TCT)</span>
-              <div class="timer-value mono" data-timer="day">—</div>
-              <div class="timer-sub" data-sub="day">Resets at 18:00 TCT</div>
-            </div>
-          </article>
+            <article class="glass card timer-card ow-w" id="t-edu" data-widget="edu">
+              <div class="ring-wrap">
+                <svg class="ring" viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" cx="60" cy="60" r="52"/></svg>
+                <div class="ring-center"><span class="ring-icon">🎓</span></div>
+              </div>
+              <div class="timer-body">
+                <span class="eyebrow" data-i18n="ov.edu">Education</span>
+                <div class="timer-value mono" data-timer="edu">—</div>
+                <div class="timer-sub" data-sub="edu">Loading…</div>
+              </div>
+            </article>
+
+            <article class="glass card timer-card ow-w" id="t-day" data-widget="day">
+              <div class="ring-wrap">
+                <svg class="ring" viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" cx="60" cy="60" r="52"/></svg>
+                <div class="ring-center"><span class="ring-icon">🌙</span></div>
+              </div>
+              <div class="timer-body">
+                <span class="eyebrow" data-i18n="ov.dayReset">Until Day Reset (18:00 TCT)</span>
+                <div class="timer-value mono" data-timer="day">—</div>
+                <div class="timer-sub" data-sub="day">Resets at 18:00 TCT</div>
+              </div>
+            </article>
+
+            <article class="glass card ow-w" data-widget="bars">
+              <div class="card-head"><h3 data-i18n="ov.bars">Bars</h3><span class="chip" id="status-chip">—</span></div>
+              <div class="bars" id="bars"></div>
+            </article>
+
+            <article class="glass card ow-w" data-widget="chips">
+              <div class="card-head"><h3 data-i18n="ov.status">Status</h3></div>
+              <div class="mini-row" id="mini-row"></div>
+            </article>
+
+            <article class="glass card ow-w" data-widget="battle">
+              <div class="card-head">
+                <h3 data-i18n="ov.battlePower">Battle Stats</h3>
+                <span class="chip" id="xan-chip">—</span>
+              </div>
+              <div class="bs-totals" id="bs-totals"></div>
+              <table class="tbl compact" id="bs-table"></table>
+            </article>
+
+            <div class="grid three ow-w" id="ov-company" data-widget="company"></div>
+          </div>
+          <aside class="ow-drawer" id="ow-drawer" hidden></aside>
         </div>
-
-        <div class="grid two">
-          <article class="glass card">
-            <div class="card-head"><h3 data-i18n="ov.bars">Bars</h3><span class="chip" id="status-chip">—</span></div>
-            <div class="bars" id="bars"></div>
-            <div class="mini-row" id="mini-row"></div>
-          </article>
-
-          <article class="glass card">
-            <div class="card-head">
-              <h3 data-i18n="ov.battlePower">Battle Stats</h3>
-              <span class="chip" id="xan-chip">—</span>
-            </div>
-            <div class="bs-totals" id="bs-totals"></div>
-            <table class="tbl compact" id="bs-table"></table>
-          </article>
-        </div>
-
-        <div class="grid three" id="ov-company"></div>
       </section>
 
       <!-- ===================== STOCK ===================== -->
@@ -620,7 +630,10 @@
   <script src="/feature-catalog.js"></script>
   <script src="/features.js"></script>
   <script src="/feature-access.js"></script>
+  <script src="/profile-card.js"></script>
   <script src="/premium.js"></script>
+  <script src="/overview-layout.js"></script>
+  <script src="/overview-host.js"></script>
   <script src="/workspace.js"></script>
   <script src="/war-groups-ui.js"></script>
   <script src="/extras.js"></script>
