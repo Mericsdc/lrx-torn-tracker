@@ -18,6 +18,7 @@ const DATA = dataDir();
 const CONFIG_FILE = path.join(DATA, 'config.json');
 const HISTORY_FILE = path.join(DATA, 'history.json');
 const { buildBattleStats } = require('./battle-stats');
+const overviewLayout = require('../../public/overview-layout');
 
 if (!fs.existsSync(DATA)) fs.mkdirSync(DATA, { recursive: true });
 const warGroups = require('./war-groups').createWarGroups(DATA);
@@ -1931,6 +1932,21 @@ async function handleApi(req, res, url) {
       saveConfig();
       if (b.features?.['app.premium'] === false) premiumClient.reset();
       return send(res, 200, { ok: true, features: config.features });
+    }
+    // Overview widget layouts, one set per Torn player. Only the server's player is read or written: a save sent for
+    // another player (the app switched players in the meantime) is refused, and other players' sets are never returned.
+    if (p === '/api/overview-layouts' && req.method === 'GET') {
+      const playerId = historyOwner(), saved = playerId == null ? null : config.overviewLayouts?.[String(playerId)];
+      return send(res, 200, { playerId, layouts: saved == null ? null : overviewLayout.normalize(saved) });
+    }
+    if (p === '/api/overview-layouts' && req.method === 'POST') {
+      const b = await readBody(req), playerId = historyOwner();
+      if (playerId == null || b.playerId !== playerId) return send(res, 409, { error: T('Bu düzen başka bir oyuncuya ait.', 'The layout belongs to another player.'), code: 'PLAYER_CHANGED' });
+      const layouts = overviewLayout.normalize(b.layouts);
+      if (!config.overviewLayouts || typeof config.overviewLayouts !== 'object' || Array.isArray(config.overviewLayouts)) config.overviewLayouts = {};
+      config.overviewLayouts[String(playerId)] = layouts;
+      saveConfig();
+      return send(res, 200, { ok: true, playerId, layouts });
     }
     if (p === '/api/stats') return send(res, 200, { history: dailyList(history.stats), battle: history.lastOverview?.battle || null });
     if (p === '/api/networth') return send(res, 200, await getNetworth(url.searchParams.get('force') === '1'));

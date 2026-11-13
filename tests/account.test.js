@@ -119,3 +119,38 @@ test('a key of another player entered in Settings starts clean and drops the pre
   flushData();
   assert.ok(!fs.readFileSync(path.join(temp, 'history.json'), 'utf8').includes('"total":4000'), 'the previous player is not left on disk');
 });
+
+test('each player gets back only their own Overview layouts', async () => {
+  const daily = { v: 1, active: 0, layouts: [{ name: 'Daily', widgets: [{ id: 'battle', size: 'M' }] }] };
+  await request('/api/logout', {});
+  assert.equal((await request('/api/auth', { apiKey: KEY_A })).data.player.id, 111);
+  assert.equal((await request('/api/overview-layouts', { playerId: 111, layouts: daily })).status, 200);
+  assert.deepEqual((await request('/api/overview-layouts')).data, { playerId: 111, layouts: daily });
+
+  await request('/api/logout', {});
+  assert.equal((await request('/api/auth', { apiKey: KEY_B })).data.player.id, 222);
+  assert.deepEqual((await request('/api/overview-layouts')).data, { playerId: 222, layouts: null });
+  const hijack = { v: 1, active: 0, layouts: [{ name: 'Hijack', widgets: [] }] };
+  const stale = await request('/api/overview-layouts', { playerId: 111, layouts: hijack });
+  assert.equal(stale.status, 409); assert.equal(stale.data.code, 'PLAYER_CHANGED');
+  assert.deepEqual(savedConfig().overviewLayouts, { 111: daily }, 'a refused save stores nothing');
+
+  await request('/api/logout', {});
+  assert.equal((await request('/api/auth', { apiKey: KEY_A })).data.player.id, 111);
+  assert.deepEqual((await request('/api/overview-layouts')).data, { playerId: 111, layouts: daily });
+});
+
+test('a hostile saved layout is repaired before it is stored', async () => {
+  const { WIDGETS, defaultSet } = require('../public/overview-layout');
+  const name = '<img src=x onerror=alert(1)>'.repeat(3);
+  const layouts = Array.from({ length: 7 }, (_, i) => ({ name, widgets: [{ id: '__proto__', size: 'M' }, { id: 'nope', size: 'S' }, { id: 'drug', size: 'S' }] }));
+  layouts[2].widgets = 'battle';
+  assert.equal((await request('/api/overview-layouts', { playerId: 111, layouts: { v: 1, active: 0, layouts } })).status, 200);
+  const stored = savedConfig().overviewLayouts['111'];
+  assert.equal(stored.layouts.length, 5);
+  assert.ok(stored.layouts.every((l) => l.name.length <= 24), 'names are capped at 24 characters');
+  const known = new Set(WIDGETS.map((w) => w.id));
+  assert.ok(stored.layouts.every((l) => l.widgets.every((w) => known.has(w.id))), 'unknown ids are dropped');
+  assert.deepEqual(stored.layouts[1].widgets, [{ id: 'drug', size: 'S' }]);
+  assert.deepEqual(stored.layouts[2].widgets, defaultSet().layouts[0].widgets, 'a string as widgets gives the default widgets');
+});
