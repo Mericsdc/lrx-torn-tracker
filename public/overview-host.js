@@ -156,6 +156,7 @@
     commit, apply,
     tiles: {}, // premium widget id → (el, locked) => void, filled by the widget definitions
     onApplied: [], // run after every apply(), e.g. to redraw edit controls
+    titles: TITLES, // the interim Premium titles above, also read by the edit module's add list
   };
 
   const previousRendered = window.onOverviewRendered;

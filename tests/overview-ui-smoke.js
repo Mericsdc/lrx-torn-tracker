@@ -64,7 +64,7 @@ const shot = async (page, name, fullPage = true) => { await page.evaluate(() => 
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   browser = await chromium.launch({ executablePath: process.env.CHROME_EXE || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', headless: true });
   overviewPlayer = { id: MEMBER, name: '<b>Bold</b>', level: 15, image: PHOTO, status: { state: 'Okay', description: 'Okay', color: 'green' }, faction: { faction_id: 5, faction_tag: 'TAG', faction_name: 'Example' }, job: { position: 'Employee', company_id: 0, job: 'None' } };
-  const { page, errors } = await desktop(MEMBER);
+  const { page, errors, context } = await desktop(MEMBER);
   const posts = []; page.on('request', (r) => { if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/overview-layouts') posts.push(r.postDataJSON()); });
   const firstReply = layoutReply(page);
   await open(page);
@@ -282,7 +282,222 @@ const shot = async (page, name, fullPage = true) => { await page.evaluate(() => 
   assert.equal(await page.locator('#ow-grid > .ow-premium').count(), 0);
 
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ ok: true, assertions: ['default layout with the tall profile first', 'company hidden by company mode, never by the grid', 'profile name as text and Torn profile link', 'fixed IDs stay in the DOM', 'saved layout after reload', 'corrupt cached copy and failed request fall back quietly', 'a failed request is asked again; an unconfirmed save toasts and sends nothing', 'a default-screen change confirmed late never replaces the saved layouts', 'free cards before the layout reply', 'another player sees the default layout; a save toasts and sends nothing', 'commit saves once and caches; 409 reloads; errors toast', 'empty layout hint', 'classic switch', 'widths 1440/1100/760/640/600', 'five themes', 'TR/EN', 'Premium tiles show their lock state and hide in classic', 'no page errors or CSP reports'], screenshots: output }));
+  await context.close();
+
+  // Edit mode: a free player (3000001, no Premium) on their own desktop.
+  overviewPlayer = { ...overviewPlayer, id: OTHER, name: 'Free player' };
+  const free = await desktop(OTHER), fp = free.page, freePosts = [];
+  fp.on('request', (r) => { if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/overview-layouts') freePosts.push(r.postDataJSON()); });
+  await fp.locator('#auth-key').waitFor({ state: 'visible' });
+  assert.equal(await fp.evaluate(() => state.overview?.player?.id ?? null), null);
+  assert.equal(await fp.locator('#ow-edit').isVisible(), false, 'no Edit before an overview player is known');
+  assert.equal(await fp.evaluate(() => { LRXOverviewEdit.start(); return LRXOverviewEdit.active(); }), false, 'edit mode needs a known player');
+  await open(fp);
+  await fp.waitForFunction((id) => LRXOverview.owner() === id, OTHER);
+  await waitForIds(fp, DEFAULT_IDS);
+  const handle = (id) => fp.locator(`#ow-grid > [data-widget="${id}"] .ow-handle`);
+  const removeBtn = (id) => fp.locator(`#ow-grid > [data-widget="${id}"] .ow-remove`);
+  const focusedHandle = () => fp.evaluate(() => (document.activeElement?.classList.contains('ow-handle') ? document.activeElement.closest('#ow-grid > .ow-w').dataset.widget : null));
+  const savedIds = (post) => post.layouts.layouts[0].widgets.map((w) => w.id);
+  const editing = () => fp.evaluate(() => LRXOverviewEdit.active());
+
+  // edit mode shows a handle and × for each shown widget
+  await fp.locator('#ow-edit').click();
+  assert.equal(await editing(), true);
+  assert.equal(await fp.locator('#ow-grid').evaluate((el) => el.classList.contains('ow-editing')), true);
+  for (const id of DEFAULT_IDS) {
+    assert.equal(await handle(id).isVisible(), true, 'a handle on ' + id);
+    assert.equal(await removeBtn(id).isVisible(), true, 'a × on ' + id);
+    assert.equal(await fp.locator(`#ow-grid > [data-widget="${id}"]`).evaluate((el) => getComputedStyle(el).outlineStyle), 'dashed', 'a dashed frame on ' + id);
+  }
+  assert.equal(await handle('battle').getAttribute('aria-label'), 'Move: Battle stats');
+  assert.equal(await removeBtn('battle').getAttribute('aria-label'), 'Remove');
+  assert.equal(await fp.locator('#ow-grid .ow-sizes:visible').count(), 0, 'a free player has no size buttons');
+  for (const sel of ['#ow-layout', '#ow-name', '#ow-duplicate', '#ow-delete', '#ow-edit']) assert.equal(await fp.locator(sel).isVisible(), false, sel + ' is not shown');
+  for (const [sel, text] of [['#ow-reset', 'Reset to default'], ['#ow-add', '+ Add widget'], ['#ow-done', 'Done']]) assert.equal((await fp.locator(sel).textContent()).trim(), text);
+  await fp.locator('[data-lang="tr"]').click();
+  assert.equal((await fp.locator('#ow-done').textContent()).trim(), 'Bitti', 'a language change relabels the controls');
+  assert.equal(await handle('battle').getAttribute('aria-label'), 'Taşı: Savaş gücü');
+  assert.equal(await removeBtn('battle').getAttribute('aria-label'), 'Kaldır');
+  await fp.locator('[data-lang="en"]').click();
+  assert.equal((await fp.locator('#ow-add').textContent()).trim(), '+ Add widget');
+
+  // × removes chips and #mini-row stays in the DOM
+  await removeBtn('chips').click();
+  await waitForIds(fp, ['profile', 'drug', 'edu', 'day', 'bars', 'battle']);
+  assert.equal(await fp.locator('#mini-row').count(), 1);
+
+  // keyboard: ArrowLeft twice on battle moves it two places; Delete on day removes it
+  await handle('battle').focus();
+  await fp.keyboard.press('ArrowLeft');
+  assert.deepEqual(await visibleIds(fp), ['profile', 'drug', 'edu', 'day', 'battle', 'bars']);
+  assert.equal(await focusedHandle(), 'battle', 'focus stays on the moved widget');
+  await fp.keyboard.press('ArrowLeft');
+  assert.deepEqual(await visibleIds(fp), ['profile', 'drug', 'edu', 'battle', 'day', 'bars']);
+  assert.equal(await focusedHandle(), 'battle');
+  await handle('day').focus();
+  await fp.keyboard.press('Delete');
+  assert.deepEqual(await visibleIds(fp), ['profile', 'drug', 'edu', 'battle', 'bars']);
+  assert.equal(await focusedHandle(), 'bars', 'focus moves to the next handle');
+
+  // drag drug onto edu moves drug after edu
+  const edu = fp.locator('#ow-grid > [data-widget="edu"]'), eduBox = await edu.boundingBox();
+  await handle('drug').dragTo(edu, { targetPosition: { x: eduBox.width * 0.8, y: eduBox.height / 2 } });
+  await waitForIds(fp, ['profile', 'edu', 'drug', 'battle', 'bars']);
+  assert.equal(await fp.locator('#ow-grid > :is(.ow-drop-before,.ow-drop-after,.ow-dragging)').count(), 0, 'no drag marks are left');
+
+  // add list: chips comes back last; Premium items are disabled with a lock
+  await fp.locator('#ow-add').click();
+  const drawer = fp.locator('#ow-drawer');
+  await drawer.waitFor({ state: 'visible' });
+  assert.equal(await fp.locator('#ow-add').getAttribute('aria-expanded'), 'true');
+  assert.deepEqual(await drawer.locator('[data-add]:not([disabled])').evaluateAll((els) => els.map((el) => el.dataset.add)), ['day', 'chips'], 'the free widgets not in the layout');
+  const locked = drawer.locator('[data-add][disabled]');
+  assert.equal(await locked.count(), 11, 'every Premium widget is listed');
+  assert.equal(await locked.evaluateAll((els) => els.every((el) => el.textContent.includes('🔒') && el.textContent.includes('Premium'))), true, 'Premium items carry a lock and the note');
+  assert.ok((await drawer.textContent()).includes('Premium 👑'));
+  await drawer.locator('[data-add="gym"]').click({ force: true });
+  await drawer.locator('[data-add="chips"]').click();
+  await waitForIds(fp, ['profile', 'edu', 'drug', 'battle', 'bars', 'chips']);
+  assert.equal(await drawer.locator('[data-add="chips"]').count(), 0, 'an added widget leaves the list');
+  assert.equal(await fp.locator('#ow-grid > [data-widget="gym"]').count(), 0, 'a locked item adds nothing');
+  assert.equal(freePosts.length, 0, 'edits are not saved before Done');
+
+  // Done saves: after a reload the order is the same
+  const doneSave = layoutReply(fp, 'POST');
+  await fp.locator('#ow-done').click();
+  assert.equal((await doneSave).status(), 200);
+  assert.equal(freePosts.length, 1, 'Done saves once');
+  assert.equal(freePosts[0].playerId, OTHER);
+  assert.deepEqual(savedIds(freePosts[0]), ['profile', 'edu', 'drug', 'battle', 'bars', 'company', 'chips']);
+  assert.equal(await editing(), false);
+  assert.equal(await fp.locator('#ow-grid .ow-ctl').count(), 0, 'Done removes the edit controls');
+  assert.equal(await drawer.isVisible(), false);
+  assert.equal(await fp.locator('#ow-edit').evaluate((el) => document.activeElement === el), true, 'focus returns to Edit');
+  await fp.evaluate(() => localStorage.removeItem('tt.cache.overviewLayouts.3000001')); // the order must come from the saved config
+  await fp.reload(); await open(fp);
+  await fp.waitForFunction((id) => LRXOverview.owner() === id, OTHER);
+  await waitForIds(fp, ['profile', 'edu', 'drug', 'battle', 'bars', 'chips']);
+
+  // a Done with no change sends nothing
+  await fp.evaluate(async () => { LRXOverviewEdit.start(); await LRXOverviewEdit.stop(); });
+  assert.equal(freePosts.length, 1, 'no change, no save');
+
+  // leaving the Overview while editing saves and closes edit mode
+  await fp.locator('#ow-edit').click();
+  await removeBtn('bars').click();
+  const leftSave = layoutReply(fp, 'POST');
+  await fp.evaluate(() => showView('settings'));
+  await leftSave;
+  assert.equal(freePosts.length, 2);
+  assert.deepEqual(savedIds(freePosts[1]), ['profile', 'edu', 'drug', 'battle', 'company', 'chips']);
+  assert.equal(await editing(), false);
+  await fp.evaluate(() => showView('overview'));
+  assert.equal(await fp.locator('#ow-grid.ow-editing').count(), 0);
+  assert.equal(await fp.locator('#ow-grid .ow-handle').count(), 0);
+  await waitForIds(fp, ['profile', 'edu', 'drug', 'battle', 'chips']);
+
+  // the window hidden while editing saves once and closes edit mode
+  await fp.evaluate(() => LRXOverviewEdit.start());
+  await handle('chips').focus();
+  await fp.keyboard.press('ArrowUp');
+  const hiddenSave = layoutReply(fp, 'POST');
+  await fp.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    delete document.visibilityState; delete document.hidden;
+  });
+  await hiddenSave;
+  assert.equal(freePosts.length, 3);
+  assert.deepEqual(savedIds(freePosts[2]), ['profile', 'edu', 'drug', 'chips', 'battle', 'company']);
+  assert.equal(await editing(), false);
+
+  // app.overviewLayout switched off while editing saves once and closes edit mode; Edit is hidden in classic mode
+  await fp.evaluate(() => LRXOverviewEdit.start());
+  await removeBtn('chips').click();
+  const offSave = layoutReply(fp, 'POST');
+  await fp.evaluate(() => setFeature('app.overviewLayout', false));
+  await offSave;
+  assert.equal(freePosts.length, 4);
+  assert.deepEqual(savedIds(freePosts[3]), ['profile', 'edu', 'drug', 'battle', 'company']);
+  assert.equal(await editing(), false);
+  assert.equal(await fp.locator('#ow-edit').isVisible(), false, 'no Edit in classic mode');
+  assert.equal(await fp.evaluate(() => { LRXOverviewEdit.start(); return LRXOverviewEdit.active(); }), false, 'edit mode does not start in classic mode');
+  await fp.evaluate(() => setFeature('app.overviewLayout', true));
+  assert.equal(await fp.locator('#ow-edit').isVisible(), true);
+
+  // lrx-premium-reset closes edit mode without saving
+  await fp.evaluate(() => LRXOverviewEdit.start());
+  await removeBtn('drug').click();
+  await fp.evaluate(() => window.dispatchEvent(new Event('lrx-premium-reset')));
+  assert.equal(await editing(), false);
+  assert.equal(await fp.locator('#ow-grid .ow-ctl').count(), 0);
+  assert.equal(freePosts.length, 4, 'a Premium reset saves nothing');
+  const resetReply = layoutReply(fp);
+  await fp.evaluate(() => loadOverview(true));
+  await resetReply;
+  await fp.waitForFunction((id) => LRXOverview.owner() === id, OTHER);
+  await waitForIds(fp, ['profile', 'edu', 'drug', 'battle']);
+
+  // Reset to default asks once more, then restores the default layout
+  await fp.evaluate(() => LRXOverviewEdit.start());
+  await fp.locator('#ow-reset').click();
+  assert.equal((await fp.locator('#ow-reset').textContent()).trim(), 'Sure?');
+  assert.deepEqual(await visibleIds(fp), ['profile', 'edu', 'drug', 'battle'], 'the first click changes nothing');
+  await fp.locator('#ow-reset').click();
+  await waitForIds(fp, DEFAULT_IDS);
+  assert.equal((await fp.locator('#ow-reset').textContent()).trim(), 'Reset to default');
+  const resetSave = layoutReply(fp, 'POST');
+  await fp.locator('#ow-done').click();
+  await resetSave;
+  assert.deepEqual(savedIds(freePosts[4]), [...DEFAULT_IDS, 'company']);
+
+  // 640 px with the drawer open: no sideways scrolling; the drawer is below the grid
+  await fp.setViewportSize({ width: 640, height: 900 });
+  await fp.evaluate(() => LRXOverviewEdit.start());
+  await fp.locator('#ow-add').click();
+  await drawer.waitFor({ state: 'visible' });
+  const narrow = await overflow(fp);
+  assert.ok(narrow.scroll <= narrow.width, 'edit mode at 640: ' + JSON.stringify(narrow));
+  const [gridBottom, drawerTop] = await fp.evaluate(() => [document.querySelector('#ow-grid').getBoundingClientRect().bottom, document.querySelector('#ow-drawer').getBoundingClientRect().top]);
+  assert.ok(drawerTop >= gridBottom, `the drawer is below the grid (${drawerTop} ≥ ${gridBottom})`);
+  await fp.evaluate(() => LRXOverviewEdit.stop());
+
+  // edit mode in the five themes at 1440 and 640 px
+  await fp.setViewportSize({ width: 1440, height: 1050 });
+  await fp.locator('[data-view="settings"]').click(); await fp.locator('[data-set-tab="appearance"]').click();
+  for (const theme of ['ocean', 'forest', 'amethyst', 'light', 'obsidian']) {
+    await fp.locator(`[data-theme-choice="${theme}"]`).click();
+    await fp.waitForFunction(() => document.querySelector('#theme-save-status').textContent.includes('saved'));
+    await fp.evaluate(() => { showView('overview'); LRXOverviewEdit.start(); });
+    await fp.locator('#ow-add').click();
+    for (const width of [1440, 640]) {
+      await fp.setViewportSize({ width, height: 1050 });
+      const m = await overflow(fp);
+      assert.ok(m.scroll <= m.width, theme + ' edit mode at ' + width + ': ' + JSON.stringify(m));
+      await shot(fp, `overview-edit-${theme}-${width}.png`);
+    }
+    await fp.setViewportSize({ width: 1440, height: 1050 });
+    await fp.evaluate(() => { showView('settings'); showSettingsTab('appearance'); });
+  }
+  assert.equal(freePosts.length, 5, 'opening and closing edit mode without a change saves nothing');
+
+  // one column: the drop goes by the target's vertical midpoint (left half, lower half → after)
+  await fp.setViewportSize({ width: 600, height: 1050 });
+  await fp.evaluate(() => { showView('overview'); window.scrollTo({ top: 0, behavior: 'instant' }); LRXOverviewEdit.start(); });
+  assert.equal(await editing(), true);
+  assert.equal(await fp.locator('#ow-grid').evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length), 1);
+  const eduOne = fp.locator('#ow-grid > [data-widget="edu"]'), eduOneBox = await eduOne.boundingBox();
+  await handle('drug').dragTo(eduOne, { targetPosition: { x: eduOneBox.width * 0.2, y: eduOneBox.height * 0.8 } });
+  await waitForIds(fp, ['profile', 'edu', 'drug', 'day', 'bars', 'chips', 'battle']);
+  const oneSave = layoutReply(fp, 'POST');
+  await fp.locator('#ow-done').click();
+  await oneSave;
+  assert.deepEqual(savedIds(freePosts[5]), ['profile', 'edu', 'drug', 'day', 'bars', 'chips', 'battle', 'company']);
+  assert.deepEqual(free.errors, []);
+
+  console.log(JSON.stringify({ ok: true, assertions: ['default layout with the tall profile first', 'company hidden by company mode, never by the grid', 'profile name as text and Torn profile link', 'fixed IDs stay in the DOM', 'saved layout after reload', 'corrupt cached copy and failed request fall back quietly', 'a failed request is asked again; an unconfirmed save toasts and sends nothing', 'a default-screen change confirmed late never replaces the saved layouts', 'free cards before the layout reply', 'another player sees the default layout; a save toasts and sends nothing', 'commit saves once and caches; 409 reloads; errors toast', 'empty layout hint', 'classic switch', 'widths 1440/1100/760/640/600', 'five themes', 'TR/EN', 'Premium tiles show their lock state and hide in classic', 'edit mode shows a handle and × for each shown widget', '× removes chips and #mini-row stays in the DOM', 'keyboard: ArrowLeft twice on battle moves it two places; Delete on day removes it', 'drag drug onto edu moves drug after edu', 'add list: chips comes back last; Premium items are disabled with a lock', 'no Edit before an overview player is known', 'Done saves: after a reload the order is the same', 'a Done with no change sends nothing', 'leaving the Overview while editing saves and closes edit mode', 'hiding the window or switching the layout off saves and closes edit mode', 'lrx-premium-reset closes edit mode without saving', 'two-step Reset to default', '640 px with the drawer open: no sideways scrolling; the drawer is below the grid', 'edit mode in five themes at 1440 and 640', 'one column: drop by the vertical midpoint', 'no page errors or CSP reports'], screenshots: output }));
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => {
   await browser?.close();
   for (const child of children) { child.kill(); await new Promise((r) => child.exitCode !== null ? r() : child.once('exit', r)); }

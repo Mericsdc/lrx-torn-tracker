@@ -1,6 +1,5 @@
 /* Overview widget grid (overview-host.js). Spans follow LRXOverviewLayout.SPAN: S 1, M 2, L 3 and W 4 columns; the
    profile (P) is 1 column and 3 rows. The layout's order is kept at every width; sizes are capped to the columns. */
-.ow-bar:empty { display:none; }
 .ow-wrap { display:flex; align-items:flex-start; gap:16px; min-width:0; }
 #ow-grid { flex:1; min-width:0; grid-template-columns:repeat(4,minmax(0,1fr)); grid-auto-rows:minmax(110px,auto); }
 #ow-grid > .ow-w { min-width:0; }
@@ -41,6 +40,52 @@ html[data-theme="light"] .ow-profile { --pm-accent:#8e6326; --pm-soft:#b4853610;
 #ow-grid.ow-classic > .ow-w:is([data-widget="bars"],[data-widget="battle"]) { grid-column:span 3; }
 #ow-grid.ow-classic > .ow-w[data-widget="company"] { grid-column:span 6; }
 
+/* Edit mode (overview-edit.js): the bar, dashed frames with a control strip, drop marks and the add list. */
+#view-overview { --ow-accent:var(--gold,var(--tq)); --ow-line:color-mix(in srgb,var(--ow-accent) 62%,transparent); --ow-field:var(--field,rgba(8,10,12,.92)); }
+.ow-bar { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; min-width:0; }
+.ow-bar :is(.btn,select,.input) { height:32px; }
+.ow-bar .btn { padding:0 12px; font-size:12.5px; }
+.ow-bar select { min-width:0; max-width:220px; }
+.ow-bar .ow-name { flex:0 1 190px; width:190px; min-width:120px; padding:0 10px; font-size:12.5px; }
+.ow-bar .btn:disabled { opacity:.45; cursor:not-allowed; }
+#ow-reset.ow-armed { color:var(--warn); border-color:var(--warn); }
+/* The strip above the content holds the controls, so they never cover a widget's own text. */
+#view-overview #ow-grid.ow-editing > .ow-w { position:relative; padding-top:46px; outline:1.5px dashed var(--ow-line); outline-offset:-1px; transition:box-shadow .15s, opacity .15s; }
+#ow-grid.ow-editing > :is(.ow-profile,#ov-company) { border-radius:var(--radius); }
+#ow-grid > .ow-w > .ow-ctl { position:absolute; z-index:3; top:9px; left:10px; right:10px; display:flex; align-items:center; gap:6px; pointer-events:none; }
+.ow-ctl > * { pointer-events:auto; }
+.ow-ctl button { display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:28px; padding:0 8px; border:1px solid var(--stroke-2); border-radius:7px; background:var(--ow-field); color:var(--text); font:600 12px/1 var(--sans); cursor:pointer; }
+html[data-theme="light"] .ow-ctl button { background:var(--bg-2); }
+.ow-ctl button:hover { border-color:var(--ow-line); }
+:is(.ow-ctl button,.ow-add-item):focus-visible { outline:2px solid var(--ow-accent); outline-offset:1px; }
+.ow-handle { color:var(--muted); cursor:grab; }
+.ow-handle:active { cursor:grabbing; }
+.ow-handle svg { width:14px; height:14px; fill:currentColor; }
+.ow-sizes { display:flex; gap:3px; margin-left:auto; }
+.ow-ctl .ow-sizes button { min-width:26px; padding:0 6px; color:var(--muted); }
+.ow-ctl .ow-sizes button[aria-pressed="true"] { background:var(--ow-accent); border-color:var(--ow-accent); color:var(--bg); }
+.ow-ctl .ow-remove { margin-left:auto; font-size:17px; }
+.ow-sizes:not([hidden]) + .ow-remove { margin-left:0; }
+.ow-ctl .ow-remove:hover { color:var(--danger); border-color:var(--danger); }
+#ow-grid > .ow-w.ow-drop-before { box-shadow:-8px 0 0 -4px var(--ow-accent); }
+#ow-grid > .ow-w.ow-drop-after { box-shadow:8px 0 0 -4px var(--ow-accent); }
+#ow-grid > .ow-w.ow-dragging { opacity:.45; }
+@media (prefers-reduced-motion:reduce) { #view-overview #ow-grid.ow-editing > .ow-w { transition:none; } }
+
+.ow-drawer { flex:0 0 250px; width:250px; position:sticky; top:12px; display:flex; flex-direction:column; gap:10px; padding:16px; }
+.ow-drawer > * { position:relative; z-index:1; }
+.ow-drawer h3 { font-size:14px; font-weight:600; color:var(--text); }
+.ow-drawer h4 { margin-top:4px; font-size:11px; font-weight:600; letter-spacing:.8px; text-transform:uppercase; color:var(--muted); }
+.ow-drawer ul { display:flex; flex-direction:column; gap:5px; margin:0; padding:0; list-style:none; }
+.ow-add-item { display:flex; align-items:center; gap:8px; width:100%; padding:7px 10px; border:1px solid var(--stroke-2); border-radius:8px; background:var(--ow-field); color:var(--text); font:500 12.5px/1.3 var(--sans); text-align:left; cursor:pointer; }
+html[data-theme="light"] .ow-add-item:not(:disabled) { background:var(--bg-2); }
+.ow-add-item:hover:not(:disabled) { border-color:var(--ow-line); }
+.ow-add-item:disabled { background:transparent; color:var(--muted); cursor:not-allowed; }
+.ow-add-name { flex:1; min-width:0; overflow-wrap:anywhere; }
+.ow-add-plus { color:var(--ow-accent); font-weight:700; }
+.ow-add-item small { font-size:10.5px; letter-spacing:.4px; }
+.ow-add-none { font-size:12px; }
+
 @media (max-width:1200px) {
   #ow-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
   #ow-grid > :is([data-size="L"],[data-size="W"]) { grid-column:span 2; }
@@ -48,11 +93,19 @@ html[data-theme="light"] .ow-profile { --pm-accent:#8e6326; --pm-soft:#b4853610;
 }
 @media (max-width:900px) {
   #ow-grid.ow-classic > .ow-w:is([data-widget="bars"],[data-widget="battle"]) { grid-column:span 6; }
+  /* The add list sits below the grid. */
+  .ow-wrap { flex-direction:column; align-items:stretch; }
+  #ow-grid { flex:none; }
+  .ow-drawer { position:static; flex:none; width:auto; }
+  .ow-drawer ul { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); }
 }
 @media (max-width:639px) {
   #ow-grid { grid-template-columns:minmax(0,1fr); }
   #ow-grid > .ow-w[data-size] { grid-column:span 1; }
   #ow-grid > [data-size="P"] { grid-row:auto; }
+  /* One column: the drop mark goes above or below the widget. */
+  #ow-grid > .ow-w.ow-drop-before { box-shadow:0 -8px 0 -4px var(--ow-accent); }
+  #ow-grid > .ow-w.ow-drop-after { box-shadow:0 8px 0 -4px var(--ow-accent); }
   /* One column: the photo sits beside the name instead of filling a full-width strip. */
   .ow-profile .pm-profile { display:grid; grid-template-columns:96px minmax(0,1fr); grid-template-rows:auto 1fr; gap:8px 14px; min-height:0; }
   .ow-profile .pm-profile-frame { grid-column:1; grid-row:1 / 3; flex:none; min-height:0; height:auto; aspect-ratio:3/4; }

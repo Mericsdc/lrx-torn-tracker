@@ -359,6 +359,7 @@ function lastActionChip(la) {
 
 /* ---------------- navigation ---------------- */
 function showView(v) {
+  if (state.view === 'overview' && v !== 'overview') window.LRXOverviewEdit?.stop(); // saves the layout edit, if any
   state.view = v;
   $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === v));
   $$('.view').forEach((s) => s.classList.toggle('active', s.id === `view-${v}`));
