@@ -22,6 +22,18 @@ test('Ezlira has a server-enforced permanent membership after identity verificat
   await assert.rejects(service.adminAction(ADMIN, 'subscription', { torn_id: 4037017, days: -1000, reason: 'Attempt to remove protected founder access' }), (e) => e.code === 'PERMANENT_MEMBERSHIP_PROTECTED');
   service.store.registerVerifiedUser(123456); assert.equal(service.store.entitlement(123456).permanent, false);
 });
+test('Emreight [4549822] has an owner-granted permanent membership after identity verification', async (t) => {
+  const { service, clock } = fixture(t);
+  assert.equal(service.store.entitlement(4549822).active, false, 'unverified IDs are not identities');
+  service.store.registerVerifiedUser(4549822);
+  let e = service.store.entitlement(4549822);
+  assert.equal(e.active, true); assert.equal(e.permanent, true); assert.equal(e.expiresAt, null); assert.equal(e.remainingDays, null);
+  clock.now += 200 * 365 * DAY; service.store.expire();
+  e = service.store.entitlement(4549822); assert.equal(e.active, true); assert.equal(e.permanent, true);
+  await assert.rejects(service.adminAction(ADMIN, 'subscription', { torn_id: 4549822, days: -1000, reason: 'Attempt to remove owner-granted access' }), (e) => e.code === 'PERMANENT_MEMBERSHIP_PROTECTED');
+  const listed = await service.adminAction(ADMIN, 'members', { filter: 'permanent' });
+  assert.ok(listed.members.some((m) => m.tornId === 4549822), 'listed among the permanent members');
+});
 test('in-app synthetic two-Xanax action awards 30 days and replay adds zero days without enabling collection', async (t) => {
   const { service } = fixture(t); service.store.registerVerifiedUser(4037017);
   const paid = await service.adminAction(ADMIN, 'test-payment', { quantity: 2 });

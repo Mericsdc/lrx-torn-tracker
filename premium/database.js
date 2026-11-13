@@ -39,8 +39,11 @@ function openDatabase(filename, { mode = 'test', receiverId = 4037017, now = () 
     db.prepare("INSERT OR IGNORE INTO premium_metadata VALUES('mode',?)").run(mode);
     db.prepare('INSERT OR IGNORE INTO premium_settings(id,payment_receiver_torn_id,updated_at) VALUES(1,?,?)').run(receiverId, now());
     db.prepare('INSERT OR IGNORE INTO premium_checkpoint(id) VALUES(1)').run();
-    const permanent = db.prepare('INSERT OR IGNORE INTO premium_permanent_members(torn_id,reason,created_at) VALUES(4037017,?,?)').run('Ezlira — permanent application membership', now());
-    if (Number(permanent.changes)) db.prepare('INSERT INTO premium_audit_log(actor_torn_id,action,target,reason,after_json,created_at) VALUES(NULL,?,?,?,?,?)').run('subscription.permanent', '4037017', 'Owner-requested permanent membership policy', JSON.stringify({ permanent: true }), now());
+    // Owner-granted permanent memberships. Each applies once that player has verified their identity.
+    for (const [tornId, reason] of [[4037017, 'Ezlira — permanent application membership'], [4549822, 'Emreight — owner-granted permanent application membership']]) {
+      const permanent = db.prepare('INSERT OR IGNORE INTO premium_permanent_members(torn_id,reason,created_at) VALUES(?,?,?)').run(tornId, reason, now());
+      if (Number(permanent.changes)) db.prepare('INSERT INTO premium_audit_log(actor_torn_id,action,target,reason,after_json,created_at) VALUES(NULL,?,?,?,?,?)').run('subscription.permanent', String(tornId), 'Owner-requested permanent membership policy', JSON.stringify({ permanent: true }), now());
+    }
     if (!db.prepare('SELECT 1 FROM premium_price_versions LIMIT 1').get()) {
       db.prepare('INSERT INTO premium_price_versions(effective_at,xanax_price,days_per_xanax,created_at) VALUES(0,1,15,?)').run(now());
     }
