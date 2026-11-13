@@ -93,6 +93,22 @@ test('API handles malformed JSON, traversal and cross-origin writes', async () =
   assert.equal((await request('/api/config')).data.pollMinutes, 15);
   assert.equal((await request('/api/config', 'x'.repeat(100001))).status, 413);
 });
+test('the app page allows only its own script files: no inline script, handler or foreign script can run', async () => {
+  await ready;
+  const page = await realFetch(`http://127.0.0.1:${server.address().port}/`);
+  const csp = page.headers.get('content-security-policy') || '';
+  for (const rule of ["default-src 'self'", "script-src 'self'", "connect-src 'self'", "object-src 'none'", "base-uri 'none'", "frame-ancestors 'none'"]) assert.ok(csp.split('; ').includes(rule), rule);
+  assert.ok(!/script-src[^;]*(unsafe-inline|unsafe-eval|https?:|\*)/.test(csp), 'script-src stays strict');
+  assert.equal(page.headers.get('x-content-type-options'), 'nosniff');
+  // The policy would silently break any inline handler: none may exist in the page or in the markup the scripts build.
+  const dir = path.join(__dirname, '..', 'public');
+  for (const file of fs.readdirSync(dir).filter((name) => /\.(html|js)$/.test(name))) {
+    const text = fs.readFileSync(path.join(dir, file), 'utf8');
+    assert.equal(/<[a-z][^<>]*\son[a-z]+\s*=\s*["'`]/i.test(text), false, `inline event handler in public/${file}`);
+    assert.equal(/<script(?![^>]*\ssrc=)[^>]*>/i.test(text), false, `inline <script> in public/${file}`);
+    assert.equal(/\bhref\s*=\s*["'`]javascript:/i.test(text), false, `javascript: link in public/${file}`);
+  }
+});
 test('themes and group endpoints persist validated values', async () => {
   for (const theme of ['obsidian', 'ocean', 'forest', 'amethyst', 'light']) {
     assert.equal((await request('/api/config', { theme })).status, 200);

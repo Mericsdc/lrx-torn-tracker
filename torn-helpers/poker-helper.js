@@ -1,6 +1,6 @@
 /* LRX Poker Oranları — Texas Hold'em (page.php?sid=holdem)
    • Masadaki kendi kartlarını ve ortadaki kartları okur; elinin adını ve oyundaki rakip sayısına göre
-     kazanma / beraberlik yüzdesini gösterir (Monte Carlo, rakip elleri rastgele varsayılır)
+     kazanma, pot paylaşımı (split) ve pottaki beklenen pay yüzdesini gösterir (Monte Carlo, rakip elleri rastgele varsayılır)
    Yalnızca açık sayfayı okur ve küçük bir kutu çizer: Torn'a istek atmaz, hiçbir düğmeye basmaz,
    fold / call / raise tavsiyesi vermez. Karar her zaman oyuncunundur. */
 (() => {
@@ -74,7 +74,8 @@
   const simulate = (hole, board, opponents, iters = 3000) => {
     const used = new Set([...hole, ...board]);
     const deck = []; for (let c = 8; c < 60; c++) if (!used.has(c)) deck.push(c);
-    let win = 0, tie = 0;
+    // win: I alone have the best hand. split: I share the best hand. share: the part of the pot those splits pay me.
+    let win = 0, split = 0, share = 0;
     const need = 5 - board.length;
     for (let it = 0; it < iters; it++) {
       // Fisher–Yates ile yalnızca gereken kadar kart çek
@@ -89,9 +90,9 @@
         if (v === best) ties++;
       }
       if (mine > best) win++;
-      else if (mine === best) tie += 1 / (ties + 1);
+      else if (mine === best) { split++; share += 1 / (ties + 1); }
     }
-    return { win: win / iters, tie: tie / iters };
+    return { win: win / iters, split: split / iters, equity: (win + share) / iters };
   };
 
   const style = document.createElement('style');
@@ -139,11 +140,12 @@
     lastKey = key;
     const hand = board.length >= 3 ? NAMES[category(evaluate(hole.concat(board)))] : (hole[0] >> 2) === (hole[1] >> 2) ? NAMES[1] : null;
     const r = simulate(hole, board, opp);
-    const win = (r.win * 100).toFixed(1), tie = (r.tie * 100).toFixed(1);
+    const win = (r.win * 100).toFixed(1), split = (r.split * 100).toFixed(1), equity = (r.equity * 100).toFixed(1);
     show(`<div class="muted">LRX · ${L('poker oranları', 'poker odds')}</div>
       <div>${hole.map(cardStr).join(' ')}${board.length ? ` &nbsp;|&nbsp; ${board.map(cardStr).join(' ')}` : ''}</div>
       ${hand ? L(`<div>Elin: <b>${hand[0]}</b> <span class="muted">(${hand[1]})</span></div>`, `<div>Your hand: <b>${hand[1]}</b></div>`) : ''}
-      ${L(`<div>Kazanma: <span class="big">%${win}</span> &nbsp;beraberlik %${tie}</div>`, `<div>Win: <span class="big">${win}%</span> &nbsp;tie ${tie}%</div>`)}
+      ${L(`<div>Kazanma: <span class="big">%${win}</span> &nbsp;pot paylaşımı %${split}</div>`, `<div>Win: <span class="big">${win}%</span> &nbsp;split pot ${split}%</div>`)}
+      <div class="muted">${L(`Pottaki beklenen payın: %${equity}`, `Your expected share of the pot: ${equity}%`)}</div>
       <div class="muted">${L(`${opp} rakibe karşı · rakip elleri rastgele varsayılır`, `vs ${opp} ${opp === 1 ? 'opponent' : 'opponents'} · opponent hands assumed random`)}</div>`);
   };
   setInterval(tick, 700);

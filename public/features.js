@@ -69,6 +69,7 @@ const FEATURE_DEFS = [
   { group: 'app', key: 'app.splash', def: true, tr: ['Açılış ekranı', 'Uygulama açılırken LRX logosu'], en: ['Splash screen', 'LRX logo on startup'] },
   { group: 'app', key: 'app.torntools', def: true, tr: ['TornTools', 'Yerleşik Torn sekmelerinde TornTools eklentisi (yeniden başlatınca)'], en: ['TornTools', 'TornTools extension in Torn tabs (after restart)'] },
   { group: 'app', key: 'app.tabSleep', def: true, tr: ['Kullanılmayan sekmeleri uyut', '20 dk açılmayan Torn sekmesi RAM\'den boşaltılır, tıklayınca kaldığı yerden açılır'], en: ['Sleep unused tabs', 'Torn tabs unused for 20 min are unloaded from RAM and reopen where you left off when clicked'] },
+  { group: 'app', key: 'app.loopGuard', def: true, tr: ['Kendi kendine dönen sekmeyi durdur', "Sen dokunmadan bir dakikada 8'den fazla sayfa açan Torn sekmesini durdurur · çok hızlı döngüler her zaman durdurulur"], en: ['Stop self-navigating tabs', 'Stops a Torn tab that opens more than 8 pages in a minute without you touching it · very fast loops are always stopped'] },
   { group: 'app', key: 'app.feedback', def: true, tr: ['Geri bildirim butonu', 'Üst çubukta: istek, öneri ve hatalar e-posta ile geliştiriciye gider'], en: ['Feedback button', 'In the top bar: requests, suggestions and bugs go to the developer by email'] },
   { group: 'app', key: 'app.updates', def: true, tr: ['Otomatik güncelleme kontrolü', 'Açılışta ve dakikada bir kontrol · yeni sürümde bildirim'], en: ['Automatic update check', 'Checks on startup and every minute · prompts for new versions'] },
   { group: 'app', key: 'app.weav3r', def: true, tr: ['Weav3r kısayolu', 'Üst çubukta weav3r.dev kısayolu'], en: ['Weav3r shortcut', 'weav3r.dev shortcut in the top bar'] },
@@ -218,7 +219,8 @@ const notified = new Map(); // "tür:id" -> olayın zamanı (ms)
 try { for (const [k, v] of Object.entries(JSON.parse(localStorage.getItem('tt.notified') || '{}'))) notified.set(k, v); } catch {}
 function rememberNotified(key, at) {
   notified.set(key, at);
-  for (const [k, t] of notified) if (Date.now() - t > 3 * 86400_000) notified.delete(k);
+  // Rules of the advanced modules can ask for one alert per event or per year: they are kept that long
+  for (const [k, t] of notified) if (Date.now() - t > (k.startsWith('advanced:') ? 400 : 3) * 86400_000) notified.delete(k);
   try { localStorage.setItem('tt.notified', JSON.stringify(Object.fromEntries(notified))); } catch {}
 }
 function notify(key, title, body, { url = null } = {}) {
@@ -234,6 +236,20 @@ function notify(key, title, body, { url = null } = {}) {
   else toast(`${title} · ${body}`);
 }
 
+/* A hospital stay can end before its planned time (a revive, a medical item). The planned moment then never
+   comes, so the change of state itself is the event: remembered once, at the time it was first seen. */
+const hospitalWatch = new Map(); // 'me' | player id -> { until, releasedAt }
+function earlyRelease(key, status, seenAt) {
+  const w = hospitalWatch.get(key);
+  if (status?.state === 'Hospital' && status.until) { hospitalWatch.set(key, { until: status.until, releasedAt: 0 }); return null; }
+  if (!w || !status) return null;
+  if (!w.releasedAt) {
+    if (w.until * 1000 - state.skew <= seenAt + 5000) { hospitalWatch.delete(key); return null; } // left on time: the planned event covers it
+    w.releasedAt = seenAt;
+  }
+  if (Date.now() - w.releasedAt > 6 * 60_000) { hospitalWatch.delete(key); return null; }
+  return w.releasedAt;
+}
 /* Olayların zamanını hesapla (ms, yerel saat) */
 function notifyEvents() {
   const o = state.overview;
@@ -254,6 +270,8 @@ function notifyEvents() {
     if (o.trip?.timeLeft > 0) ev.push({ type: 'notify.travel', at: base + o.trip.timeLeft * 1000, title: '✈ ' + tr('Uçak indi', 'Landed'), body: tr(`Vardığın yer: ${o.trip.destination}`, `Arrived in ${o.trip.destination}`) });
     const st = o.player?.status;
     if (st?.state === 'Hospital' && st.until) ev.push({ type: 'notify.hospital', at: st.until * 1000 - state.skew, title: '🏥 ' + tr('Hastaneden çıktın', 'Out of hospital'), body: tr('Artık müsaitsin', 'You are okay now') });
+    const outEarly = earlyRelease('me', st, base);
+    if (outEarly) ev.push({ type: 'notify.hospital', at: outEarly, title: '🏥 ' + tr('Hastaneden çıktın', 'Out of hospital'), body: tr('Beklenenden erken çıktın', 'You are out earlier than expected') });
     if (o.bank?.timeLeft > 0) ev.push({ type: 'notify.bank', at: base + o.bank.timeLeft * 1000, title: '🏦 ' + tr('Banka yatırımın bitti', 'Bank investment finished'), body: tr(`${cmoney(o.bank.amount)} ve faizi çekilebilir`, `${cmoney(o.bank.amount)} plus interest is ready to withdraw`), url: 'https://www.torn.com/bank.php' });
   }
   // Açık sekmelerdeki oyuncular
@@ -267,9 +285,13 @@ function notifyEvents() {
     if (st?.state === 'Hospital' && st.until) {
       ev.push({ type: 'notify.targets', at: st.until * 1000 - state.skew, title: `🏥 ${decode(d.name || '#' + xid)}`, body: tr('Hastaneden çıktı — saldırılabilir', 'Left hospital — attackable'), url: `https://www.torn.com/page.php?sid=attack&user2ID=${xid}`, id: xid });
     }
+    const outEarly = earlyRelease(xid, st, state.playerInfo?.[xid]?.at || Date.now());
+    if (outEarly && st.state === 'Okay') ev.push({ type: 'notify.targets', at: outEarly, title: `🏥 ${decode(d.name || '#' + xid)}`, body: tr('Hastaneden erken çıktı — saldırılabilir', 'Left hospital early — attackable'), url: `https://www.torn.com/page.php?sid=attack&user2ID=${xid}`, id: xid });
   }
+  for (const key of hospitalWatch.keys()) if (key !== 'me' && !seen.has(key)) hospitalWatch.delete(key); // tab closed
   // Takip edilen ürünler: restock anında inecek şekilde kalkış hatırlatması
-  const td = travelState.data;
+  // Restock times are estimates from the last stock reading: no "time to fly" from a reading older than 15 minutes
+  const td = Date.now() - travelState.at <= 15 * 60_000 ? travelState.data : null;
   if (td && travelState.watch.size) {
     const mult = TRAVEL_METHODS[travelMethod()] || 1;
     for (const c of td.countries) {
@@ -405,6 +427,15 @@ function renderJob() {
   $('#job-search')?.addEventListener('input', (e) => { jobState.q = e.target.value; fill(); });
 }
 
+/* One record is saved per day the app runs, so "n records back" is not "n days back".
+   exact: the record of exactly n days before the latest one; otherwise the oldest record inside the last n days. */
+function recordBack(hist, n, exact = false) {
+  const last = hist[hist.length - 1];
+  if (!last) return null;
+  const from = new Date(Date.parse(`${last.date}T00:00:00Z`) - n * 86400_000).toISOString().slice(0, 10);
+  return (exact ? hist.find((r) => r.date === from) : hist.find((r) => r.date >= from && r !== last)) || null;
+}
+const daysApart = (a, b) => Math.round((Date.parse(`${b.date}T00:00:00Z`) - Date.parse(`${a.date}T00:00:00Z`)) / 86400_000);
 /* ---------- Gym & Statlar ---------- */
 async function loadGym() {
   const el = $('#gym-body');
@@ -414,9 +445,10 @@ async function loadGym() {
 function renderGym(d) {
   const hist = d.history || [];
   const last = hist[hist.length - 1];
-  const ago = (n) => hist[hist.length - 1 - n];
+  const ago = (n) => recordBack(hist, n, n === 1);
   const gain = (n) => (ago(n) && last ? last.total - ago(n).total : null);
   const sumDiff = (k, n) => (ago(n) && last && last[k] != null && ago(n)[k] != null ? last[k] - ago(n)[k] : null);
+  const span = (n) => (ago(n) && last ? daysApart(ago(n), last) : 0); // days the figure really covers
   const b = d.battle;
   const total = last?.total ?? b?.totals?.base ?? 0;
   const parts = last ? [['Strength', last.str], ['Defense', last.def], ['Speed', last.spd], ['Dexterity', last.dex]] : [];
@@ -424,9 +456,9 @@ function renderGym(d) {
   $('#gym-body').innerHTML = `
     <div class="grid kpis">
       ${kpi(tr('Toplam battle stat', 'Total battle stats'), n0(total), '', 'tq')}
-      ${kpi(tr('Dünden beri', 'Since yesterday'), `<span class="${deltaCls(gain(1))}">${signed(gain(1), n0)}</span>`)}
-      ${kpi(tr('7 günde', 'Last 7 days'), `<span class="${deltaCls(gain(7))}">${signed(gain(7), n0)}</span>`, gain(7) != null ? `${tr('günlük ort.', 'daily avg')} ${n0(gain(7) / 7)}` : tr('7 günlük kayıt gerekli', 'needs 7 days of records'))}
-      ${kpi(tr('30 günde', 'Last 30 days'), `<span class="${deltaCls(gain(30))}">${signed(gain(30), n0)}</span>`)}
+      ${kpi(tr('Dünden beri', 'Since yesterday'), `<span class="${deltaCls(gain(1))}">${signed(gain(1), n0)}</span>`, gain(1) == null && hist.length > 1 ? tr('dünkü kayıt yok', 'no record from yesterday') : '')}
+      ${kpi(tr('7 günde', 'Last 7 days'), `<span class="${deltaCls(gain(7))}">${signed(gain(7), n0)}</span>`, gain(7) != null ? `${tr('günlük ort.', 'daily avg')} ${n0(gain(7) / span(7))}${span(7) < 7 ? ` · ${tr(`kayıt ${span(7)} günlük`, `records cover ${span(7)} ${span(7) === 1 ? 'day' : 'days'}`)}` : ''}` : tr('son 7 günde başka kayıt yok', 'no other record in the last 7 days'))}
+      ${kpi(tr('30 günde', 'Last 30 days'), `<span class="${deltaCls(gain(30))}">${signed(gain(30), n0)}</span>`, gain(30) != null && span(30) < 30 ? tr(`kayıt ${span(30)} günlük`, `records cover ${span(30)} ${span(30) === 1 ? 'day' : 'days'}`) : '')}
       ${kpi(tr('Xanax (7 gün)', 'Xanax (7 days)'), sumDiff('xantaken', 7) != null ? n0(sumDiff('xantaken', 7)) : '—', `${tr('Refill', 'Refills')}: ${sumDiff('refills', 7) != null ? n0(sumDiff('refills', 7)) : '—'}`)}
     </div>
     <article class="glass card">
@@ -462,8 +494,10 @@ async function loadNetworth(force = false) {
 function renderNetworth(d) {
   const cur = d.current || {};
   const hist = d.history || [];
-  const ago = (n) => hist[hist.length - 1 - n];
+  const ago = (n) => recordBack(hist, n, n === 1);
   const chg = (n) => (ago(n) ? (cur.total || 0) - ago(n).total : null);
+  const lastRec = hist[hist.length - 1];
+  const span = (n) => (ago(n) && lastRec ? daysApart(ago(n), lastRec) : 0);
   const parts = NW_PARTS.map(([k, nTr, nEn]) => [tr(nTr, nEn), Number(cur[k]) || 0, k]).filter(([, v]) => v !== 0).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
   const maxV = Math.max(...parts.map(([, v]) => Math.abs(v)), 1);
   const prev = ago(1);
@@ -471,8 +505,8 @@ function renderNetworth(d) {
     <div class="grid kpis">
       ${kpi(tr('Toplam networth', 'Total networth'), money(cur.total), `${tr('güncellendi', 'updated')} ${new Date(d.timestamp * 1000).toLocaleTimeString(state.lang === 'en' ? 'en-GB' : 'tr-TR', { hour: '2-digit', minute: '2-digit' })}`, 'tq')}
       ${kpi(tr('Dünden beri', 'Since yesterday'), `<span class="${deltaCls(chg(1))}">${signed(chg(1))}</span>`, chg(1) != null && ago(1).total ? pct(chg(1) / ago(1).total, 2) : tr('dünkü kayıt yok', 'no record from yesterday'))}
-      ${kpi(tr('7 günde', 'Last 7 days'), `<span class="${deltaCls(chg(7))}">${signed(chg(7))}</span>`)}
-      ${kpi(tr('30 günde', 'Last 30 days'), `<span class="${deltaCls(chg(30))}">${signed(chg(30))}</span>`)}
+      ${kpi(tr('7 günde', 'Last 7 days'), `<span class="${deltaCls(chg(7))}">${signed(chg(7))}</span>`, chg(7) != null && span(7) < 7 ? tr(`kayıt ${span(7)} günlük`, `records cover ${span(7)} ${span(7) === 1 ? 'day' : 'days'}`) : '')}
+      ${kpi(tr('30 günde', 'Last 30 days'), `<span class="${deltaCls(chg(30))}">${signed(chg(30))}</span>`, chg(30) != null && span(30) < 30 ? tr(`kayıt ${span(30)} günlük`, `records cover ${span(30)} ${span(30) === 1 ? 'day' : 'days'}`) : '')}
       ${kpi(tr('Nakit (cüzdan + banka)', 'Cash (wallet + bank)'), money((cur.wallet || 0) + (cur.bank || 0) + (cur.cayman || 0) + (cur.vault || 0) + (cur.piggybank || 0)))}
     </div>
     <div class="grid two">
@@ -529,7 +563,7 @@ const tvAt = (sec) => `<span class="mono tv-cd" data-tv-at="${sec}">${tvFmt(sec 
 async function fetchTravel() {
   const prev = travelState.data;
   const d = await api('/api/travel');
-  travelState.data = d; travelState.at = Date.now();
+  travelState.data = d; travelState.at = Date.now(); travelState.error = '';
   // Takip edilen ürün yeniden stoklandıysa haber ver
   if (prev && feat('notify') && feat('notify.restock') && travelState.watch.size) {
     const old = new Map(prev.countries.flatMap((c) => c.items.map((i) => [`${c.code}:${i.id}`, i.qty])));
@@ -657,7 +691,8 @@ function renderTravelResults() {
     .filter((r) => r.it.qty <= 0 && r.it.nextRestock && r.it.nextRestock > now - 15 * 60 && r.it.nextRestock < now + 6 * 3600)
     .sort((a, b) => a.it.nextRestock - b.it.nextRestock).slice(0, 14);
   const ages = d.countries.map((c) => c.update).filter(Boolean);
-  const age = ages.length ? Math.round((now - Math.min(...ages)) / 60) : null;
+  const oldest = ages.length ? Math.min(...ages) : null;
+  const age = oldest != null ? Math.max(0, Math.round((now - oldest) / 60)) : null;
   const src = [d.sources?.yata && 'YATA', d.sources?.prom && 'Prometheus'].filter(Boolean).join(' + ') || '—';
   const star = (r) => `<button class="tv-star ${r.watched ? 'on' : ''}" data-watch="${r.key}" title="${r.watched ? tr('Takipten çıkar', 'Unwatch') : tr('Takip et: restock / kalkış bildirimi', 'Watch: restock / departure alerts')}">${r.watched ? '★' : '☆'}</button>`;
   const stockCell = (r) => {
@@ -690,7 +725,7 @@ function renderTravelResults() {
       }).join('')}</div>` : emptyBox(tr('Önümüzdeki 6 saatte beklenen restock yok', 'No restocks expected in the next 6 hours'), tr('Filtreleri genişletmeyi dene.', 'Try widening the filters.'))}
     </article>
     <article class="glass card">
-      <div class="card-head wrap"><div><h3>${tr('Ürünler', 'Items')} <span class="chip">${rows.length}</span></h3><span class="muted">${tr('Kaynak', 'Source')}: ${src}${age != null ? ` · ${tr('en eski veri', 'oldest data')} ${age} ${tr('dk', 'min')}` : ''} · ${tr('uçak bileti hariç', 'excludes ticket cost')}</span></div></div>
+      <div class="card-head wrap"><div><h3>${tr('Ürünler', 'Items')} <span class="chip">${rows.length}</span></h3><span class="muted">${tr('Kaynak', 'Source')}: ${src}${age != null ? ` · ${tr('en eski veri', 'oldest data')} <span data-tv-age="${oldest}">${age}</span> ${tr('dk', 'min')}` : ''} · ${tr('market = Torn ortalama değeri (saatlik), satış garantisi değil', "market = Torn's average value (hourly), not a guaranteed sale price")} · ${tr('uçak bileti hariç', 'excludes ticket cost')}</span>${travelState.error ? `<div class="sub-text neg">⚠ ${tr('Son yenileme başarısız', 'The last refresh failed')}: ${esc(travelState.error)}</div>` : ''}</div></div>
       ${rows.length ? `<div class="tbl-wrap"><table class="tbl compact tv-table"><thead><tr><th></th><th>${tr('Ülke', 'Country')}</th><th>${tr('Ürün', 'Item')}</th><th class="num">${tr('Alış → Market', 'Cost → Market')}</th><th class="num">${tr('Adet kârı', 'Profit/unit')}</th><th class="num">${tr('Stok', 'Stock')}</th><th>${tr('Restock', 'Restock')}</th><th>${tr('Varışta', 'On arrival')}</th><th class="num">${tr('Sefer kârı', 'Per trip')}</th><th class="num">${tr('Saatlik', 'Per hour')}</th></tr></thead><tbody>
       ${rows.slice(0, 60).map((r) => `<tr class="${r.watched ? 'watched' : ''}"><td>${star(r)}</td><td><span lang="en">${esc(r.c.name)}</span><div class="sub-text">${mins(r.oneWay)}</div></td><td><b>${esc(r.it.name)}</b> <span class="sub-text">${esc(r.it.type)}</span></td><td class="num">${money(r.it.cost)}<div class="sub-text">${money(r.it.market)}</div></td><td class="num ${(r.it.profit || 0) > 0 ? 'pos' : 'neg'}">${money(r.it.profit || 0)}</td><td class="num">${stockCell(r)}</td><td>${restockCell(r)}</td><td>${statusChip(r.st)}</td><td class="num">${money(r.trip)} <span class="sub-text">×${r.units}</span></td><td class="num tq-text"><b>${cmoney(r.perHour)}</b></td></tr>`).join('')}
       </tbody></table></div>` : emptyBox(tr('Filtreye uyan ürün yok', 'No items match the filters'), tr('Stok filtresini "Hepsi" yapmayı ya da ülke seçimini genişletmeyi dene.', 'Try setting Stock to "All" or selecting more countries.'))}
@@ -748,11 +783,12 @@ setInterval(() => {
   if (state.view !== 'travel' || !trackerVisible()) return;
   const now = nowTct() / 1000;
   $$('[data-tv-at]').forEach((el) => { const s = Number(el.dataset.tvAt) - now; el.textContent = tvFmt(s); el.classList.toggle('due', s <= 0); });
+  $$('[data-tv-age]').forEach((el) => { el.textContent = Math.max(0, Math.round((now - Number(el.dataset.tvAge)) / 60)); });
 }, 1000);
 setInterval(() => {
   const bg = travelState.watch.size && !viewHidden('travel') && feat('notify') && feat('notify.restock');
   if (state.view !== 'travel' && !bg) return;
-  fetchTravel().then(() => { if (state.view === 'travel') renderTravelResults(); }).catch(() => {});
+  fetchTravel().catch((e) => { travelState.error = e.message || String(e); }).then(() => { if (state.view === 'travel') renderTravelResults(); });
 }, 120_000);
 
 /* ---------- Seviye 15 altı: Baldr's Levelling Targets ---------- */

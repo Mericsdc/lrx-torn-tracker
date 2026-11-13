@@ -49,6 +49,18 @@ html[data-theme="light"] :is(.btn.primary,.attack-btn) { color:#fff; background:
 html[data-theme="light"] :is(.timer-box,.bs-total,.bar-track,.kpi,.feat-block,.set-tabs,.war-chip,.mode-toggle,.input) { background:var(--field); }
 html[data-theme="light"] :is(.kpi .value,.big-num,.info-list > div > span:last-child,.lv-tips,.gd-list,.aw-desc,.eg-step b,.eg-cta b,.eg-tag,.fac-board-h,.tv-up-time b,.tv-up-go b.mono,.bar-top,.lang-toggle button) { color:var(--text); }
 html[data-theme="light"] .glass::before, html[data-theme="light"] .glass::after { display:none; }
+/* Light theme: controls and texts that kept a hard-coded dark surface or a near-white colour (they were unreadable) */
+html[data-theme="light"] :is(select,.aw-controls input[type="search"],.tl-row input) { background:var(--field); color:var(--text); }
+html[data-theme="light"] .toggle { background:var(--bg-2); }
+html[data-theme="light"] .toggle button:not(.active) { color:var(--muted); }
+html[data-theme="light"] .alert { background:var(--panel); }
+html[data-theme="light"] .alert.danger { color:var(--danger); }
+html[data-theme="light"] .alert.warn { color:var(--warn); }
+html[data-theme="light"] .alert.info { color:var(--tq); }
+html[data-theme="light"] :is(.product-top h4,.ic-summary strong:not(.pos):not(.neg),.tv-cbtn:hover,.ws-tab-close:hover) { color:var(--text); }
+html[data-theme="light"] .ic-summary > div { background:var(--field); }
+html[data-theme="light"] .ws-tab-timer.hosp { color:var(--danger); }
+html[data-theme="light"] .ws-tab-timer.jail { color:var(--warn); }
 .theme-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:12px; margin:20px 0; }
 .theme-choice { display:grid; grid-template-columns:1fr 20px; gap:12px; text-align:left; padding:12px; border:1px solid var(--stroke-2); border-radius:10px; background:var(--surface); color:var(--text); cursor:pointer; font:inherit; }
 .theme-choice.selected { outline:2px solid var(--tq); outline-offset:2px; }

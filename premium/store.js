@@ -91,6 +91,22 @@ function createStore(filename, options = {}) {
       const cutoff = checkpoint().baseline_at;
       if (cutoff == null) fail('CHECKPOINT_REQUIRED', 409);
       if (parsed.timestamp <= cutoff) return { status: 'baseline' };
+      // One transfer can be seen twice: as a notification event and as the official Item receive log. The log
+      // path links an earlier event to its log; this is the other order. When the log was credited first, the
+      // event is linked to it instead of becoming a second payment (same sender, same quantity, within 2 s).
+      if (parsed.verified && source !== 'torn-v2-item-log') {
+        const linked = one('SELECT value FROM premium_metadata WHERE key=?', 'payment-event:' + parsed.eventId);
+        const twin = linked ? one('SELECT id FROM premium_transactions WHERE event_id=?', linked.value)
+          : all("SELECT id,event_id FROM premium_transactions WHERE source='torn-v2-item-log' AND event_id LIKE 'log!_%' ESCAPE '!' AND parsed_verified=1 AND torn_sender_id=? AND quantity=? AND event_timestamp BETWEEN ? AND ? ORDER BY id",
+            parsed.senderId, parsed.quantity, parsed.timestamp - 2, parsed.timestamp + 2).find((row) => !one('SELECT 1 FROM premium_metadata WHERE key=?', 'payment-log-event:' + row.event_id));
+        if (twin) {
+          if (!linked) {
+            run('INSERT INTO premium_metadata(key,value) VALUES(?,?)', 'payment-log-event:' + twin.event_id, parsed.eventId);
+            run('INSERT INTO premium_metadata(key,value) VALUES(?,?)', 'payment-event:' + parsed.eventId, twin.event_id);
+          }
+          return { status: 'duplicate', id: twin.id };
+        }
+      }
       const cfg = settings();
       const rate = one('SELECT * FROM premium_price_versions WHERE effective_at<=? ORDER BY effective_at DESC,id DESC LIMIT 1', parsed.timestamp);
       if (!rate) fail('PRICE_VERSION_MISSING', 409);

@@ -135,6 +135,8 @@ html[data-theme="light"] #view-premium { --pm-accent:#8e6326; --pm-soft:#b485361
 .pm-not-configured h2 { font-size:30px; font-weight:400; margin:20px 0; }
 .pm-not-configured p { color:var(--muted); font-size:13px; max-width:420px; line-height:1.8; margin-bottom:25px; }
 #premium-feedback { font-size:12px; color:var(--pm-accent); margin:12px 0; min-height:18px; }
+/* A result or error stays in sight: on a long page the line sticks to the bottom of the window instead of waiting below the tables. */
+#premium-feedback:not(:empty) { position:sticky; bottom:14px; z-index:5; align-self:center; max-width:min(560px,100%); padding:9px 16px; border:1px solid var(--pm-border); border-radius:10px; background:var(--bg); box-shadow:0 10px 28px -12px rgba(0,0,0,.55); text-align:center; }
 html[data-theme="light"] .pm-member-card { box-shadow:0 18px 40px -30px #795d2970; }
 html[data-theme="light"] .pm-button.pm-primary { color:#fff; }
 @media(max-width:1100px) { .pm-hero { gap:23px; } .pm-member-card { padding:22px; } .pm-plan { padding:18px 13px; } .pm-overview-stats > div { padding:0 7px; grid-template-columns:26px 1fr; } }

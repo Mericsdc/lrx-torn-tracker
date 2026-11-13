@@ -81,6 +81,28 @@ test('an event already credited is linked to its log without awarding again', (t
   assert.equal(store.entitlement(123456).remainingDays, 60, 'a separate real log in the same second is a separate transfer');
   assert.equal(store.balance(123456).total_received, 4);
 });
+test('an event that arrives after its item log was credited is linked to it, never credited again', (t) => {
+  const { store } = fixture(t);
+  const paid = { ...notification, event: notification.event.replace('some Xanax', '2x Xanax') };
+  assert.equal(store.ingestItemLog(parseItemLog(log('log_first', 2), NOW)).status, 'applied');
+  const expiry = store.entitlement(123456).expiresAt;
+  assert.equal(store.ingest(parseEvent(paid, NOW)).status, 'duplicate');
+  assert.equal(store.ingest(parseEvent(paid, NOW)).status, 'duplicate', 'a replay of the linked event stays a duplicate');
+  assert.equal(store.entitlement(123456).expiresAt, expiry); assert.equal(store.balance(123456).total_received, 2);
+  assert.equal(store.db.prepare('SELECT count(*) AS n FROM premium_transactions').get().n, 1);
+  // A second real transfer in the same second: its event is a payment of its own, and its log is then linked to it.
+  assert.equal(store.ingest(parseEvent({ ...paid, id: 'second_event' }, NOW)).status, 'applied');
+  assert.equal(store.entitlement(123456).remainingDays, 60);
+  assert.equal(store.ingestItemLog(parseItemLog(log('log_second', 2), NOW)).status, 'duplicate');
+  assert.equal(store.entitlement(123456).remainingDays, 60); assert.equal(store.balance(123456).total_received, 4);
+  // Two logs first, then their two events: each event is linked to one log.
+  const other = fixture(t).store;
+  other.ingestItemLog(parseItemLog(log('a', 1), NOW)); other.ingestItemLog(parseItemLog(log('b', 1), NOW));
+  const single = { ...notification, event: notification.event.replace('some Xanax', '1x Xanax') };
+  assert.equal(other.ingest(parseEvent({ ...single, id: 'event_a' }, NOW)).status, 'duplicate');
+  assert.equal(other.ingest(parseEvent({ ...single, id: 'event_b' }, NOW + 1)).status, 'duplicate');
+  assert.equal(other.entitlement(123456).remainingDays, 30); assert.equal(other.balance(123456).total_received, 2);
+});
 test('log parser sums only Xanax; malformed quantities, wrong types and missing senders cannot credit', () => {
   const mixed = log(); mixed.data.items.push({ id: 206, qty: 2 }, { id: 366, qty: 10 });
   assert.equal(parseItemLog(mixed, NOW).quantity, 3);

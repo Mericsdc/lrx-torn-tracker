@@ -29,6 +29,16 @@ async function fixture(t, live = false, publicUrl = 'https://premium.example.inv
   return { service, config, clock, call, login, base, upstreamCalls: () => upstreamCalls };
 }
 
+test('the self-refreshing admin page records a viewing once per ten minutes, not on every reload', async (t) => {
+  const { service, clock, call, login } = await fixture(t);
+  const admin = await login(4037017);
+  const viewings = () => service.store.db.prepare("SELECT count(*) AS n FROM premium_audit_log WHERE action='admin.read'").get().n;
+  for (let i = 0; i < 5; i++) assert.equal((await call('/v1/admin', undefined, admin)).status, 200);
+  assert.equal(viewings(), 1);
+  clock.now += 601;
+  assert.equal((await call('/v1/admin', undefined, admin)).status, 200);
+  assert.equal(viewings(), 2);
+});
 test('a paid membership is ready before login but another account cannot claim or read it', async t => {
   const { service, clock, call } = await fixture(t, true);
   service.store.acquireLease('setup'); service.store.checkpointUpdate('setup', { baseline_at: clock.now - 1 }); service.store.releaseLease('setup');

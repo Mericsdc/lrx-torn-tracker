@@ -16,6 +16,7 @@ const isGoogleAuthUrl = (u) => /^https:\/\/accounts\.(google\.[a-z.]+|youtube\.c
 const isTornUrl = (u) => /^https?:\/\/([^/]+\.)?torn\.com(\/|$)/i.test(String(u || ''));
 
 const { APP_ROOT } = require('../app-paths');
+const { createNavigationGuard } = require('./nav-guard');
 const isPackaged = app.isPackaged;
 const DEFAULT_UPDATE_URL = require('../../package.json').updateUrl || '';
 const APP_ICON = path.join(APP_ROOT, 'assets', 'icon.ico');
@@ -45,6 +46,13 @@ function main() {
   if (!fs.existsSync(persistentDataDir)) {
     fs.mkdirSync(persistentDataDir, { recursive: true });
   }
+  // startup.log only ever grows: keep the newest part once it passes 1 MB
+  try {
+    if (fs.statSync(logFile).size > 1024 * 1024) {
+      const tail = fs.readFileSync(logFile, 'utf8').slice(-256 * 1024);
+      fs.writeFileSync(logFile, tail.slice(tail.indexOf('\n') + 1));
+    }
+  } catch {}
   if (isPackaged && fs.existsSync(bundledDataDir) && path.resolve(bundledDataDir) !== path.resolve(persistentDataDir)) {
     for (const fname of ['config.json', 'history.json']) {
       const src = path.join(bundledDataDir, fname);
@@ -87,18 +95,20 @@ function main() {
   let viewsVisible = true;
   const tornTools = { status: 'loading', id: null, version: null, error: null };
 
+  // The top bars belong to the app page and scale with its zoom (Ctrl + / Ctrl -); a Torn view starts right below them.
+  function tabViewBounds() {
+    const [width, height] = mainWindow.getContentSize();
+    const top = Math.round(TOP_BAR_HEIGHT * (mainWindow.webContents.getZoomFactor() || 1));
+    return { x: 0, y: top, width: Math.max(100, width), height: Math.max(100, height - top) };
+  }
+
   function layoutViews() {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    const [width, height] = mainWindow.getContentSize();
+    const bounds = tabViewBounds();
     for (const [id, t] of tabs.entries()) {
       if (viewsVisible && activeTabId === id) {
         t.view.setVisible(true);
-        t.view.setBounds({
-          x: 0,
-          y: TOP_BAR_HEIGHT,
-          width: Math.max(100, width),
-          height: Math.max(100, height - TOP_BAR_HEIGHT),
-        });
+        t.view.setBounds(bounds);
       } else {
         t.view.setVisible(false);
       }
@@ -133,7 +143,7 @@ function main() {
     const wc = t.view.webContents;
     if (wc.isDestroyed() || !isTornUrl(wc.getURL())) return;
     try {
-      t.loggedIn = Boolean(await wc.executeJavaScript(LOGIN_CHECK_JS, true));
+      t.loggedIn = Boolean(await wc.executeJavaScript(LOGIN_CHECK_JS, false));
       sendTabUpdate(id);
     } catch {}
   }
@@ -165,7 +175,7 @@ function main() {
     const wc = t.view.webContents;
     if (wc.isDestroyed() || !isTornUrl(wc.getURL())) return;
     try {
-      const r = await wc.executeJavaScript(UID_CHECK_JS, true);
+      const r = await wc.executeJavaScript(UID_CHECK_JS, false);
       if (!r) return;
       const real = pickRealUid(r, t.loggedIn === true);
       if (!real) return; // giriş yapılmamış ya da numara belirsiz
@@ -268,7 +278,7 @@ function main() {
           d.count++;
           let uid = '';
           if (isHub) {
-            const chk = await wc.executeJavaScript(UID_CHECK_JS, true).catch(() => null);
+            const chk = await wc.executeJavaScript(UID_CHECK_JS, false).catch(() => null);
             const real = chk && pickRealUid(chk, t.loggedIn === true);
             uid = chk ? `\n    uid çerezleri=[${chk.uids.map(uidShape).join(', ') || 'yok'}] · sayfa kimliği=${chk.real ? 'var' : 'yok'} · doğru numara=${real ? `${uidShape(real)}${real === chk.uids[0] ? ', önde' : ', önde DEĞİL'}` : 'belirsiz'}` : '';
             if (real && real !== chk.uids[0]) repairUidCookie(id);
@@ -295,11 +305,18 @@ function main() {
   // sekmeye geçilince ya da pencere odağa gelince çalışır. Yalnızca sayfayı boyayanlar her zaman yüklenir.
   const tabViewed = (id) => id === activeTabId && !!mainWindow && !mainWindow.isDestroyed()
     && mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused();
+  /* executeJavaScript waits until the page is able to run the script. A tab that navigates in the meantime would
+     run the queued helper, and the data sent with it (purchase costs, crime values), in the NEXT document,
+     whatever site that is. Every injected script therefore checks where it is before it does anything. */
+  const onlyOn = (match, body) => `if (${match}.test(location.href)) { ${body}
+}`;
+  const STOCK_PAGE = /^https:\/\/www\.torn\.com\/companies\.php/i;
+
   const TORN_HELPERS = [
     { name: 'fast-slots', feature: 'torn.fastSlots', match: /^https:\/\/www\.torn\.com\/page\.php\?(.*&)?sid=slots(&|#|$)/i },
     { name: 'war-helper', feature: 'torn.warHelper', match: /^https:\/\/www\.torn\.com\/factions\.php/i, after: (id) => warTick(id) },
     { name: 'fight-helper', feature: 'torn.liveFight', needsFocus: true, match: /^https:\/\/www\.torn\.com\/(loader|page)\.php\?(.*&)?sid=attack(&|#|$)/i },
-    { name: 'company-stock', feature: 'torn.stockSync', needsFocus: true, match: /^https:\/\/www\.torn\.com\/companies\.php/i, run: syncStockDeliveries },
+    { name: 'company-stock', feature: 'torn.stockSync', needsFocus: true, match: STOCK_PAGE, run: syncStockDeliveries },
     // Suçlar: XP renkleri + $/N rozetleri + burglary notları (her biri ayrı ayardan açılıp kapanır)
     { name: 'crime-helper', feature: ['torn.crimeHelper', 'torn.crimeValue', 'torn.crimeRank', 'torn.burglaryHelper'], match: /^https:\/\/www\.torn\.com\/page\.php\?(.*&)?sid=crimes(&|#|$)/i,
       prelude: () => {
@@ -334,7 +351,7 @@ function main() {
       if (wc.isDestroyed() || wc.getURL() !== url) return; // the page changed meanwhile; its own load runs the helpers again
       try {
         if (h.run) await h.run(wc, t, lang);
-        else await wc.executeJavaScript(lang + (h.prelude ? h.prelude() : '') + helperSrc(h.name), true);
+        else await wc.executeJavaScript(onlyOn(h.match, lang + (h.prelude ? h.prelude() : '') + helperSrc(h.name)), false);
         if (h.after) h.after(id);
       } catch (e) {
         // Navigating or reloading while a helper runs destroys its frame: expected, not an error
@@ -349,7 +366,7 @@ function main() {
     if (!names.length || t?.stockBusy) return; // focus and hash events can fire together: one read at a time
     if (t) t.stockBusy = true;
     let res;
-    try { res = await wc.executeJavaScript(`${lang}${helperSrc('company-stock')}(${JSON.stringify(names)})`, true); }
+    try { res = await wc.executeJavaScript(`(() => { if (!${STOCK_PAGE}.test(location.href)) return null; ${lang} const read = ${helperSrc('company-stock')}; return read(${JSON.stringify(names)}); })()`, false); }
     finally { if (t) t.stockBusy = false; }
     // { shipments: [{ name, amount, secs }], deliveryHours: { ürün: saat } } · eski biçim: yalnızca dizi
     const rows = Array.isArray(res) ? res : res?.shipments;
@@ -366,10 +383,10 @@ function main() {
     if (wc.isDestroyed() || !/^https:\/\/www\.torn\.com\/factions\.php/i.test(wc.getURL())) return;
     t.warBusy = true;
     try {
-      const info = await wc.executeJavaScript('window.__lrxWar ? window.__lrxWar.scan() : null', true);
+      const info = await wc.executeJavaScript('window.__lrxWar ? window.__lrxWar.scan() : null', false);
       if (!info?.active) return;
       const statuses = await warMemberStatuses(info.factionIds || []);
-      if (!wc.isDestroyed() && tabViewed(id)) await wc.executeJavaScript(`window.__lrxWar && window.__lrxWar.update(${JSON.stringify(statuses)}, ${JSON.stringify(featureEnabled('war.groups') ? warGroupLabels(info.factionIds || []) : {})})`, true);
+      if (!wc.isDestroyed() && tabViewed(id)) await wc.executeJavaScript(`window.__lrxWar && window.__lrxWar.update(${JSON.stringify(statuses)}, ${JSON.stringify(featureEnabled('war.groups') ? warGroupLabels(info.factionIds || []) : {})})`, false);
     } catch {} finally { t.warBusy = false; }
   }
   setInterval(() => {
@@ -429,8 +446,11 @@ function main() {
     return clipboard.readText();
   });
 
-  ipcMain.handle('tab-create', async (_event, { id, url, activate = true }) => {
-    if (typeof id !== 'string' || tabs.has(id) || pendingTabCreates.has(id)) return;
+  // A tab only ever shows a web page or a TornTools page: never a local file or a script URL run inside a Torn page.
+  const isTabUrl = (u) => typeof u === 'string' && /^(https?|chrome-extension):\/\//i.test(u);
+
+  ipcMain.handle('tab-create', async (_event, { id, url, activate = true } = {}) => {
+    if (typeof id !== 'string' || !isTabUrl(url) || tabs.has(id) || pendingTabCreates.has(id)) return;
     pendingTabCreates.add(id);
     if (activate) markActive(id);
     await tornRuntimeReady;
@@ -454,13 +474,7 @@ function main() {
       markActive(id);
     }
     // Set initial bounds BEFORE loadURL so Cloudflare Turnstile never sees 0x0 viewport
-    const [width, height] = mainWindow.getContentSize();
-    view.setBounds({
-      x: 0,
-      y: TOP_BAR_HEIGHT,
-      width: Math.max(100, width),
-      height: Math.max(100, height - TOP_BAR_HEIGHT),
-    });
+    view.setBounds(tabViewBounds());
     layoutViews();
 
     const wc = view.webContents;
@@ -481,16 +495,16 @@ function main() {
       win.webContents.setWindowOpenHandler(openHandler);
     });
     guardGoogleNavigation(wc);
-    const navigations = [];
+    // Pages that keep navigating by themselves are stopped (fast bursts always, slow loops unless turned off): src/main/nav-guard.js
+    const navGuard = createNavigationGuard({ slowGuard: () => featureEnabled('app.loopGuard') });
+    wc.on('input-event', (_e, input) => navGuard.input(input.type));
     wc.on('will-navigate', (event) => {
-      const now = Date.now();
-      while (navigations.length && now - navigations[0] > 2500) navigations.shift();
-      navigations.push(now);
-      if (navigations.length > 6) {
-        event.preventDefault();
-        sendToRenderer('torn-data', { type: 'navigation-loop-stopped' });
-        log('Torn navigation loop stopped:', id);
-      }
+      const stop = navGuard.navigate();
+      if (!stop) return;
+      event.preventDefault();
+      if (!stop.report) return;
+      sendToRenderer('torn-data', { type: 'navigation-loop-stopped', kind: stop.kind });
+      log(`Torn navigation loop stopped (${stop.kind}):`, id);
     });
 
     wc.on('did-start-loading', () => sendTabUpdate(id));
@@ -506,13 +520,16 @@ function main() {
     wc.on('dom-ready', () => {
       if (/\/(loader|page)\.php\?(.*&)?sid=attack(&|#|$)/i.test(wc.getURL())) injectTornHelpers(id);
     });
-    // F12 / Ctrl+Shift+I → Torn sekmesinin geliştirici araçları (sorun teşhisi için)
+    // F12 / Ctrl+Shift+I → Torn sekmesinin geliştirici araçları (sorun teşhisi için) · F5 → bu sekmeyi yenile
     wc.on('before-input-event', (e, input) => {
       if (input.type !== 'keyDown') return;
       const key = String(input.key || '').toLowerCase();
       if (key === 'f12' || ((input.control || input.meta) && input.shift && key === 'i')) {
         e.preventDefault();
         if (wc.isDevToolsOpened()) wc.closeDevTools(); else wc.openDevTools({ mode: 'detach' });
+      } else if (key === 'f5' && !input.control && !input.alt && !input.meta) {
+        e.preventDefault();
+        wc.reload();
       }
     });
     wc.on('page-title-updated', () => sendTabUpdate(id));
@@ -573,6 +590,18 @@ function main() {
     }
   });
 
+  // The app page lost its tab bar (it was reloaded) while the Torn views live on here: let it list them again.
+  ipcMain.handle('tab-list', async (event) => {
+    if (!fromAppPage(event)) return { active: 'tracker', tabs: [] };
+    return {
+      active: tabs.has(activeTabId) ? activeTabId : 'tracker',
+      tabs: [...tabs.values()].filter((t) => !t.view.webContents.isDestroyed()).map((t) => {
+        const wc = t.view.webContents;
+        return { id: t.id, url: t.sleptUrl || wc.getURL() || t.url, title: t.sleptUrl ? t.sleptTitle || '' : wc.getTitle() || '', loading: wc.isLoading() };
+      }),
+    };
+  });
+
   ipcMain.handle('tab-close', async (_event, tabId) => {
     pendingTabCreates.delete(tabId);
     const t = tabs.get(tabId);
@@ -587,9 +616,9 @@ function main() {
     layoutViews();
   });
 
-  ipcMain.handle('tab-navigate', async (_event, { tabId, url }) => {
+  ipcMain.handle('tab-navigate', async (_event, { tabId, url } = {}) => {
     const t = tabs.get(tabId);
-    if (!t) return;
+    if (!t || !isTabUrl(url)) return;
     t.url = url;
     t.sleptUrl = null;
     t.view.webContents.loadURL(url).catch((e) => log('nav err:', e.message));
@@ -629,7 +658,7 @@ function main() {
     const wc = t.view.webContents;
     try {
       if (!(await waitProfileLoaded(wc))) return { ok: false, step: 'load' };
-      const opened = await wc.executeJavaScript(chatJs(name), true);
+      const opened = await wc.executeJavaScript(chatJs(name), false);
       if (!opened?.ok) return opened || { ok: false, step: 'box' };
       wc.focus();
       await sleep(150);
@@ -847,10 +876,61 @@ function main() {
         ]).popup({ window: mainWindow });
       });
 
+      // On a monitor with different scaling the first bounds can come out too large and spill onto the next screen
+      const b = mainWindow.getBounds();
+      if (b.x < workArea.x || b.y < workArea.y || b.x + b.width > workArea.x + workArea.width || b.y + b.height > workArea.y + workArea.height) {
+        mainWindow.setBounds({ x: workArea.x + Math.round((workArea.width - width) / 2), y: workArea.y + Math.round((workArea.height - height) / 2), width, height });
+      }
+
       mainWindow.on('resize', layoutViews);
       mainWindow.on('focus', () => { if (tabs.has(activeTabId)) injectTornHelpers(activeTabId); });
       mainWindow.on('maximize', layoutViews);
       mainWindow.on('unmaximize', layoutViews);
+
+      /* Application menu (hidden until Alt). Electron's default View menu reloads and zooms the APP page whatever
+         the user is looking at: Ctrl+R on a Torn tab threw away the tab bar, and Ctrl +/- moved the top bars
+         without moving the Torn view. Reload now acts on what is viewed, and zoom re-lays the Torn view out. */
+      const reloadViewed = () => {
+        const t = tabs.get(activeTabId);
+        if (t) { if (t.sleptUrl) wakeTab(t); else if (!t.view.webContents.isDestroyed()) t.view.webContents.reload(); }
+        else if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.reload();
+      };
+      const zoomApp = (step) => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        const wc = mainWindow.webContents;
+        wc.setZoomLevel(step === 0 ? 0 : wc.getZoomLevel() + step);
+        layoutViews();
+      };
+      Menu.setApplicationMenu(Menu.buildFromTemplate([
+        { role: 'fileMenu' },
+        { role: 'editMenu' },
+        { label: T('Görünüm', 'View'), submenu: [
+          { label: T('Yenile', 'Reload'), accelerator: 'CmdOrCtrl+R', click: reloadViewed },
+          { label: T('Uygulama sayfasını yeniden yükle', 'Reload the app page'), accelerator: 'CmdOrCtrl+Shift+R', click: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.reloadIgnoringCache(); } },
+          { role: 'toggleDevTools' },
+          { type: 'separator' },
+          { label: T('Gerçek boyut', 'Actual Size'), accelerator: 'CmdOrCtrl+0', click: () => zoomApp(0) },
+          { label: T('Yakınlaştır', 'Zoom In'), accelerator: 'CmdOrCtrl+Plus', click: () => zoomApp(0.5) },
+          { label: T('Uzaklaştır', 'Zoom Out'), accelerator: 'CmdOrCtrl+-', click: () => zoomApp(-0.5) },
+          { type: 'separator' },
+          { role: 'togglefullscreen' },
+        ] },
+        { role: 'windowMenu' },
+      ]));
+      // A freshly loaded app page has no dialog open, and a zoom saved earlier is applied by now: show the active
+      // Torn view again and line it up with the top bars.
+      mainWindow.webContents.on('did-finish-load', () => { viewsVisible = true; layoutViews(); });
+
+      // The app page's renderer died (out of memory, a GPU fault ...): bring the page back instead of a blank window.
+      const pageCrashes = [];
+      mainWindow.webContents.on('render-process-gone', (_e, details) => {
+        log('app page renderer gone:', details.reason);
+        if (details.reason === 'clean-exit' || !mainWindow || mainWindow.isDestroyed()) return;
+        const now = Date.now();
+        while (pageCrashes.length && now - pageCrashes[0] > 60_000) pageCrashes.shift();
+        pageCrashes.push(now);
+        if (pageCrashes.length <= 3) mainWindow.webContents.reload(); // never a reload loop
+      });
 
       mainWindow.webContents.setWindowOpenHandler(({ url }) => {
         if (url && /^(https?|chrome-extension):\/\//i.test(url)) {

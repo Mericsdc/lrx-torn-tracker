@@ -76,6 +76,33 @@ test('an expired server session refreshes automatically without another connecti
   const bridge = createPremiumClient(() => key, options); await bridge.status(); expired = true;
   assert.equal((await bridge.status()).connected, true); assert.equal(logins, 2);
 });
+test('a session that expired while the app stayed open is renewed inside the request, exactly once', async () => {
+  let logins = 0, alwaysExpired = false; const feature = [];
+  const { options } = fixture({ fetchImpl: async (url, init) => {
+    if (url.pathname === '/v1/auth/torn') { logins++; return reply({ mode: 'live', token: String(logins).repeat(43), tornId: 123456 }); }
+    if (url.pathname === '/v1/features/save') {
+      feature.push(init.headers.Authorization);
+      return alwaysExpired || init.headers.Authorization === 'Bearer ' + '1'.repeat(43) ? reply({ code: 'SESSION_EXPIRED' }, 401) : reply({ saved: JSON.parse(init.body).name });
+    }
+    return reply({ mode: 'live' });
+  } });
+  const bridge = createPremiumClient(() => key, options);
+  assert.equal((await bridge.status()).connected, true);
+  // The first token is now rejected by the service: the same request succeeds after one silent sign-in.
+  assert.deepEqual(await bridge.proxy('feature-save', 'POST', { name: 'Plan' }), { saved: 'Plan' });
+  assert.equal(logins, 2); assert.deepEqual(feature, ['Bearer ' + '1'.repeat(43), 'Bearer ' + '2'.repeat(43)]);
+  // A service that keeps answering 401 is asked twice, never in a loop.
+  alwaysExpired = true; feature.length = 0;
+  await assert.rejects(bridge.proxy('feature-save', 'POST', { name: 'Plan' }), e => e.code === 'SESSION_EXPIRED' && e.status === 401);
+  assert.equal(feature.length, 2); assert.equal(logins, 3);
+});
+test('a reply that is not a JSON object is a service error, not a crash', async () => {
+  for (const body of ['null', '"text"', '[1]']) {
+    const bridge = createPremiumClient(() => key, { env: {}, defaultServiceUrl: 'https://premium.example', fetchImpl: async () => new Response(body) });
+    await assert.rejects(bridge.status(), e => e.code === 'PREMIUM_SERVICE_RESPONSE', body);
+    await assert.rejects(createPremiumClient(() => key, { env: {}, defaultServiceUrl: 'https://premium.example', fetchImpl: async () => new Response(body, { status: 500 }) }).status(), e => e.code === 'PREMIUM_SERVICE_RESPONSE', body);
+  }
+});
 test('failed automatic login backs off and recovers while free status stays available', async t => {
   let now = Date.now(), logins = 0, down = true; t.mock.method(Date, 'now', () => now);
   const { options } = fixture({ fetchImpl: async url => {

@@ -7,10 +7,11 @@
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/themes.css" />
   <link rel="stylesheet" href="/premium.css" />
-  <script src="/theme-init.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+  <!-- Loaded as "print" so it never delays the first paint; theme-init.js switches it on once it has arrived. -->
+  <link id="web-fonts" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" media="print" />
+  <script src="/theme-init.js"></script>
   <link rel="icon" type="image/png" href="/logo-64.png" />
 </head>
 <body>
@@ -189,7 +190,7 @@
             <button data-lang="en" class="active">EN</button>
             <button data-lang="tr">TR</button>
           </div>
-          <div class="clock glass-pill" title="Torn City Time (UTC)">
+          <div class="clock glass-pill" title="Torn City Time (UTC)" data-i18n-title="top.tct">
             <span class="dot pulse"></span><span class="mono" id="tct-clock">--:--:--</span><small>TCT</small>
           </div>
           <button class="btn glass-pill" id="feedback-btn" type="button" title="Send a request, suggestion or bug report">💬 <span id="feedback-label">Feedback</span></button>
@@ -293,7 +294,9 @@
               <span data-i18n="report.targetStock">Target stock</span>
               <select id="cover-days">
                 <option value="1">1</option><option value="2">2</option><option value="3">3</option>
-                <option value="4">4</option><option value="5">5</option><option value="7">7</option>
+                <option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option>
+                <option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="11">11</option>
+                <option value="12">12</option><option value="13">13</option><option value="14">14</option>
               </select>
             </label>
             <button class="btn primary" id="copy-report">
@@ -424,13 +427,14 @@
                   <small class="muted" id="s-ff-current">—</small>
                 </label>
                 <label><span data-i18n="set.logKeyLabel">Log key (optional)</span>
-                  <input class="input mono" id="s-log" maxlength="16" placeholder="Optional" data-i18n-placeholder="set.optionalPh" autocomplete="off" />
+                  <input class="input mono" id="s-log" type="password" spellcheck="false" autocapitalize="none" placeholder="Optional" data-i18n-placeholder="set.optionalPh" autocomplete="off" />
                   <small class="muted" id="s-log-current">—</small>
                 </label>
                 <div class="settings-actions">
                   <button class="btn primary" type="submit" data-i18n="set.saveBtn">Save</button>
                   <button class="btn ghost sm" type="button" id="s-log-create" data-i18n="set.logKeyCreate">Create a log key in Torn ↗</button>
                   <button class="btn ghost sm danger" type="button" id="s-log-remove" hidden data-i18n="set.logKeyRemove">Remove log key</button>
+                  <button class="btn ghost sm danger" type="button" id="s-ff-remove" hidden data-i18n="set.ffKeyRemove">Remove FFScouter key</button>
                 </div>
               </form>
             </article>
@@ -525,9 +529,9 @@
 
   <!-- Google Sign-In & Cookie Import Modal -->
   <div class="modal-backdrop" id="login-modal" hidden>
-    <div class="glass card modal-card">
+    <div class="glass card modal-card" role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
       <div class="card-head">
-        <h3 data-i18n="login.title">🔑 Torn Login &amp; Session Import (for Google Accounts)</h3>
+        <h3 id="login-modal-title" data-i18n="login.title">🔑 Torn Login &amp; Session Import (for Google Accounts)</h3>
         <button class="btn sm ghost" id="login-modal-close" title="Close" data-i18n-title="login.close">✕</button>
       </div>
       <div class="modal-body">
@@ -583,7 +587,7 @@
     </div>
   </div>
 
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <div class="modal-backdrop" id="update-modal" hidden>
     <section class="glass card modal-card" role="dialog" aria-modal="true" aria-labelledby="update-dialog-title" aria-describedby="update-dialog-description">
       <header class="update-dialog-header">

@@ -30,7 +30,7 @@ async function desktop(tornId) {
       }
     };
   });
-  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('pageerror', (e) => errors.push(e.message)); page.on('console', (m) => { if (/Content Security Policy/i.test(m.text())) errors.push(m.text()); });
   await page.route('**/*', (route) => {
     const u = new URL(route.request().url()); if (u.origin !== base) return route.abort();
     const fixtures = { '/api/travel': travel, '/api/events': events, '/api/merit-allocation': merits, '/api/awards': { awards: [], totals: { honors: [1, 10], medals: [1, 10], awards: 2 }, at: Date.now() } };

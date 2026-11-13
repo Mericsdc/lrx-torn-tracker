@@ -26,6 +26,9 @@
       FEATURE_PROFILE_CONFLICT: ['Profil başka bir yerde değişti. Paneli kapatıp yeniden açın.', 'This profile changed elsewhere. Close and reopen the panel.'], PALETTE_CONTRAST: ['Yazı veya vurgu rengi arka planda okunamıyor. Daha yüksek kontrast seçin.', 'Text or accents lack contrast. Choose more readable colors.'],
       INVALID_FEATURE_INPUT: ['Alanları kontrol edin; veri eksik veya sınır dışında.', 'Check the fields: a value is missing or out of range.'], EVENT_NOT_AVAILABLE: ['Torn takviminden bir etkinlik seçin.', 'Choose an event from the Torn calendar.'], MERIT_TRACK_CHANGED: ['Merit listesi değişti. Yeni plan oluşturun veya dağılımı güncelleyin.', 'The merit list changed. Create a new plan or update its allocation.'], FEATURE_RATE_LIMIT: ['Çok sık işlem yaptınız. Bir dakika sonra tekrar deneyin.', 'Too many operations. Try again in a minute.'],
       PREMIUM_DISABLED: ['Premium bağlantısı kapalı. Ayarlar → Genel → Uygulama bölümünden açabilirsiniz.', 'Premium connection is off. You can turn it on in Settings → General → App.'], PREMIUM_SERVICE_UNREACHABLE: ['Üyelik servisine ulaşılamıyor. Biraz sonra yeniden deneyin.', 'Membership service is unreachable. Please try again shortly.'], PREMIUM_SERVICE_ERROR: ['Üyelik servisi şu anda yanıt vermiyor. Biraz sonra yeniden deneyin.', 'The membership service is not responding right now. Please try again shortly.'],
+      INVALID_PROFILE_NAME: ['Profil adı gir (en fazla 60 karakter).', 'Enter a profile name (up to 60 characters).'], PROFILE_LIMIT: ['Bir modülde en fazla 12 profil saklanabilir. Önce birini silin.', 'A module can hold up to 12 profiles. Delete one first.'],
+      PROFILE_NOT_FOUND: ['Bu profil artık yok. Paneli kapatıp yeniden açın.', 'This profile no longer exists. Close and reopen the panel.'], FEATURE_ANALYSIS_PAUSED: ['Gelişmiş analiz duraklatılmış. Sürdürmek için paneli yeniden açın.', 'Advanced analysis is paused. Reopen the panel to resume it.'],
+      PREMIUM_IDENTITY_CHANGED: ['Hesap değişti. Paneli yeniden açın.', 'The account changed. Reopen the panel.'], TIMEOUT: ['Üyelik servisi zamanında yanıt vermedi. Tekrar deneyin.', 'The membership service did not respond in time. Please try again.'],
       SESSION_EXPIRED: ['Üyelik bağlantısı otomatik yenileniyor. Biraz sonra yeniden deneyin.', 'Membership is reconnecting automatically. Please try again shortly.'], PREMIUM_CONNECT_REQUIRED: ['Üyelik bağlantısı otomatik kuruluyor. Biraz sonra yeniden deneyin.', 'Membership is connecting automatically. Please try again shortly.'], UNKNOWN_FEATURE: ['Bu modül bulunamadı.', 'This module was not found.'],
     };
     const code = e?.code || e?.message;
@@ -40,6 +43,7 @@
     if (id === 'events_advanced') return { eventKey: '', goal: 100, useManual: false, manualProgress: 0, reminderMinutes: 60, notifyPercent: 90, notifications: false };
     return { budget: 20, goal: 'balanced', priorities: {}, targets: {}, comparison: {}, manual: false, manualLevels: {} };
   }
+  const serverSeconds = (ms) => Math.floor((ms + (state.skew || 0)) / 1000);
   function travelInput() {
     const d = travelState.data; if (!d) return null;
     return { items: d.countries.filter((c) => c.minutes).flatMap((c) => c.items.map((r) => ({ key: c.code + ':' + r.id, name: r.name, country: c.name, code: c.code, cost: Number(r.cost), market: Number(r.market) > 0 ? Number(r.market) : null, qty: Number(r.qty), minutes: c.minutes, at: c.update, source: c.source }))).slice(0, 500) };
@@ -54,9 +58,9 @@
   function eventInput(d) {
     if (!d) return null;
     return { events: d.events.slice(0, 100).map((e) => {
-      let progress = null, at = Math.floor(d.at / 1000);
+      let progress = null, at = serverSeconds(d.at);
       const active = e.start <= nowTct() / 1000 && e.end >= nowTct() / 1000;
-      if (active && /halloween|trick or treat/i.test(e.title) && d.halloween) { progress = d.halloween.treats?.total ?? null; at = Math.floor(d.halloween.at / 1000); }
+      if (active && /halloween|trick or treat/i.test(e.title) && d.halloween) { progress = d.halloween.treats?.total ?? null; at = serverSeconds(d.halloween.at); }
       if (active && /easter/i.test(e.title) && d.easter) { progress = d.easter.score ?? null; }
       return { key: (e.title.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 60) + ':' + e.start), title: e.title, start: e.start, end: e.end, exact: e.exact, progress, at };
     }) };
@@ -70,9 +74,9 @@
     if (id === 'merits_optimizer') {
       if (!meritCache || Date.now() - meritAt > 300000) {
         try { meritCache = await api('/api/merit-allocation'); meritAt = Date.now(); }
-        catch { return { tracks: manualTracks.map((r) => ({ ...r })), available: null, awards: null, observedAt: Math.floor(Date.now() / 1000), source: 'manual' }; }
+        catch { return { tracks: manualTracks.map((r) => ({ ...r })), available: null, awards: null, observedAt: serverSeconds(Date.now()), source: 'manual' }; }
       }
-      return { tracks: meritCache.tracks, available: meritCache.available, awards: meritCache.awards, observedAt: Math.floor(meritCache.at / 1000), source: meritCache.source };
+      return { tracks: meritCache.tracks, available: meritCache.available, awards: meritCache.awards, observedAt: serverSeconds(meritCache.at), source: meritCache.source };
     }
   }
   function ruleFields(p, metrics) {
@@ -133,21 +137,24 @@
     c.host.innerHTML = `<article class="fx-workbench">${intro}<div class="fx-workbody"><p class="fx-note fx-data-notice">${tr('Bu aracı kullandığınızda seçtiğiniz veriler üyelik sunucusunda analiz edilir. Kaydettiğiniz profiller ve ölçümler hesabınıza bağlı tutulur; API anahtarınız analize eklenmez.', 'Using this tool sends selected data to the membership server for analysis. Saved profiles and observations are linked to your account; your API key is never part of the analysis.')}</p>${body}<p class="fx-feedback" role="status"></p></div></article>`;
   }
   function readParams() {
-    const c = current, f = c.host.querySelector('[data-fx-form]'); if (!f) return c.params;
+    const c = current, f = c.host.querySelector('[data-fx-form]'); if (!f || f.querySelector('fieldset')?.disabled) return c.params;
     const p = structuredClone(c.params), data = new FormData(f);
+    // Countries, the watched item, the event and the merit rows are drawn from the module's data. Until that has
+    // loaded the form does not contain them, and reading it would wipe the saved selections.
+    const loaded = c.input != null;
     const n = (k) => Number(data.get(k)), s = (k) => String(data.get(k) || ''), b = (k) => data.has(k);
     c.name = s('profileName');
     if (c.id === 'appearance_custom_themes') { for (const k of ['preset', 'baseTheme', 'density', 'cards']) p[k] = s(k); p.radius = n('radius'); p.palette = Object.fromEntries(['bg', 'panel', 'text', 'muted', 'accent'].map((k) => [k, s('palette.' + k)])); }
-    if (c.id === 'travel_advanced') { for (const k of ['capacity', 'waitMinutes', 'feePercent', 'sellChangePercent', 'fixedCosts', 'maxFlight', 'minProfit']) p[k] = n(k); p.method = s('method'); p.watchKey = s('watchKey'); p.onlyInStock = b('onlyInStock'); p.countries = [...data.keys()].filter((k) => k.startsWith('country.')).map((k) => k.slice(8)); }
+    if (c.id === 'travel_advanced') { for (const k of ['capacity', 'waitMinutes', 'feePercent', 'sellChangePercent', 'fixedCosts', 'maxFlight', 'minProfit']) p[k] = n(k); p.method = s('method'); p.onlyInStock = b('onlyInStock'); if (loaded) { p.watchKey = s('watchKey'); p.countries = [...data.keys()].filter((k) => k.startsWith('country.')).map((k) => k.slice(8)); } }
     if (c.id === 'helpers_advanced') { for (const k of ['minLevel', 'maxLevel', 'minStats', 'maxStats', 'minFF', 'maxFF']) p[k] = n(k); for (const k of ['status', 'group', 'sort']) p[k] = s(k); p.includeUnknown = b('includeUnknown'); p.columns = [...data.keys()].filter((k) => k.startsWith('column.')).map((k) => k.slice(7)); p.compare = [...new Set([0, 1, 2, 3].map((i) => n('compare.' + i)).filter(Boolean))]; }
     if (p.rule) p.rule = { enabled: b('rule.enabled'), metric: s('rule.metric'), operator: s('rule.operator'), threshold: n('rule.threshold') };
-    if (c.id === 'events_advanced') { p.eventKey = s('eventKey'); for (const k of ['goal', 'manualProgress', 'reminderMinutes', 'notifyPercent']) p[k] = n(k); p.useManual = b('useManual'); p.notifications = b('notifications'); }
-    if (c.id === 'merits_optimizer') { p.budget = n('budget'); p.goal = s('goal'); p.manual = b('manual'); for (const k of ['priorities', 'targets', 'comparison', 'manualLevels']) p[k] = {}; for (const t of c.input?.tracks || []) { if (s('priority.' + t.id) !== '') p.priorities[t.id] = n('priority.' + t.id); p.targets[t.id] = n('targets.' + t.id); p.comparison[t.id] = n('comparison.' + t.id); if (p.manual) p.manualLevels[t.id] = n('rank.' + t.id); } }
+    if (c.id === 'events_advanced') { if (loaded) p.eventKey = s('eventKey'); for (const k of ['goal', 'manualProgress', 'reminderMinutes', 'notifyPercent']) p[k] = n(k); p.useManual = b('useManual'); p.notifications = b('notifications'); }
+    if (c.id === 'merits_optimizer') { p.budget = n('budget'); p.goal = s('goal'); p.manual = b('manual'); if (loaded) for (const k of ['priorities', 'targets', 'comparison', 'manualLevels']) p[k] = {}; for (const t of c.input?.tracks || []) { if (s('priority.' + t.id) !== '') p.priorities[t.id] = n('priority.' + t.id); p.targets[t.id] = n('targets.' + t.id); p.comparison[t.id] = n('comparison.' + t.id); if (p.manual) p.manualLevels[t.id] = n('rank.' + t.id); } }
     c.params = p; return p;
   }
   function effectiveInput(c) {
     if (c.id !== 'merits_optimizer' || !c.params.manual) return c.input;
-    return { ...c.input, source: 'manual', observedAt: Math.floor(Date.now() / 1000), available: null, awards: null, tracks: c.input.tracks.map((t) => ({ ...t, level: c.params.manualLevels[t.id] ?? t.level })) };
+    return { ...c.input, source: 'manual', observedAt: serverSeconds(Date.now()), available: null, awards: null, tracks: c.input.tracks.map((t) => ({ ...t, level: c.params.manualLevels[t.id] ?? t.level })) };
   }
   function alerts(id, result, profileId) {
     if (!profileId || !feat('notify') || !gate.can(id) || !gate.snapshot()?.featureAccess?.consent) return;
@@ -209,6 +216,7 @@
       if (action === 'restore-free') { c.workspace = await gate.call('select', { featureId: c.id, revision: c.workspace.revision, profileId: null }); workspaces.set(c.id, c.workspace); gate.clearAppearance(); render(); return; }
       if (action === 'save') {
         const f = c.host.querySelector('[data-fx-form]'); if (!f.reportValidity()) return; readParams();
+        if (!c.name.trim()) { feedback(errorText({ code: 'INVALID_PROFILE_NAME' }), true); f.querySelector('[name="profileName"]')?.focus(); return; }
         c.workspace = await gate.call('save', { featureId: c.id, revision: c.workspace.revision, profileId: c.profileId, name: c.name, params: c.params, activate: true });
         c.profileId = c.workspace.savedId; c.params = c.workspace.profiles.find((p) => p.id === c.profileId).params;
         workspaces.set(c.id, c.workspace); if (c.id === 'appearance_custom_themes') await runCurrent();
@@ -238,7 +246,7 @@
   window.addEventListener('lrx-feature-access-changed', () => { if (current) { readParams(); render(); } });
   const prevLang = window.onLangChanged; window.onLangChanged = () => { prevLang?.(); if (current) { readParams(); render(); } };
   async function background() {
-    if (backgroundBusy || !gate.snapshot()?.featureAccess?.consent) return; backgroundBusy = true;
+    if (backgroundBusy || !feat('notify') || !gate.snapshot()?.featureAccess?.consent) return; backgroundBusy = true;
     try {
       for (const [id, w] of workspaces) {
         if (!gate.can(id)) continue;

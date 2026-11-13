@@ -1,7 +1,8 @@
 /* LRX Alış Fiyatı Koruması — Item Market "Add listing" ve bazaar ekle / yönet sayfaları
    • Alış fiyatını bildiğin eşyanın satırında: "Alış $X · başa baş $Y"
    • Girdiğin fiyat başa başın altındaysa satır kırmızı uyarı verir ("adet başı −$Z zarar"), üstündeyse yeşil kâr gösterir
-   • Başa baş = alış / (1 − komisyon): Item Market %5, bazaar %0
+   • Başa baş = alış / (1 − komisyon): Item Market %5 satış vergisi (22 Haziran 2025’ten beri, Torn wiki), bazaar %0.
+     İsteğe bağlı anonim ilanın ek %10 ücreti hesaba katılmaz.
    Alış fiyatları uygulamadan gelir (window.__lrxCosts: eşya ID → fiyat; Torn log'u ya da Araçlar sayfasında elle girilen).
    Yalnızca açık sayfayı okur ve boyar: Torn'a istek atmaz, hiçbir şeye tıklamaz, ilanı engellemez ya da değiştirmez. */
 (() => {

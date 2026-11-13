@@ -1,6 +1,7 @@
 (() => {
   let faction = null, data = { groups: [], assignments: {} }, filter = '*';
   let loading = false, busy = false, selected = new Set(), visible = [], error = '';
+  let destination = ''; // group chosen for "Move selected"; '' = ungrouped
   const host = $('#war-groups');
   const enabled = () => feat('war.groups'); // Settings → Pages → War Targets → Target groups
   const current = () => enabled() && faction === state.factionId;
@@ -30,6 +31,7 @@
     const draft = $('#group-name')?.value || '';
     const wasEditing = document.activeElement?.id === 'group-name';
     const editable = data.groups.some((g) => g.id === filter);
+    if (destination && !data.groups.some((g) => g.id === destination)) destination = '';
     const disabled = busy ? 'disabled' : '';
     host.innerHTML = `<div class="group-controls"><strong>${tr('Hedef grupları', 'Target groups')}</strong>
       <select class="input" id="group-filter" aria-label="${tr('Grup filtresi', 'Group filter')}" ${disabled}>${options(filter, true)}</select>
@@ -42,7 +44,7 @@
       </form>
       <div class="group-bulk"><label class="check"><input type="checkbox" id="group-select-all" ${visible.length && visible.every((id) => selected.has(id)) ? 'checked' : ''} ${disabled}>${tr('Görünenleri seç', 'Select visible')}</label>
         <span id="group-selection-count">${selected.size} ${tr('seçili', 'selected')}</span>
-        <select class="input" id="group-bulk-destination" aria-label="${tr('Hedef grup', 'Destination group')}" ${disabled}>${options('')}</select>
+        <select class="input" id="group-bulk-destination" aria-label="${tr('Hedef grup', 'Destination group')}" ${disabled}>${options(destination)}</select>
         <button class="btn sm" type="button" data-group-assign ${!selected.size || busy ? 'disabled' : ''}>${tr('Seçilenleri taşı', 'Move selected')}</button>
       </div>`;
     $('#group-name').value = draft;
@@ -53,7 +55,7 @@
   window.loadWarGroups = async (force = false) => {
     const fid = state.factionId;
     if (!enabled() || !fid || (faction === fid && !force)) return;
-    faction = fid; filter = '*'; selected.clear(); data = { groups: [], assignments: {} };
+    faction = fid; filter = '*'; destination = ''; selected.clear(); data = { groups: [], assignments: {} };
     loading = true; error = null; render();
     try {
       const result = await api('/api/war-groups?faction=' + fid);
@@ -104,10 +106,11 @@
       mutate({ action: 'rename', groupId: filter, name: $('#group-name').value });
     }
     if (e.target.closest('[data-group-remove]')) mutate({ action: 'remove', groupId: filter });
-    if (e.target.closest('[data-group-assign]')) mutate({ action: 'assign', groupId: $('#group-bulk-destination').value, playerIds: [...selected] });
+    if (e.target.closest('[data-group-assign]')) mutate({ action: 'assign', groupId: destination, playerIds: [...selected] });
   });
   host.addEventListener('change', (e) => {
     if (e.target.id === 'group-filter') { filter = e.target.value; selected.clear(); renderTargets(); }
+    if (e.target.id === 'group-bulk-destination') destination = e.target.value;
     if (e.target.id === 'group-select-all') { selected = e.target.checked ? new Set(visible) : new Set(); renderTargets(); }
   });
   $('#war-table').addEventListener('change', (e) => {

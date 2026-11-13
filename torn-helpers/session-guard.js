@@ -5,23 +5,32 @@
   window.__lrxSessionGuard = true;
   const isTorn = (u) => u.protocol === 'https:' && u.hostname === 'www.torn.com';
   const token = () => document.cookie.split(/;\s*/).find((s) => s.startsWith('rfc_v='))?.slice(6) || '';
+  // A cookie value with a stray "%" must not make Torn's own request throw: use it as it is.
+  const plain = (value) => { try { return decodeURIComponent(value); } catch { return value; } };
   const fix = (raw) => {
     try {
       const url = new URL(raw, location.href), value = token();
       if (!isTorn(url) || !url.searchParams.has('rfcv') || !value) return raw;
-      url.searchParams.set('rfcv', decodeURIComponent(value));
+      url.searchParams.set('rfcv', plain(value));
       return url.href;
     } catch { return raw; }
   };
   const originalFetch = window.fetch;
+  // Only the token itself is replaced. Everything else in the body stays exactly as Torn's page sent it.
   const fixBody = (body) => {
     const value = token(); if (!value) return body;
-    if (body instanceof URLSearchParams || typeof body === 'string' && /(^|&)rfcv=/.test(body)) {
-      const copy = new URLSearchParams(body); if (copy.has('rfcv')) copy.set('rfcv', decodeURIComponent(value));
-      return body instanceof URLSearchParams ? copy : copy.toString();
+    if (body instanceof URLSearchParams) {
+      if (!body.has('rfcv')) return body;
+      const copy = new URLSearchParams(body); copy.set('rfcv', plain(value));
+      return copy;
+    }
+    if (typeof body === 'string') {
+      // JSON (or any other text) is not form data: parsing it as a query string would destroy it.
+      if (/^\s*[{[]/.test(body)) return body;
+      return body.replace(/(^|&)rfcv=[^&]*/g, (_match, lead) => `${lead}rfcv=${encodeURIComponent(plain(value))}`);
     }
     if (body instanceof FormData && body.has('rfcv')) {
-      const copy = new FormData(); for (const [key, val] of body) copy.append(key, key === 'rfcv' ? decodeURIComponent(value) : val);
+      const copy = new FormData(); for (const [key, val] of body) copy.append(key, key === 'rfcv' ? plain(value) : val);
       return copy;
     }
     return body;
@@ -79,6 +88,6 @@
     const action = fix(form.action);
     if (action !== form.action) form.action = action;
     const field = form.querySelector('input[name="rfcv"]');
-    if (field && token()) field.value = decodeURIComponent(token());
+    if (field && token()) field.value = plain(token());
   }, true);
 })();

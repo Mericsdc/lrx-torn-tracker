@@ -2,6 +2,7 @@
 (() => {
   const catalog = window.LRXFeatureCatalog;
   let snapshot = null, pending = null, fetched = 0, deadline = 0, generation = 0, lastSignature = '', restoreOwner = null, loadingModule = null;
+  let knownOwner = null, renewTimer = null; // knownOwner: the player this page last saw connected
   const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/feature-access.css'; document.head.append(css);
   const owner = () => snapshot?.account?.tornId || null;
   function can(id) { const d = catalog.byId[id]; return !!d && (d.tier === 'free' || performance.now() < deadline && snapshot?.account?.verified && snapshot?.featureAccess?.permissions?.[id] === true); }
@@ -19,7 +20,12 @@
     if (!c || !['bg', 'panel', 'text', 'muted', 'accent'].every((k) => /^#[0-9a-f]{6}$/i.test(c[k]))) return;
     const vars = { '--bg': c.bg, '--bg-2': c.bg, '--panel': c.panel, '--panel-end': c.bg, '--field': c.bg, '--workspace-chrome': c.bg, '--text': c.text, '--muted': c.muted, '--muted-2': c.muted, '--tq': c.accent, '--tq-2': c.accent, '--tq-soft': c.accent + '18', '--tq-border': c.accent + '66', '--gold': c.accent, '--gold-2': c.accent, '--radius': p.radius + 'px', '--radius-sm': Math.min(p.radius, 10) + 'px' };
     for (const [k, value] of Object.entries(vars)) root.style.setProperty(k, value);
-    root.style.setProperty('color-scheme', p.baseTheme === 'light' ? 'light' : 'dark'); root.dataset.theme = p.baseTheme;
+    // The base theme carries fixed colours of its own (white tiles, dark glass): a dark palette on the Light base,
+    // or a light palette on a dark base, is unreadable. The palette's own background picks the matching kind.
+    const channel = (i) => { const v = parseInt(c.bg.slice(i, i + 2), 16) / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    const lightPalette = 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5) > 0.4;
+    const base = lightPalette ? 'light' : p.baseTheme === 'light' ? 'obsidian' : p.baseTheme;
+    root.style.setProperty('color-scheme', lightPalette ? 'light' : 'dark'); root.dataset.theme = base;
     root.dataset.premiumAppearance = 'true'; root.dataset.density = p.density; root.dataset.cardStyle = p.cards;
     try { localStorage.removeItem('lrx.appearance.disabled.' + owner()); } catch {}
   }
@@ -51,9 +57,18 @@
     else if (restoreOwner !== owner()) { restoreOwner = owner(); restoreAppearance(); }
   }
   function accept(value) {
-    const prev = owner(); snapshot = value; fetched = performance.now();
-    const a = value?.featureAccess; deadline = a ? performance.now() + Math.max(0, Math.min(60, a.validUntil - a.serverNow)) * 1000 : 0;
-    if (prev !== owner()) { generation++; clearAppearance(); restoreOwner = null; window.dispatchEvent(new Event('lrx-feature-identity-changed')); }
+    snapshot = value; fetched = performance.now();
+    const a = value?.featureAccess, left = a ? a.validUntil - a.serverNow : 0;
+    deadline = a ? performance.now() + Math.max(0, Math.min(60, left)) * 1000 : 0;
+    // A grant normally lasts a minute and the half-minute check renews it. A shorter one means the 24-hour server
+    // session (or the membership itself) ends within the minute: ask again right after that moment, so a session
+    // renewal does not leave the modules locked and the custom theme off until the next regular check.
+    clearTimeout(renewTimer);
+    if (left > 0 && left < 60) renewTimer = setTimeout(() => status(true).catch(() => {}), (left + 1) * 1000);
+    // Only a DIFFERENT player is a change of identity. A moment without a connection (the service or Torn is busy
+    // while the session renews) must not close an open workbench and lose what was typed into it.
+    const next = owner();
+    if (next && next !== knownOwner) { knownOwner = next; generation++; clearAppearance(); restoreOwner = null; window.dispatchEvent(new Event('lrx-feature-identity-changed')); }
     changed(); return snapshot;
   }
   async function status(force = false) {
@@ -96,7 +111,7 @@
     clearAppearance(); try { localStorage.setItem('lrx.appearance.disabled.' + owner(), '1'); } catch {}
     if (can('appearance_custom_themes')) call('workspace', { featureId: 'appearance_custom_themes' }).then((w) => call('select', { featureId: 'appearance_custom_themes', revision: w.revision, profileId: null })).catch(() => {});
   });
-  window.addEventListener('lrx-premium-reset', () => { generation++; deadline = 0; snapshot = null; pending = null; fetched = 0; restoreOwner = null; clearAppearance(); changed(); window.dispatchEvent(new Event('lrx-feature-identity-changed')); setTimeout(() => status(true).catch(() => {}), 0); });
+  window.addEventListener('lrx-premium-reset', () => { generation++; deadline = 0; snapshot = null; pending = null; fetched = 0; restoreOwner = null; knownOwner = null; clearTimeout(renewTimer); clearAppearance(); changed(); window.dispatchEvent(new Event('lrx-feature-identity-changed')); setTimeout(() => status(true).catch(() => {}), 0); });
   const previousLang = window.onLangChanged; window.onLangChanged = () => { previousLang?.(); paint(); };
   window.PremiumAccess = { can, status, accept, call, applyAppearance, clearAppearance, snapshot: () => snapshot, repaint: paint };
   if (typeof FEATURE_HOOKS !== 'undefined') FEATURE_HOOKS.push(paint);

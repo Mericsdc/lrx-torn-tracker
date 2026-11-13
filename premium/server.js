@@ -90,7 +90,13 @@ function createHttpServer(config, dependencies = {}) {
       if (url.pathname === '/v1/premium/access-check' && req.method === 'GET') { service.requirePremium(actor); return send(res, 200, { entitled: true }); }
       if (url.pathname.startsWith('/v1/admin')) {
         service.store.assertAdmin(actor);
-        if (url.pathname === '/v1/admin' && req.method === 'GET') { service.store.audit(actor, 'admin.read', 'premium', 'Administrator viewed billing records', null, null); return send(res, 200, { ...service.info(), ...service.store.adminData(), featureOverrides: service.store.db.prepare('SELECT torn_id,feature_id,allowed,updated_at FROM premium_feature_overrides ORDER BY updated_at DESC LIMIT 100').all() }); }
+        if (url.pathname === '/v1/admin' && req.method === 'GET') {
+          // The admin page reloads itself every 15 seconds. A viewing is recorded once per administrator per ten
+          // minutes, so the audit trail (its last 100 entries are shown) is not buried under "viewed" rows.
+          const viewed = service.store.db.prepare("SELECT created_at FROM premium_audit_log WHERE actor_torn_id=? AND action='admin.read' ORDER BY id DESC LIMIT 1").get(actor.tornId);
+          if (!viewed || service.store.now() - viewed.created_at >= 600) service.store.audit(actor, 'admin.read', 'premium', 'Administrator viewed billing records', null, null);
+          return send(res, 200, { ...service.info(), ...service.store.adminData(), featureOverrides: service.store.db.prepare('SELECT torn_id,feature_id,allowed,updated_at FROM premium_feature_overrides ORDER BY updated_at DESC LIMIT 100').all() });
+        }
         if (req.method === 'POST') return send(res, 200, await service.adminAction(actor, url.pathname.slice('/v1/admin/'.length), await readBody(req)));
       }
       fail('NOT_FOUND', 404);

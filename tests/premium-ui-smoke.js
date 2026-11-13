@@ -24,7 +24,7 @@ async function desktop(tornId) {
   const port = await new Promise((resolve, reject) => { child.once('message', (m) => resolve(m.port)); child.once('error', reject); child.once('exit', (code) => reject(Error('Fixture exited ' + code))); });
   const base = 'http://127.0.0.1:' + port, context = await browser.newContext({ viewport: { width: 1440, height: 1050 } });
   const page = await context.newPage(), errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('pageerror', (e) => errors.push(e.message)); page.on('console', (m) => { if (/Content Security Policy/i.test(m.text())) errors.push(m.text()); });
   await page.route('**/*', (route) => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
   await page.goto(base + '/#premium');
   await page.locator('#auth-key').waitFor({ state: 'visible' });

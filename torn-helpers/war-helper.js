@@ -13,7 +13,8 @@
   const ATTACK = '.attack, [class*="attack___"]';
   const SOON_MS = 60_000;
 
-  const data = { st: {}, groups: {} }; // oyuncuId -> status / local group label
+  const data = { st: {}, groups: {}, at: 0 }; // oyuncuId -> status / local group label; at: when the statuses arrived
+  const STALE_MS = 60_000;
 
   const style = document.createElement('style');
   style.id = 'lrx-war-css';
@@ -45,7 +46,8 @@
 
   // Üyenin şu anki durumu: API verisi öncelikli, yoksa Torn'un yazısı
   const stateOf = (row, statusCell) => {
-    const info = data.st[idOf(row)];
+    // Statuses older than a minute are not shown as live: Torn's own status text decides until fresh ones arrive.
+    const info = Date.now() - data.at <= STALE_MS ? data.st[idOf(row)] : null;
     const domText = (statusCell?.textContent || '').trim().toLowerCase();
     if (info) {
       const left = info.u ? info.u * 1000 - Date.now() : 0;
@@ -129,7 +131,7 @@
     },
     // Ana süreç: { oyuncuId: { s, u, d } }
     update(statuses, groups) {
-      if (statuses && typeof statuses === 'object') data.st = statuses;
+      if (statuses && typeof statuses === 'object') { data.st = statuses; data.at = Date.now(); }
       data.groups = groups || {};
       tick();
     },

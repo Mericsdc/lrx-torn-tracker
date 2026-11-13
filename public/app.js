@@ -36,6 +36,7 @@ const I18N = {
   'nav.war': ['Savaş Hedefleri', 'War Targets'],
   'nav.settings': ['Ayarlar', 'Settings'],
   'top.refresh': ['Yenile', 'Refresh'],
+  'top.tct': ['Torn City Saati (UTC)', 'Torn City Time (UTC)'],
   'ws.tornHome': ['Torn Ana Sayfa', 'Torn Home'],
   'ws.company': ['Şirketim', 'My Company'],
   'ws.travel': ['Rehab / Seyahat', 'Rehab / Travel'],
@@ -111,6 +112,7 @@ const I18N = {
   'set.logKeyLabel': ['Log key (isteğe bağlı)', 'Log key (optional)'],
   'set.logKeyCreate': ["Torn'da log key oluştur ↗", 'Create a log key in Torn ↗'],
   'set.logKeyRemove': ["Log key'i sil", 'Remove log key'],
+  'set.ffKeyRemove': ["FFScouter key'i sil", 'Remove FFScouter key'],
   'set.trackTitle': ['Takip', 'Tracking'],
   'set.updateTitle': ['Güncelleme', 'Updates'],
   'set.updateCheck': ['Şimdi kontrol et', 'Check now'],
@@ -178,6 +180,7 @@ function applyLang() {
   const vm = VIEW_META[state.view]?.[state.lang] || VIEW_META.overview[state.lang];
   $('#view-title').textContent = vm[0];
   $('#view-sub').textContent = vm[1];
+  $$('#nav .nav-item').forEach((b) => { const name = $('span', b)?.textContent.trim(); if (name) { b.title = name; b.setAttribute('aria-label', name); } });
   $$('#cover-days option').forEach((opt) => {
     const v = opt.value;
     opt.textContent = state.lang === 'en' ? `${v} ${v === '1' ? 'day' : 'days'}` : `${v} gün`;
@@ -293,6 +296,8 @@ async function copyText(txt, okMsg = tr('Kopyalandı', 'Copied')) {
 
 function toast(msg) {
   const t = $('#toast');
+  // A Torn tab is a native view drawn over everything below the top bars: show the message in the bar area there.
+  t.classList.toggle('over-tab', state.activeWsTab !== 'tracker' && !!window.electronAPI?.tabCreate);
   t.textContent = msg; t.classList.add('show');
   clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2600);
 }
@@ -304,7 +309,8 @@ function setAlert(key, html, type = 'danger') {
 }
 
 // Sunucu Torn kotası için bekleyebilir (throttle) ya da üyelik servisine birkaç istek zincirleyebilir: bu yollara daha uzun süre tanı
-const SLOW_API = /^\/api\/(?:premium\/|targets|estimate|faction)/;
+// config/auth: a new main key is checked with Torn behind the shared rate limit, which can take over a minute
+const SLOW_API = /^\/api\/(?:premium\/|targets|estimate|faction|(?:config|auth)(?:$|\?))/;
 async function api(path, opts = {}) {
   const { timeout, ...init } = opts;
   let res;
@@ -360,7 +366,7 @@ function showView(v) {
   $('#view-title').textContent = vm[0];
   $('#view-sub').textContent = vm[1];
   location.hash = v;
-  if (v === 'war') { if (!state.wars) loadWars(); if (state.factionId && !state.targets) loadTargets(); window.loadWarGroups?.(); }
+  if (v === 'war') { if (!state.wars || Date.now() - (state.warsAt || 0) > 60_000) loadWars(); if (state.factionId && !state.targets) loadTargets(); window.loadWarGroups?.(); }
   if (v === 'settings') loadConfig();
   window.onViewShown?.(v);
 }
@@ -385,18 +391,29 @@ $('#lang-toggle').addEventListener('click', (e) => {
 /* =========================================================
    OVERVIEW
    ========================================================= */
+/* When was this overview true? The server can answer from its short cache and the page can start from a saved copy,
+   so "now" is wrong by up to the cache age: every countdown and the TCT clock would run that much late.
+   `fetchedAt` is the moment Torn sent the reply (this computer's clock). */
+function stampOverview(o, fallbackAt = Date.now()) {
+  const at = Number(o?.fetchedAt) > 0 ? Math.min(Number(o.fetchedAt), Date.now()) : fallbackAt;
+  state.overviewAt = at;
+  if (Number(o?.serverTime) > 0) state.skew = o.serverTime * 1000 - at;
+}
+const clockOrDate = (ms) => new Date(ms).toLocaleString(timeLocale(), Date.now() - ms > 20 * 3600_000
+  ? { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' } : { hour: '2-digit', minute: '2-digit' });
 async function loadOverview(force = false) {
   try {
     const o = await api('/api/overview' + (force ? '?force=1' : ''));
-    state.overview = o; state.overviewAt = Date.now();
-    state.skew = o.serverTime * 1000 - Date.now();
+    state.overview = o; stampOverview(o);
     try { localStorage.setItem('tt.cache.overview', JSON.stringify({ data: o, at: state.overviewAt })); } catch {}
     setAlert('overview', null);
     renderOverview();
   } catch (e) {
-    if (!state.overview) {
-      setAlert('overview', `<b>${tr('Kullanıcı verisi alınamadı:', 'Failed to load user data:')}</b>&nbsp;${esc(e.message)}${e.status === 412 ? ` <button class="btn sm" onclick="showView('settings')">${tr('Ayarlar', 'Settings')}</button>` : ''}`);
-    }
+    const settings = e.status === 412 ? ` <button class="btn sm" data-goto-view="settings">${tr('Ayarlar', 'Settings')}</button>` : '';
+    if (!state.overview) setAlert('overview', `<b>${tr('Kullanıcı verisi alınamadı:', 'Failed to load user data:')}</b>&nbsp;${esc(e.message)}${settings}`);
+    // Older data stays on screen: say so instead of letting it pass for live.
+    else setAlert('overview', `<b>${tr('Veriler yenilenemedi:', 'Could not refresh:')}</b>&nbsp;${esc(e.message)} <span class="muted">${tr(`Ekrandaki veriler ${clockOrDate(state.overviewAt)} tarihli.`, `The data on screen is from ${clockOrDate(state.overviewAt)}.`)}</span>${settings}`, 'warn');
+    if (force) throw e; // a manual refresh reports the failure
   }
 }
 
@@ -438,7 +455,14 @@ function renderOverview() {
 
   const chips = [];
   if (o.travel) chips.push(`<span class="chip blue">✈ ${esc(o.travel.description)}</span>`);
-  if (o.drug.xanToday != null) chips.push(`<span class="chip tq">${tr('Bugün Xanax', 'Xanax Today')}: ${o.drug.xanToday}</span>`);
+  if (o.drug.xanToday != null) {
+    // exact: counted from just before 18:00 TCT · atLeast: only since the app was first opened today · atMost: from an older count of the day before
+    const bound = o.drug.xanTodayBound || (o.drug.xanTodayExact === false ? 'atLeast' : 'exact');
+    const title = bound === 'atLeast' ? tr('18:00 TCT gün dönümünden beri; uygulama bugün ilk açıldığı andan itibaren sayıldı (dünkü kayıt yok)', 'Since the 18:00 TCT day change; counted from when the app was first opened today (no record from the day before)')
+      : bound === 'atMost' ? tr('En fazla bu kadar: uygulama dünkü sayıyı 18:00 TCT gün dönümünden çok önce gördü, bir kısmı dün alınmış olabilir', 'At most this many: the app last saw the count well before the 18:00 TCT day change, so some may have been taken the day before')
+      : tr('18:00 TCT gün dönümünden beri (uygulamanın ondan hemen önce gördüğü sayıya göre)', 'Since the 18:00 TCT day change (from the count the app saw just before it)');
+    chips.push(`<span class="chip tq" title="${title}">${tr('Bugün Xanax', 'Xanax Today')}: ${bound === 'atLeast' ? '≥ ' : bound === 'atMost' ? '≤ ' : ''}${o.drug.xanToday}</span>`);
+  }
   if (o.drug.xantaken != null) chips.push(`<span class="chip">${tr('Toplam Xanax', 'Total Xanax')}: ${n0(o.drug.xantaken)}</span>`);
   if (o.drug.refills != null) chips.push(`<span class="chip">${tr('Refill', 'Refills')}: ${n0(o.drug.refills)}</span>`);
   chips.push(`<span class="chip ${o.cooldowns.booster ? 'warn' : ''}">Booster CD: <span data-cd="booster">${o.cooldowns.booster ? human(o.cooldowns.booster) : tr('yok', 'none')}</span></span>`);
@@ -453,8 +477,8 @@ function renderOverview() {
   $('#xan-chip').textContent = o.drug.xanaxActive ? tr('Xanax etkisi aktif (-35%)', 'Xanax penalty active (-35%)') : tr('Xanax etkisi yok', 'No Xanax penalty');
   $('#bs-totals').innerHTML = `
     <div class="bs-total"><small>${tr('Ham Toplam', 'Base Total')}</small><strong>${compact(t.base)}</strong></div>
-    <div class="bs-total tq"><small>${tr('Xanaxsız (efektif)', 'No Xanax (effective)')}</small><strong>${compact(t.noXanax)}</strong></div>
-    <div class="bs-total warn"><small>${tr('Xanaxlı (efektif)', 'With Xanax (effective)')}</small><strong>${compact(t.withXanax)}</strong></div>`;
+    <div class="bs-total tq"><small>${tr('Xanaxsız (efektif)', 'No Xanax (effective)')}${o.drug.xanaxActive ? '' : ` · <b>${tr('şu an', 'now')}</b>`}</small><strong>${compact(t.noXanax)}</strong></div>
+    <div class="bs-total warn"><small>${tr('Xanaxlı (efektif)', 'With Xanax (effective)')}${o.drug.xanaxActive ? ` · <b>${tr('şu an', 'now')}</b>` : ''}</small><strong>${compact(t.withXanax)}</strong></div>`;
   const names = { strength: 'Strength', defense: 'Defense', speed: 'Speed', dexterity: 'Dexterity' };
   $('#bs-table').innerHTML = `<thead><tr><th>Stat</th><th class="num">${tr('Ham', 'Base')}</th><th class="num">Mod</th><th class="num">${tr('Xanaxsız', 'No Xanax')}</th><th class="num">${tr('Xanaxlı', 'With Xanax')}</th></tr></thead><tbody>${
     Object.entries(bt.stats).map(([k, s]) => `<tr title="${esc(s.info.map((i) => i.text).join('\n'))}"><td>${names[k]}</td><td class="num">${n0(s.base)}</td><td class="num ${s.modifier >= 0 ? 'pos' : 'neg'}" title="${tr('API mevcut modifier (aktif etkiler dahil)', 'Current API modifier (includes active effects)')}">${s.modifier >= 0 ? '+' : ''}${s.modifier}%</td><td class="num tq-text" title="${s.noXanaxModifier ?? '—'}%">${n0(s.noXanax)}</td><td class="num" style="color:var(--warn)" title="${s.withXanaxModifier ?? '—'}%">${n0(s.withXanax)}</td></tr>`).join('')
@@ -474,8 +498,21 @@ function renderOverview() {
 // Takip ekranı gerçekten görünüyor mu? (pencere küçültülmemiş ve bir Torn sekmesi üstünü kapatmıyor)
 const trackerVisible = () => !document.hidden && state.activeWsTab === 'tracker';
 
+// Hospital / jail countdowns (war table, tab strip, browser toolbar)
+function tickUntil(root = document) {
+  if (!root) return;
+  $$('[data-until]', root).forEach((x) => {
+    const r = Number(x.dataset.until) - nowTct() / 1000;
+    x.textContent = r > 0 ? (x.dataset.short ? shortClock(r) : clock(r)) : tr('çıktı', 'out');
+  });
+}
 function tick() {
-  if (!trackerVisible()) return; // görünmezken sayaç güncellemek boşuna CPU
+  if (document.hidden) return; // görünmezken sayaç güncellemek boşuna CPU
+  if (!trackerVisible()) {
+    // A Torn tab covers the tracker, but the tab strip and the toolbar above it stay on screen
+    tickUntil($('#browser-tabs')); tickUntil($('#browser-context-actions'));
+    return;
+  }
   const now = Date.now();
   // TCT clock
   $('#tct-clock').textContent = tctTime(nowTct());
@@ -536,11 +573,7 @@ function tick() {
       if (elc && o.cooldowns[k]) { const r = o.cooldowns[k] - el; elc.textContent = r > 0 ? clock(r) : tr('yok', 'none'); }
     }
   }
-  // hospital countdowns in war table
-  $$('[data-until]').forEach((x) => {
-    const r = Number(x.dataset.until) - nowTct() / 1000;
-    x.textContent = r > 0 ? (x.dataset.short ? shortClock(r) : clock(r)) : tr('çıktı', 'out');
-  });
+  tickUntil();
 }
 
 /* =========================================================
@@ -599,6 +632,8 @@ async function loadCompany(force = false) {
     if (NOT_DIRECTOR_CODES.includes(Number(e.code))) { applyCompanyMode(false); return; }
     if (!state.company) {
       setAlert('company', `<b>${tr('Şirket verisi alınamadı:', 'Failed to load company data:')}</b>&nbsp;${esc(e.message)} <span class="muted">${tr('(Stok ve detaylar için şirket direktörü olmalısın.)', '(You need to be a company director to see stock and details.)')}</span>`, 'warn');
+    } else {
+      setAlert('company', `<b>${tr('Şirket verisi yenilenemedi:', 'Could not refresh company data:')}</b>&nbsp;${esc(e.message)} <span class="muted">${tr(`Ekrandaki veriler ${clockOrDate(state.company.fetchedAt || Date.now())} tarihli.`, `The data on screen is from ${clockOrDate(state.company.fetchedAt || Date.now())}.`)}</span>`, 'warn');
     }
   }
 }
@@ -811,7 +846,8 @@ $('#copy-report').addEventListener('click', async () => {
   await copyText(reportText(state.company), tr('Rapor panoya kopyalandı', 'Report copied to clipboard'));
 });
 $('#cover-days').addEventListener('change', async (e) => {
-  await api('/api/config', { method: 'POST', body: JSON.stringify({ coverDays: Number(e.target.value) }) });
+  try { await api('/api/config', { method: 'POST', body: JSON.stringify({ coverDays: Number(e.target.value) }) }); }
+  catch (err) { toast(err.message); if (state.company) e.target.value = String(state.company.coverDays); return; }
   await loadCompany(); toast(tr(`Hedef stok: ${e.target.value} gün`, `Target stock: ${e.target.value} ${e.target.value === '1' ? 'day' : 'days'}`));
 });
 
@@ -973,8 +1009,8 @@ function renderIncome(c) {
     `<div class="empty"><div><b class="tq-text">${tr('Geçmiş birikiyor', 'Building history')}</b><br>${tr('Sunucu açık kaldıkça her gün otomatik kayıt alınır.', 'Daily snapshots are recorded automatically while the app is running.')}<br><span class="muted">${tr('Şimdilik 7 günlük ortalama:', '7-day average for now:')} ${money(i.weeklyAvg)} / ${tr('gün', 'day')}</span></div></div>`;
 
   $('#income-table').innerHTML = `<thead><tr><th>${tr('Tarih', 'Date')}</th><th class="num">${tr('Müşteri', 'Customers')}</th><th class="num">${tr('Gelir', 'Revenue')}</th><th class="num">${tr('Ürün maliyeti', 'COGS')}</th><th class="num">${tr('Maaş', 'Wages')}</th><th class="num">${tr('Reklam', 'Ads')}</th><th class="num">Net</th><th class="num">${tr('Popülerlik', 'Popularity')}</th></tr></thead><tbody>${
-    c.days.slice().reverse().map((d) => `<tr><td class="mono">${d.date}</td><td class="num">${n0(d.customers)}</td><td class="num">${money(d.revenue)}</td><td class="num muted">${money(d.cogs)}</td><td class="num muted">${money(d.wages)}</td><td class="num muted">${money(d.ads)}</td><td class="num ${d.net >= 0 ? 'pos' : 'neg'}">${money(d.net)}</td><td class="num">${d.popularity ?? '—'}</td></tr>`).join('')
-  }</tbody>`;
+    c.days.slice().reverse().map((d) => `<tr><td class="mono">${d.date}</td><td class="num">${n0(d.customers)}</td><td class="num">${money(d.revenue)}</td><td class="num muted">${d.cogsEstimated ? '~' : ''}${money(d.cogs)}</td><td class="num muted">${money(d.wages)}</td><td class="num muted">${money(d.ads)}</td><td class="num ${d.net >= 0 ? 'pos' : 'neg'}">${d.cogsEstimated ? '~' : ''}${money(d.net)}</td><td class="num">${d.popularity ?? '—'}</td></tr>`).join('')
+  }</tbody>${c.days.some((d) => d.cogsEstimated) ? `<caption class="sub-text" style="caption-side:bottom;text-align:left;padding-top:8px">~ ${tr('tahmini: stok kaydı olmayan günlerde ürün maliyeti bugünkü orandan hesaplanır', 'estimate: for days without a stock record the cost of goods is worked out from the current ratio')}</caption>` : ''}`;
 }
 
 /* ---------- Gelir Geçmişi grafiği ----------
@@ -1090,6 +1126,7 @@ function incomeChart(days, W) {
 async function loadWars() {
   try {
     state.wars = await api('/api/wars');
+    state.warsAt = Date.now();
     renderWarChips();
     if (!state.factionId && state.wars.wars.length) { state.factionId = state.wars.wars[0].factionId; loadTargets(); }
   } catch (e) {
@@ -1371,6 +1408,7 @@ async function loadConfig() {
       ? `${tr('Kayıtlı', 'Saved')}: ${c.logKeyMasked}`
       : tr('Yok · yalnızca "log" izinli özel key; alış fiyatlarını ve bust zamanlarını okumak için. Bu bilgisayarda saklanır, yalnızca api.torn.com\'a gider.', 'None · a custom key with only "log" access, used to read purchase prices and bust times. Stored on this computer, sent only to api.torn.com.');
     $('#s-log-remove').hidden = !c.logKeyMasked;
+    $('#s-ff-remove').hidden = !c.ffscouterKeyMasked;
     renderUpdateInfo();
     return c;
   } catch { return null; }
@@ -1390,9 +1428,15 @@ function renderUpdateInfo() {
     <div><span>${tr('Kontrol', 'Checks')}</span><span>${feat('app.updates') ? tr('Açılışta ve dakikada bir · yeni sürümde bildirim', 'On startup and every minute · new-version notification') : tr('Otomatik kontrol kapalı', 'Automatic checks off')}</span></div>
     <small class="muted">${tr('Güncellemeler yalnızca resmi sürüm adresinden gelir; bu adres değiştirilemez.', 'Updates come only from the official release address; it cannot be changed.')}</small>`;
 }
+// A Custom key works only for what it was given. Name the selections the overview needs and the key lacks.
+function keyAccessNotice(missing) {
+  setAlert('key-access', missing?.length ? `<b>${tr('Bu özel (Custom) key bazı verileri okuyamıyor:', 'This Custom key cannot read some data:')}</b>&nbsp;<span class="mono">${esc(missing.join(', '))}</span> <span class="muted">${tr("Genel Bakış yüklenmeyebilir. Torn'da key'e bu seçimleri ekle ya da Limited Access key kullan.", 'The Overview may not load. Add these selections to the key in Torn, or use a Limited Access key.')}</span>` : null, 'warn');
+}
 async function postConfig(body, okText) {
   try {
-    await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
+    const r = await api('/api/config', { method: 'POST', body: JSON.stringify(body) });
+    if (r.resetData) { restartClean(); return false; }
+    if (body.apiKey) keyAccessNotice(r.missingSelections);
     toast(okText || tr('Ayarlar kaydedildi', 'Settings saved'));
     await loadConfig();
     return true;
@@ -1416,6 +1460,7 @@ $('#general-form').addEventListener('submit', async (e) => {
   if (await postConfig({ coverDays: Number($('#s-cover').value), pollMinutes: Number($('#s-poll').value) })) refreshAll(true);
 });
 $('#s-log-remove').addEventListener('click', () => postConfig({ logKey: '' }, tr('Log key silindi', 'Log key removed')));
+$('#s-ff-remove').addEventListener('click', () => postConfig({ ffscouterKey: '' }, tr('FFScouter key silindi; Torn key kullanılacak', 'FFScouter key removed; the Torn key is used')));
 $('#s-log-create').addEventListener('click', () => openInTab('https://www.torn.com/preferences.php#tab=api?step=addNewKey&title=LRX%20Log&user=log,personalstats', { activate: true }));
 $('#set-update-check').addEventListener('click', async () => { await checkUpdate(true); renderUpdateInfo(); });
 $('#ff-check').addEventListener('click', async () => {
@@ -1433,17 +1478,24 @@ $('#ff-check').addEventListener('click', async () => {
    ========================================================= */
 async function refreshAll(force = false) {
   const btn = $('#refresh-btn'); btn.classList.add('spin');
-  await Promise.allSettled([loadOverview(force), loadCompany(force), state.view === 'war' && state.factionId ? loadTargets() : null]);
+  const onWar = state.view === 'war';
+  const results = await Promise.allSettled([loadOverview(force), loadCompany(force), onWar && state.factionId ? loadTargets() : null, onWar ? loadWars() : null]);
   btn.classList.remove('spin');
+  return results;
 }
-$('#refresh-btn').addEventListener('click', () => refreshAll(true));
+$('#refresh-btn').addEventListener('click', async () => {
+  const [overview] = await refreshAll(true);
+  if (overview.status === 'rejected') toast(tr('Yenilenemedi: ', 'Refresh failed: ') + overview.reason.message);
+});
 
 // Delegated interactions for Stock Delivery & Rehab Message Generator
 document.addEventListener('click', async (e) => {
   const syncBtn = e.target.closest('[data-order-sync]');
   if (syncBtn) {
     const hoursAgo = Number(syncBtn.dataset.orderSync) || 0;
-    const c = await api('/api/stock-order', { method: 'POST', body: JSON.stringify({ hoursAgo, deliveryMode: 'hours' }) });
+    let c;
+    try { c = await api('/api/stock-order', { method: 'POST', body: JSON.stringify({ hoursAgo, deliveryMode: 'hours' }) }); }
+    catch (err) { toast(err.message); return; }
     state.company = c; renderCompany();
     const h = c.estDeliveryHours || c.deliveryHours || 6;
     toast(hoursAgo === 0 ? tr(`Sipariş sayacı başlatıldı (${h} saat, tahmini)`, `Order timer started (${h} hours, estimate)`) : tr(`Sipariş zamanı ${hoursAgo} saat öncesi olarak ayarlandı`, `Order time set to ${hoursAgo}h ago`));
@@ -1457,7 +1509,9 @@ document.addEventListener('click', async (e) => {
   const modeBtn = e.target.closest('[data-order-mode]');
   if (modeBtn) {
     const deliveryMode = modeBtn.dataset.orderMode;
-    const c = await api('/api/stock-order', { method: 'POST', body: JSON.stringify({ deliveryMode }) });
+    let c;
+    try { c = await api('/api/stock-order', { method: 'POST', body: JSON.stringify({ deliveryMode }) }); }
+    catch (err) { toast(err.message); return; }
     state.company = c; renderCompany();
     toast(tr('Teslimat sayacı 18:00 TCT günlük yenilenmesine göre ayarlandı', 'Delivery timer anchored to 18:00 TCT daily reset'));
     return;
@@ -1726,11 +1780,11 @@ function renderBrowserTabs() {
   // Sürükleme sırasında yeniden çizmek sürüklemeyi iptal eder → bitince çiz
   if (tabDrag.id) { tabDrag.pendingRender = true; return; }
   wrap.innerHTML = state.browserTabs.map((t) => `
-    <div class="ws-tab ${state.activeWsTab === t.id ? 'active' : ''} ${seenWsTabs.has(t.id) ? '' : 'ws-tab-new'}" draggable="true" data-ws-tab="${t.id}" title="${esc(t.title)} — ${esc(t.url)}">
+    <div class="ws-tab ${state.activeWsTab === t.id ? 'active' : ''} ${seenWsTabs.has(t.id) ? '' : 'ws-tab-new'}" draggable="true" data-ws-tab="${t.id}" role="tab" tabindex="0" aria-selected="${state.activeWsTab === t.id}" title="${esc(t.title)} — ${esc(t.url)}">
       ${t.loading ? '<span class="ws-tab-spin"></span>' : `<span class="ws-tab-mark">${esc(t.icon)}</span>`}
       <span class="ws-tab-title">${esc(t.title)}</span>
       ${tabStatusTimer(t.url)}
-      <button class="ws-tab-close" data-close-tab="${t.id}" title="${tr('Sekmeyi kapat', 'Close tab')}">×</button>
+      <button class="ws-tab-close" data-close-tab="${t.id}" title="${tr('Sekmeyi kapat', 'Close tab')}" aria-label="${tr('Sekmeyi kapat', 'Close tab')}: ${esc(t.title)}">×</button>
     </div>
   `).join('');
   for (const t of state.browserTabs) {
@@ -1738,10 +1792,19 @@ function renderBrowserTabs() {
     const x = extractPlayerId(t.url);
     if (x) refreshPlayerInfo(x);
   }
+  // With more tabs than fit, the active one is brought into view (the strip has no visible scrollbar)
+  if (wrap._shownActive !== state.activeWsTab) { wrap._shownActive = state.activeWsTab; $('.ws-tab.active', wrap)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
 }
 // Açık profil / saldırı sekmelerindeki oyuncuların durumunu tazele (yeni hastane süresi vb.)
+// Each check is a Torn API call: none while the window is hidden, and a player who is simply Okay is asked
+// about once a minute; only a hospital or jail timer needs the closer watch.
 setInterval(() => {
-  for (const t of state.browserTabs) { const x = extractPlayerId(t.url); if (x) refreshPlayerInfo(x, 25_000); }
+  if (document.hidden) return;
+  for (const t of state.browserTabs) {
+    const x = extractPlayerId(t.url); if (!x) continue;
+    const s = state.playerInfo[x]?.data?.status?.state;
+    refreshPlayerInfo(x, s === 'Hospital' || s === 'Jail' || t.id === state.activeWsTab ? 25_000 : 60_000);
+  }
 }, 15_000);
 
 function updateBrowserToolbar() {
@@ -1808,6 +1871,16 @@ $('#browser-tabs').addEventListener('click', (e) => {
   const tabEl = e.target.closest('[data-ws-tab]');
   if (tabEl) activateWorkspaceTab(tabEl.dataset.wsTab);
 });
+$('#browser-tabs').addEventListener('keydown', (e) => {
+  const tabEl = e.target.closest?.('[data-ws-tab]');
+  if (!tabEl || e.target !== tabEl || (e.key !== 'Enter' && e.key !== ' ')) return;
+  e.preventDefault(); activateWorkspaceTab(tabEl.dataset.wsTab);
+});
+// A plain mouse wheel moves along the tab strip
+$('#browser-tabs').addEventListener('wheel', (e) => {
+  const strip = e.currentTarget;
+  if (e.deltaY && strip.scrollWidth > strip.clientWidth) { strip.scrollLeft += e.deltaY; e.preventDefault(); }
+}, { passive: false });
 $('#browser-tabs').addEventListener('auxclick', (e) => {
   if (e.button === 1) {
     const tabEl = e.target.closest('[data-ws-tab]');
@@ -1871,6 +1944,7 @@ window.electronAPI?.onLoginStatus?.((s) => {
   }
 });
 $('#login-modal-close')?.addEventListener('click', () => toggleLoginModal(false));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#login-modal').hidden) toggleLoginModal(false); });
 $('#login-modal-cancel')?.addEventListener('click', () => toggleLoginModal(false));
 $('#cookie-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -1906,6 +1980,7 @@ $('#browser-url-form').addEventListener('submit', (e) => {
   } else if (!/^(https?|chrome-extension):\/\//i.test(raw)) {
     targetUrl = 'https://' + raw;
   }
+  $('#browser-url').blur();
   navigateActiveTab(targetUrl);
 });
 
@@ -1973,7 +2048,7 @@ function maybeShowUpdateNotice() {
     updateNoticeTimer = setTimeout(maybeShowUpdateNotice, 1000);
     return;
   }
-  openUpdateDialog();
+  openUpdateDialog(true);
 }
 function resumeUpdateChecks() {
   if (!updateChecksStarted || document.visibilityState !== 'visible') return;
@@ -2039,7 +2114,7 @@ function closeUpdateDialog() {
   window.electronAPI?.setViewVisibility?.(true);
   (updateReturnFocus?.isConnected ? updateReturnFocus : $('#update-btn')).focus();
 }
-function openUpdateDialog() {
+function openUpdateDialog(auto = false) {
   const u = state.update;
   if (!u || u.error || u.configured === false && !u.restartOnly || updateInstalling) return;
   if ($('#update-modal').hidden) updateReturnFocus = document.activeElement;
@@ -2068,7 +2143,8 @@ function openUpdateDialog() {
   $('#update-dialog-install').textContent = u.restartOnly ? tr('Yeniden başlat', 'Restart') : tr('Kur ve yeniden başlat', 'Install and restart');
   $('#update-modal').hidden = false;
   window.electronAPI?.setViewVisibility?.(false);
-  $(u.available ? '#update-dialog-install' : '#update-dialog-cancel').focus();
+  // Opened by the app while the user may be typing in a Torn tab: Enter or Space must not start the install.
+  $(u.available && auto !== true ? '#update-dialog-install' : '#update-dialog-cancel').focus();
 }
 $('#update-btn')?.addEventListener('click', () => {
   if (state.update?.available) openUpdateDialog();
@@ -2174,7 +2250,9 @@ if (window.electronAPI?.onOpenTab) {
 // Torn sekmesinden gelen veriler (ör. şirket stok sayfasındaki gerçek teslim sayaçları)
 if (window.electronAPI?.onTornData) {
   window.electronAPI.onTornData((data) => {
-    if (data.type === 'navigation-loop-stopped') toast(tr('Hızlı gezinme döngüsü durduruldu. İstediğin sayfayı tekrar açabilirsin.', 'Rapid navigation loop stopped. You can reopen the page.'));
+    if (data.type === 'navigation-loop-stopped') toast(data.kind === 'slow'
+      ? tr('Bir Torn sekmesi sen dokunmadan sürekli sayfa değiştirdiği için durduruldu. Devam etmek için sayfaya tıkla.', 'A Torn tab kept changing pages on its own, so it was stopped. Click in the page to continue.')
+      : tr('Hızlı gezinme döngüsü durduruldu. İstediğin sayfayı tekrar açabilirsin.', 'Rapid navigation loop stopped. You can reopen the page.'));
     if (data?.type !== 'stock-deliveries') return;
     loadCompany(false).catch(() => {});
     toast(data.count
@@ -2182,6 +2260,20 @@ if (window.electronAPI?.onTornData) {
       : tr('Torn stok sayfasında yolda sevkiyat yok', 'No shipments in transit on the Torn stock page'));
   });
 }
+// The app page was reloaded while Torn tabs were open (Ctrl+Shift+R, a recovered crash): the tabs are still alive
+// in the main process, so put them back in the tab bar instead of leaving them on screen without a tab.
+window.electronAPI?.tabList?.().then((saved) => {
+  for (const t of saved?.tabs || []) {
+    if (state.browserTabs.some((x) => x.id === t.id)) continue;
+    const meta = describeTornUrl(t.url);
+    const title = String(t.title || '').replace(/\s*\|\s*TORN\s*$/i, '').trim();
+    state.browserTabs.push({ id: t.id, url: t.url, title: title && !/^https?:\/\//i.test(title) ? title : meta.title, icon: meta.icon, loading: !!t.loading, wv: null });
+    const seq = Number(/^tab-(\d+)$/.exec(t.id)?.[1]);
+    if (seq >= state.nextTabSeq) state.nextTabSeq = seq + 1;
+  }
+  if (!state.browserTabs.length) return;
+  activateWorkspaceTab(state.browserTabs.some((t) => t.id === saved.active) ? saved.active : 'tracker');
+}).catch(() => {});
 if (window.electronAPI?.onTabUpdated) {
   window.electronAPI.onTabUpdated((data) => {
     const tab = state.browserTabs.find((t) => t.id === data.id);
@@ -2304,7 +2396,9 @@ $('#auth-form')?.addEventListener('submit', async (e) => {
   try {
     const r = await api('/api/auth', { method: 'POST', body: JSON.stringify({ apiKey: key }) });
     $('#auth-key').value = '';
-    if (r.resetData) { try { localStorage.removeItem('tt.cache.overview'); localStorage.removeItem('tt.cache.company'); } catch {} }
+    if (r.resetData) clearPlayerStorage();
+    keyAccessNotice(r.missingSelections);
+    loadConfig(); // the copy read before sign-in still says "no key"
     card.classList.add('success');
     $('#auth-welcome').innerHTML = `${tr('Hoş geldin,', 'Welcome,')} <b>${esc(r.player.name)}</b>`;
     startApp(null, true);
@@ -2320,13 +2414,28 @@ $('#auth-form')?.addEventListener('submit', async (e) => {
   }
 });
 
+// Nothing of the previous player stays on screen or in the page cache: close the Torn tabs, drop the cached pages, reload.
+// Used by Log Out and when the key saved in Settings belongs to another player (the server drops that player's records).
+// Saved pages, the last enemy faction, notification memory, the OC state and an unsent feedback draft belong to
+// one player. Preferences (language, theme, filters, templates) stay.
+function clearPlayerStorage() {
+  try {
+    for (const k of Object.keys(localStorage)) {
+      if (k.startsWith('tt.cache.') || k.startsWith('lrx.oc.') || ['tt.faction', 'tt.drugMax', 'tt.notified', 'lrx.feedback.draft'].includes(k)) localStorage.removeItem(k);
+    }
+  } catch {}
+}
+function restartClean() {
+  for (const t of [...state.browserTabs]) closeBrowserTab(t.id);
+  clearPlayerStorage();
+  location.hash = '';
+  location.reload();
+}
 async function logout() {
   if (!confirm(tr('Çıkış yapılsın mı? API key bu bilgisayardan silinecek.', 'Log out? The API key will be removed from this computer.'))) return;
   for (const t of [...state.browserTabs]) closeBrowserTab(t.id);
   await api('/api/logout', { method: 'POST' }).catch(() => {});
-  try { for (const k of Object.keys(localStorage)) if (k.startsWith('tt.cache.')) localStorage.removeItem(k); } catch {}
-  location.hash = '';
-  location.reload();
+  restartClean();
 }
 $('#logout-btn')?.addEventListener('click', logout);
 
@@ -2342,7 +2451,9 @@ function animateNumbers(root = document) {
     const idx = counters.get(box) || 0;
     counters.set(box, idx + 1);
     const key = `${box}:${idx}`;
-    const txt = el.textContent.trim();
+    // While this element is counting up, its text is a frame of the animation: the value is the one it counts to.
+    const shown = el.textContent.trim();
+    const txt = el._countTo != null && shown === el._countFrame ? el._countTo : shown;
     const m = txt.match(/^([^\d-]*)(-?[\d,]*\.?\d+)(.*)$/);
     if (!m) { numMemory.set(key, null); continue; }
     const [, pre, numStr, suf] = m;
@@ -2359,13 +2470,16 @@ function animateNumbers(root = document) {
       return (v < 0 ? '-' : '') + (grouped ? Number(i).toLocaleString('en-US') : i) + (d ? '.' + d : '');
     };
     const t0 = performance.now(), dur = 750;
+    const run = (el._countRun = {}); // a newer pass replaces this one
+    el._countTo = txt;
     const step = (now) => {
-      if (!el.isConnected) return;
+      if (!el.isConnected || el._countRun !== run) return;
       const p = Math.min(1, (now - t0) / dur);
       const eased = 1 - Math.pow(1 - p, 3);
-      el.textContent = pre + fmt(from + (to - from) * eased) + suf;
-      if (p < 1) requestAnimationFrame(step); else el.textContent = txt;
+      el.textContent = el._countFrame = p < 1 ? pre + fmt(from + (to - from) * eased) + suf : txt;
+      if (p < 1) requestAnimationFrame(step); else el._countTo = el._countFrame = null;
     };
+    el._countFrame = el.textContent.trim();
     requestAnimationFrame(step);
   }
 }
@@ -2384,7 +2498,7 @@ function startApp(b, fresh = false) {
       const cachedOv = JSON.parse(localStorage.getItem('tt.cache.overview') || 'null');
       if (cachedOv?.data?.battle?.calculationVersion === 2) {
         state.overview = cachedOv.data;
-        state.overviewAt = cachedOv.at || Date.now();
+        stampOverview(cachedOv.data, cachedOv.at || Date.now());
         renderOverview();
       }
       const cachedCo = JSON.parse(localStorage.getItem('tt.cache.company') || 'null');
@@ -2406,7 +2520,7 @@ function startApp(b, fresh = false) {
     if (b.config) { state.config = b.config; window.applyFeatures?.(); }
     if (b.overview && (!state.overview || (b.overviewAt && b.overviewAt > state.overviewAt))) {
       state.overview = b.overview;
-      state.overviewAt = b.overviewAt || Date.now();
+      stampOverview(b.overview, b.overviewAt || Date.now());
       try { localStorage.setItem('tt.cache.overview', JSON.stringify({ data: b.overview, at: state.overviewAt })); } catch {}
       renderOverview();
     }
@@ -2423,7 +2537,11 @@ function startApp(b, fresh = false) {
   // Görünürken sık, gizliyken seyrek (bildirim tahminleri için genel bakış yine de 2 dk'da bir tazelenir)
   setInterval(() => { if (trackerVisible() || Date.now() - (state.overviewAt || 0) > 120_000) loadOverview(false); }, 30_000);
   setInterval(() => { if (trackerVisible()) loadCompany(false); }, 120_000);
-  setInterval(() => { if (trackerVisible() && state.view === 'war' && state.factionId && Date.now() - state.targetsAt > 30_000) loadTargets(); }, 10_000);
+  setInterval(() => {
+    if (!trackerVisible() || state.view !== 'war') return;
+    if (state.factionId && Date.now() - state.targetsAt > 30_000) loadTargets();
+    if (Date.now() - (state.warsAt || 0) > 120_000) loadWars(); // war scores and newly started wars
+  }, 10_000);
 }
 
 (async function boot() {
@@ -2431,6 +2549,9 @@ function startApp(b, fresh = false) {
   let b = null;
   try { b = await api('/api/bootstrap'); } catch {}
   if (b?.config) { state.config = b.config; window.applyFeatures?.(); }
+  // No language saved in this browser profile (first run, or the page moved to another local port): follow the
+  // app's saved language instead of showing English and then overwriting the saved choice with it.
+  try { if (b?.config?.lang && localStorage.getItem('tt.lang') == null && b.config.lang !== state.lang) { state.lang = b.config.lang; applyLang(); } } catch {}
   startUpdateChecks(); // Also runs on first launch, before a Torn API key has been entered.
   if (b?.config && !b.config.hasKey) {
     showAuth('login');

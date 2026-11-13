@@ -44,11 +44,14 @@ function windowText(s) {
   if (!s.start) return '';
   return `<span class="mono" title="${tr('Senin saatinle', 'Your local time')}: ${esc(localTime(s.start))} → ${esc(localTime(s.end))}">${esc(tct(s.start))} → ${esc(tct(s.end))} TCT</span>${s.exact ? '' : ` <span class="muted">(${tr('olası en geniş aralık', 'widest possible range')})</span>`}`;
 }
+// The server reports an event as active from half an hour before its start until half an hour after its end, so
+// that the Torn page helpers switch on in time. What the player is told follows the real start and end.
+const phase = (s, n = nowSec()) => (s.status !== 'active' ? s.status : n < s.start ? 'upcoming' : n > s.end ? 'past' : 'active');
 function statusChip(s) {
   const n = nowSec();
-  if (s.status === 'active') return `<span class="chip green">● ${tr('şimdi', 'now')} · ${tr('bitişe', 'ends in')} ${span(s.end - n)}</span>`;
-  if (s.status === 'upcoming') return `<span class="chip ${s.start - n < 2 * 86400 ? 'warn' : 'blue'}">${tr('başlamasına', 'starts in')} ${span(s.start - n)}</span>`;
-  if (s.status === 'past') return `<span class="chip dim">${tr('bu yıl bitti', 'over for this year')}</span>`;
+  if (phase(s, n) === 'active') return `<span class="chip green">● ${tr('şimdi', 'now')} · ${tr('bitişe', 'ends in')} ${span(s.end - n)}</span>`;
+  if (phase(s, n) === 'upcoming') return `<span class="chip ${s.start - n < 2 * 86400 ? 'warn' : 'blue'}">${tr('başlamasına', 'starts in')} ${span(s.start - n)}</span>`;
+  if (phase(s, n) === 'past') return `<span class="chip dim">${tr('bu yıl bitti', 'over for this year')}</span>`;
   return `<span class="chip dim">${tr('takvimde yok', 'not on the calendar')}</span>`;
 }
 
@@ -242,7 +245,7 @@ function eventGuideCards() {
   if (!feat('event.guide')) return '';
   const n = nowSec();
   const rank = (s) => (s.stage === 'live' ? 0 : s.stage === 'prep' ? 1 : 2);
-  return seasonal().filter((s) => s.status === 'active' || (s.status === 'upcoming' && s.start - n < 7 * 86400))
+  return seasonal().filter((s) => phase(s, n) === 'active' || (phase(s, n) === 'upcoming' && s.start - n < 7 * 86400))
     .sort((x, y) => rank(x) - rank(y)).map(eventGuideCard).join('');
 }
 
@@ -253,11 +256,11 @@ function renderEventSettings() {
   const rows = Object.entries(SEASONAL_INFO).map(([id, info]) => {
     const s = seasonal().find((x) => x.id === id) || { id, status: 'unknown' };
     const f = FEATURE_DEF_MAP[info.helper];
-    return `<div class="evs-row ${s.status === 'active' ? 'live' : ''}">
+    return `<div class="evs-row ${phase(s) === 'active' ? 'live' : ''}">
       <div class="evs-ico">${info.icon}</div>
       <div class="evs-main"><div class="evs-title"><b>${esc(info.name)}</b> ${statusChip(s)}</div>
         <div class="muted">${s.start ? windowText(s) : tr('Torn takviminde bu yıl için tarih yok; yayınlanınca kendiliğinden eklenir.', 'No date on the Torn calendar yet; it is added automatically once published.')}</div>
-        ${s.status === 'past' ? `<div class="muted">${tr('Gelecek yılın tarihi Torn takvimi yayınlayınca kendiliğinden gelir.', "Next year's date is added automatically once Torn publishes its calendar.")}</div>` : ''}
+        ${phase(s) === 'past' ? `<div class="muted">${tr('Gelecek yılın tarihi Torn takvimi yayınlayınca kendiliğinden gelir.', "Next year's date is added automatically once Torn publishes its calendar.")}</div>` : ''}
         <div class="evs-what"><small>${tr('Etkinlik günlerinde açılır', 'Turns on during the event')}: ${esc(info.what[state.lang === 'en' ? 1 : 0])}</small></div></div>
       ${f ? featRow(f) : ''}
     </div>`;
@@ -285,9 +288,9 @@ function updateEventBanner() {
   const lines = [];
   for (const s of seasonal()) {
     const info = SEASONAL_INFO[s.id];
-    const live = s.status === 'active';
+    const live = phase(s, n) === 'active';
     const prep = s.stage === 'prep';
-    const soon = s.status === 'upcoming' && s.start - n < 86400;
+    const soon = phase(s, n) === 'upcoming' && s.start - n < 86400;
     if (!live && !prep && !soon) continue;
     const when = live ? tr('başladı', 'is on') : `${tr('başlamasına', 'starts in')} ${span(s.start - n)}`;
     let tip = ''; let btn = '';
@@ -321,7 +324,7 @@ function notifyEventStarts() {
       notifyOnce(`lrx.evNote.${s.id}.prep`, s.start, `${info.icon} ${tr('Halloween sepetleri satışta', 'Halloween baskets are on sale')}`,
         tr(`Trick or Treat ${tct(s.start)} TCT'de başlıyor. Tıkla: Sweet Shop'ta Halloween Basket al ($35).`, `Trick or Treat starts on ${tct(s.start)} TCT. Click to buy a Halloween Basket in the Sweet Shop ($35).`), shop);
     }
-    if (s.status === 'active') {
+    if (phase(s) === 'active') {
       notifyOnce(`lrx.evNote.${s.id}`, s.start, `${info.icon} ${info.name} ${tr('başladı', 'has started')}`,
         shop ? tr("Sepetin yok: tıkla, Sweet Shop'ta Halloween Basket al ($35).", "No basket yet: click to buy a Halloween Basket in the Sweet Shop ($35).")
           : tr(`Bitiş: ${tct(s.end)} TCT · rehber Araçlar sayfasında`, `Ends ${tct(s.end)} TCT · guide on the Tools page`), shop);

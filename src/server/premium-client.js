@@ -38,6 +38,7 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
     } finally { reader.releaseLock(); }
     let data;
     try { data = JSON.parse(text); } catch { throw bridgeError('PREMIUM_SERVICE_RESPONSE'); }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw bridgeError('PREMIUM_SERVICE_RESPONSE');
     if (!response.ok) {
       if (response.status === 401 && token && session?.token === token) { session = null; generation++; retryAt = 0; }
       throw bridgeError(/^[A-Z0-9_]{1,80}$/.test(data.code || '') ? data.code : 'PREMIUM_SERVICE_ERROR', response.status);
@@ -122,11 +123,20 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
     };
     const route = routes[action];
     if (!route || route[0] !== method) throw bridgeError('NOT_FOUND', 404);
-    if (!session || session.fingerprint !== fingerprint()) await status();
-    const stamp = generation;
-    const data = await request(route[1], { method, body: method === 'POST' ? body : undefined, token: current().token });
-    if (stamp !== generation) throw bridgeError('PREMIUM_IDENTITY_CHANGED', 409);
-    return data;
+    for (let attempt = 0; ; attempt++) {
+      if (!session || session.fingerprint !== fingerprint()) await status();
+      const stamp = generation, token = current().token;
+      try {
+        const data = await request(route[1], { method, body: method === 'POST' ? body : undefined, token });
+        if (stamp !== generation) throw bridgeError('PREMIUM_IDENTITY_CHANGED', 409);
+        return data;
+      } catch (error) {
+        // The server session (24 hours) ran out while the app stayed open. The service refused the request before
+        // doing anything, so sign in again with the saved key and repeat it once instead of asking the user to retry.
+        if (attempt === 0 && error.status === 401 && !session && hasIdentity()) continue;
+        throw error;
+      }
+    }
   }
   return { status, connect, proxy, reset };
 }

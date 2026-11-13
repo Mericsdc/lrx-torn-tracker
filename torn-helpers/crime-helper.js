@@ -193,7 +193,10 @@
     if (!sec) return null;
     for (const n of sec.childNodes) if (n.nodeType === 3 && n.textContent.trim()) return { host: sec, after: n, text: n.textContent.trim() };
     const t = sec.querySelector('[class*="title"]') || row.querySelector('[class*="confidenceSectionTablet"] [class*="title"]');
-    if (t && t.textContent.trim()) return { host: t, after: null, text: t.textContent.trim() };
+    // The badge is appended inside this element: read the title without it, or the next scan sees
+    // "Search the Trash$1.2k/N", finds no match and removes the badge again (it would blink).
+    const text = t ? [...t.childNodes].filter((n) => !(n.nodeType === 1 && n.classList.contains('lrx-cv'))).map((n) => n.textContent).join('').trim() : '';
+    if (text) return { host: t, after: null, text };
     return null;
   };
   // Rozeti React düğümlerine dokunmadan, yazının hemen arkasına ayrı bir span olarak koy (varsa günceller)

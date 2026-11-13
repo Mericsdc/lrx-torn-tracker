@@ -37,7 +37,7 @@ Updates install from inside the app: the update button downloads the newest rele
 | **Torn in tabs** | Built-in Torn tabs with Profile/Attack shortcuts, Google sign-in through your own Chrome or Edge, and optional TornTools, FF Scouter V2 and TornW3B |
 | **Torn page helpers** | Crime XP and $/nerve badges, war and hospital timers, jail bust difficulty, poker odds, below-cost listing warnings, event helpers |
 
-Five themes (Obsidian, Ocean, Forest, Amethyst, Light), English by default with Turkish optional, and a Feedback button that emails the developer (only what you type and the app version are sent).
+Five themes (Obsidian, Ocean, Forest, Amethyst, Light), English by default with Turkish optional, and a Feedback button that emails the developer (only what you type, the app version and the app language are sent).
 
 **Premium is optional.** It adds advanced workspaces (appearance profiles, helper filters, player comparisons, event goals, travel strategies, merit plans) and is paid with in-game Xanax. Every tool listed above stays free.
 

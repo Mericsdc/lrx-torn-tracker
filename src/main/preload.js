@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   tabCreate: (opts) => ipcRenderer.invoke('tab-create', opts),
   tabActivate: (tabId) => ipcRenderer.invoke('tab-activate', tabId),
   tabClose: (tabId) => ipcRenderer.invoke('tab-close', tabId),
+  tabList: () => ipcRenderer.invoke('tab-list'),
   tabNavigate: (tabId, url) => ipcRenderer.invoke('tab-navigate', { tabId, url }),
   tabAction: (tabId, action) => ipcRenderer.invoke('tab-action', { tabId, action }),
   tornChatSend: (payload) => ipcRenderer.invoke('torn-chat-send', payload),

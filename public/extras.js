@@ -130,7 +130,7 @@ function burglaryCard() {
   const d = crimeState.cv;
   if (!d?.burglary?.length) return '';
   const key = crimeState.burgSort;
-  const list = [...d.burglary].sort((a, b) => (key === 'district' ? a.district.localeCompare(b.district) || b.value - a.value : (b[key] ?? -1) - (a[key] ?? -1)));
+  const list = [...d.burglary].sort((a, b) => (key === 'district' || key === 'target' ? String(a[key]).localeCompare(String(b[key])) || b.value - a.value : (b[key] ?? -1) - (a[key] ?? -1)));
   const th = (k, label, cls = '') => `<th class="sortable ${cls}" data-burg-sort="${k}">${label}${key === k ? ' ▾' : ''}</th>`;
   return `<article class="glass card">
     <div class="card-head wrap"><h3>🏠 ${tr('Burglary hedefleri', 'Burglary targets')}</h3>

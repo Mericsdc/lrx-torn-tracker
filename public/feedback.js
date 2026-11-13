@@ -36,7 +36,7 @@
           <label><span>${tr('Torn adın (isteğe bağlı)', 'Torn name (optional)')}</span><input class="input" id="fb-name" maxlength="80" value="${esc(draft.name || '')}"></label>
           <label><span>${tr('Sana nasıl dönülsün? (isteğe bağlı)', 'How to reach you (optional)')}</span><input class="input" id="fb-contact" maxlength="120" value="${esc(draft.contact)}" placeholder="${tr('e-posta ya da Discord', 'email or Discord')}"></label>
         </div>
-        <small class="muted fb-note">🔒 ${tr('Yalnızca bu formdaki alanlar ve uygulama sürümü gönderilir. API key\'in ve başka verin gönderilmez.', 'Only the fields in this form and the app version are sent. Your API key and other data are never sent.')}</small>
+        <small class="muted fb-note">🔒 ${tr('Yalnızca bu formdaki alanlar, uygulama sürümü ve uygulama dili gönderilir. API key\'in ve başka verin gönderilmez.', 'Only the fields in this form, the app version and the app language are sent. Your API key and other data are never sent.')}</small>
         <div class="fb-actions">
           <span class="muted mono" id="fb-count">${draft.message.length}/${MAX}</span>
           <button type="button" class="btn ghost" data-fb-close>${tr('Vazgeç', 'Cancel')}</button>

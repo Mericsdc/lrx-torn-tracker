@@ -30,11 +30,11 @@ function listFiles(dir, base = '') {
   return out;
 }
 
-function makeZip(files) {
+function makeZip(files, root = APP) {
   const locals = [], centrals = [];
   let offset = 0;
   for (const rel of files) {
-    const data = fs.readFileSync(path.join(APP, rel));
+    const data = fs.readFileSync(path.join(root, rel));
     const comp = zlib.deflateRawSync(data, { level: 9 });
     const name = Buffer.from(rel, 'utf8');
     const crc = zlib.crc32(data) >>> 0;

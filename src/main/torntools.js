@@ -1,6 +1,7 @@
 /**
  * TornTools eklentisini Chrome Web Store'dan indirir, açar, Electron'a uyumlu hale getirir.
  * - CRX3 paketini çözer (bağımlılık yok: kendi küçük protobuf + zip okuyucusu)
+ * - Paketin imzalarını Chrome gibi doğrular: ID'si TornTools olan anahtar imzalamış olmalı, hiçbir imza bozuk olmamalı
  * - manifest'e Web Store public key'ini yazar → eklenti ID'si sabit kalır (ayarlar güncellemede kaybolmaz)
  * - Electron'da olmayan API'ler için tt-electron-shim.js ekler
  * - Günde bir kez güncelleme kontrolü yapar; ağ yoksa son kurulu sürümü kullanır
@@ -17,7 +18,7 @@ const SHIM_VERSION = 2; // shim değişirse artır → eklenti yeniden kurulur
 const CHECK_EVERY_MS = 24 * 3600_000;
 const EXT_PAGES = ['popup.html', 'options.html', 'targets.html', 'tos.html', 'offscreen.html'];
 
-const crxUrl = () => `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=${process.versions.chrome || '140.0.0.0'}&acceptformat=crx2,crx3&x=id%3D${EXT_ID}%26uc`;
+const crxUrl = () => `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=${process.versions.chrome || '140.0.0.0'}&acceptformat=crx3&x=id%3D${EXT_ID}%26uc`;
 
 function varint(buf, p) {
   let r = 0, mul = 1, b;
@@ -30,7 +31,11 @@ function pbFields(buf) {
   while (p < buf.length) {
     const [tag, p1] = varint(buf, p); p = p1;
     const field = Math.floor(tag / 8), wt = tag & 7;
-    if (wt === 2) { const [len, p2] = varint(buf, p); p = p2; out.push({ field, data: buf.subarray(p, p + len) }); p += len; }
+    if (wt === 2) {
+      const [len, p2] = varint(buf, p); p = p2;
+      if (p + len > buf.length) throw new Error(T('CRX başlığı çözülemedi', 'Could not parse the CRX header'));
+      out.push({ field, data: buf.subarray(p, p + len) }); p += len;
+    }
     else if (wt === 0) { p = varint(buf, p)[1]; }
     else if (wt === 5) p += 4;
     else if (wt === 1) p += 8;
@@ -41,24 +46,45 @@ function pbFields(buf) {
 const idFromKey = (der) => [...crypto.createHash('sha256').update(der).digest('hex').slice(0, 32)]
   .map((ch) => String.fromCharCode(97 + parseInt(ch, 16))).join('');
 
-function parseCrx(buf) {
-  if (buf.toString('latin1', 0, 4) !== 'Cr24') throw new Error(T('İndirilen dosya CRX değil', 'The downloaded file is not a CRX'));
+// CRX3 imzası (Chromium components/crx_file): her kanıt (2 = RSA, 3 = ECDSA, ikisi de SHA-256) şu baytları imzalar:
+// "CRX3 SignedData\0" + signed_header_data uzunluğu (uint32 LE) + signed_header_data + arşiv.
+// signed_header_data (alan 10000) içindeki crx_id, eklenti ID'sinin ilk 16 baytıdır.
+const CRX3_CONTEXT = Buffer.from('CRX3 SignedData\0', 'latin1');
+const KEY_TYPE = { 2: 'rsa', 3: 'ec' };
+const badSignature = () => new Error(T('TornTools paketinin imzası doğrulanamadı', 'The TornTools package signature could not be verified'));
+
+function parseCrx(buf, expectedId = EXT_ID) {
+  if (buf.length < 12 || buf.toString('latin1', 0, 4) !== 'Cr24') throw new Error(T('İndirilen dosya CRX değil', 'The downloaded file is not a CRX'));
   const ver = buf.readUInt32LE(4);
-  if (ver === 3) {
-    const hs = buf.readUInt32LE(8);
-    const header = buf.subarray(12, 12 + hs);
-    const keys = pbFields(header)
-      .filter((f) => f.field === 2 || f.field === 3)
-      .map((f) => pbFields(f.data).find((x) => x.field === 1)?.data)
-      .filter(Boolean);
-    return { zip: buf.subarray(12 + hs), key: keys.find((k) => idFromKey(k) === EXT_ID) || null };
+  if (ver !== 3) throw new Error(T('Desteklenmeyen CRX sürümü: ', 'Unsupported CRX version: ') + ver);
+  const hs = buf.readUInt32LE(8);
+  if (12 + hs > buf.length) throw new Error(T('CRX başlığı çözülemedi', 'Could not parse the CRX header'));
+  const fields = pbFields(buf.subarray(12, 12 + hs));
+  const zip = buf.subarray(12 + hs);
+
+  const signedData = fields.find((f) => f.field === 10000)?.data;
+  const crxId = signedData && pbFields(signedData).find((f) => f.field === 1)?.data;
+  if (!crxId || crxId.length !== 16) throw badSignature();
+  const declaredId = [...crxId.toString('hex')].map((ch) => String.fromCharCode(97 + parseInt(ch, 16))).join('');
+  if (declaredId !== expectedId) throw badSignature();
+  const size = Buffer.alloc(4);
+  size.writeUInt32LE(signedData.length);
+
+  let key = null;
+  for (const f of fields) {
+    if (!KEY_TYPE[f.field]) continue;
+    const proof = pbFields(f.data);
+    const der = proof.find((x) => x.field === 1)?.data, signature = proof.find((x) => x.field === 2)?.data;
+    if (!der || !signature) throw badSignature();
+    let publicKey;
+    try { publicKey = crypto.createPublicKey({ key: der, format: 'der', type: 'spki' }); } catch { throw badSignature(); }
+    if (publicKey.asymmetricKeyType !== KEY_TYPE[f.field]) throw badSignature();
+    const ok = crypto.createVerify('sha256').update(CRX3_CONTEXT).update(size).update(signedData).update(zip).verify(publicKey, signature);
+    if (!ok) throw badSignature(); // Chrome gibi: bozuk tek bir imza bile paketi geçersiz kılar
+    if (idFromKey(der) === expectedId) key = der;
   }
-  if (ver === 2) {
-    const kl = buf.readUInt32LE(8), sl = buf.readUInt32LE(12);
-    const key = buf.subarray(16, 16 + kl);
-    return { zip: buf.subarray(16 + kl + sl), key: idFromKey(key) === EXT_ID ? key : null };
-  }
-  throw new Error(T('Desteklenmeyen CRX sürümü: ', 'Unsupported CRX version: ') + ver);
+  if (!key) throw badSignature(); // TornTools'un kendi anahtarının imzası yok
+  return { zip, key };
 }
 
 function unzip(buf, dest) {
@@ -149,7 +175,6 @@ async function ensureTornTools({ baseDir, log = () => {}, force = false }) {
       fs.writeFileSync(stateFile, JSON.stringify({ ...st, checkedAt: Date.now() }, null, 2));
       return { dir: currentDir, version, updated: false };
     }
-    if (!key) log('TornTools: Web Store anahtarı bulunamadı, eklenti ID’si farklı olabilir');
     patchExtension(tmp, key);
     const finalName = `v${version}-${Date.now()}`;
     fs.renameSync(tmp, path.join(root, finalName));
@@ -168,4 +193,4 @@ async function ensureTornTools({ baseDir, log = () => {}, force = false }) {
   }
 }
 
-module.exports = { ensureTornTools, unzip };
+module.exports = { ensureTornTools, unzip, parseCrx };

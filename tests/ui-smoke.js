@@ -36,6 +36,7 @@ async function checkUpdateNotifications(browser, base, output) {
   });
   const page = await context.newPage();
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => { if (/Content Security Policy/i.test(m.text())) errors.push(m.text()); }); // a blocked script or handler is a failure
   const time = new Date('2026-11-10T12:00:00Z');
   await page.clock.install({ time });
   await page.clock.pauseAt(time);
@@ -44,6 +45,7 @@ async function checkUpdateNotifications(browser, base, output) {
   await page.clock.runFor(1001);
   await page.locator('#update-modal').waitFor({ state: 'visible' });
   assert.equal(await page.evaluate(() => window.qaUpdateChecks), 1);
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'update-dialog-cancel', 'a notice that opens by itself never puts Install under the next key press');
   assert.equal(await page.locator('#update-dialog-title').textContent(), 'Update released');
   assert.ok((await page.locator('#update-dialog-description').textContent()).includes('Would you like to update now?'));
   assert.ok(await page.locator('#update-modal').evaluate((el) => Number(getComputedStyle(el).zIndex) > Number(getComputedStyle(document.querySelector('#auth-screen')).zIndex)));
@@ -167,7 +169,8 @@ async function checkUpdateNotifications(browser, base, output) {
   });
   const page = await context.newPage();
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
-  let signedIn = false, sentKeys = [];
+  page.on('console', (m) => { if (/Content Security Policy/i.test(m.text())) errors.push(m.text()); });
+  let signedIn = false, sentKeys = [], overviewFails = false;
   const battle = buildBattleStats({ strength: 100000, defense: 100000, speed: 100000, dexterity: 100000 });
   const overview = { player: { id: 123, name: 'QA Player', level: 25, job: {}, faction: { faction_id: 5 }, status: { state: 'Okay' } }, serverTime: Math.floor(Date.now() / 1000), battle, bars: {}, cooldowns: {}, drug: { cooldown: 0, xanaxActive: false }, education: { timeLeft: 0, completed: 0, totalCourses: 100 } };
   const targetData = (id) => ({ faction: { id, name: 'Faction ' + id, members: 3, respect: 1000 }, me: { totals: battle.totals }, members: [1, 2, 3].map((n) => ({ id: id * 100 + n, name: ['Alpha', 'Bravo', 'Charlie'][n - 1], level: 20, bs: n * 50000, status: { state: 'Okay' }, source: 'ffscouter' })), ffscouter: { ok: true } });
@@ -182,7 +185,7 @@ async function checkUpdateNotifications(browser, base, output) {
     }
     if (p === '/api/auth') { sentKeys.push(route.request().postDataJSON().apiKey); signedIn = true; return json({ player: overview.player }); }
     if (p === '/api/logout') { signedIn = false; return json({ ok: true }); }
-    if (p === '/api/overview') return json(overview);
+    if (p === '/api/overview') return overviewFails ? json({ error: 'Torn API: fixture outage', code: 17 }, 502) : json(overview);
     if (p === '/api/wars') return json({ faction: { name: 'QA faction' }, wars: [] });
     if (p === '/api/targets') { const id = Number(url.searchParams.get('faction')); if (id === 5) await new Promise((r) => setTimeout(r, 150)); return json(targetData(id)); }
     if (p.startsWith('/api/') && !['/api/config', '/api/features', '/api/lang', '/api/war-groups'].includes(p)) return json({ error: 'Not available in QA' }, 412);
@@ -237,6 +240,16 @@ async function checkUpdateNotifications(browser, base, output) {
   await page.locator('#group-name').fill('<Priority>'); await page.locator('#group-form button[type="submit"]').click();
   await page.waitForFunction(() => document.querySelector('#group-filter').options.length === 3);
   const groupId = await page.locator('#group-filter option').last().getAttribute('value');
+  // Choosing the destination first and the players second used to send them to "Ungrouped": every re-render
+  // (ticking a player, the periodic target refresh) reset the destination.
+  await page.locator('#group-bulk-destination').selectOption(groupId);
+  await page.locator('[data-group-player]').first().check();
+  assert.equal(await page.locator('#group-bulk-destination').inputValue(), groupId, 'destination kept after ticking a player');
+  await page.evaluate(() => renderTargets());
+  assert.equal(await page.locator('#group-bulk-destination').inputValue(), groupId, 'destination kept after a target refresh');
+  await page.locator('[data-group-assign]').click();
+  await page.waitForFunction((id) => document.querySelector('[data-group-target]').value === id, groupId);
+  assert.equal(await page.locator('[data-group-target]').evaluateAll((items, id) => items.filter((e) => e.value === id).length, groupId), 1);
   await page.locator('#group-select-all').check();
   await page.locator('#group-bulk-destination').selectOption(groupId); await page.locator('[data-group-assign]').click();
   await page.waitForFunction((id) => [...document.querySelectorAll('[data-group-target]')].every((e) => e.value === id), groupId);
@@ -263,6 +276,45 @@ async function checkUpdateNotifications(browser, base, output) {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.evaluate(() => { document.body.classList.remove('no-anim'); openInTab('https://weav3r.dev/', { activate: false }); openInTab('https://www.torn.com/index.php', { activate: false }); });
   assert.ok(await page.locator('#workspace-shortcuts').evaluate((e) => parseFloat(getComputedStyle(e).transitionDuration) > 0));
+  // Light theme: the controls that used to keep a dark surface or near-white text are readable (WCAG AA, 4.5:1).
+  const contrast = await page.evaluate(() => {
+    const lum = (c) => { const [r, g, b] = c.map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const rgba = (text) => { const m = text.match(/[\d.]+/g).map(Number); return [m[0], m[1], m[2], m.length > 3 ? m[3] : 1]; };
+    const over = (base, top) => base.map((v, i) => v * (1 - top[3]) + top[i] * top[3]);
+    const background = (el) => {
+      const chain = []; for (let n = el; n; n = n.parentElement) chain.unshift(n);
+      return chain.reduce((c, n) => { const cs = getComputedStyle(n), image = cs.backgroundImage !== 'none' && cs.backgroundImage.match(/rgba?\([^)]+\)/); c = over(c, rgba(cs.backgroundColor)); return image ? over(c, rgba(image[0])) : c; }, [255, 255, 255]);
+    };
+    const ratio = (el) => { const bg = background(el), a = lum(over(bg, rgba(getComputedStyle(el).color))), b = lum(bg); return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); };
+    setAlert('qa-contrast', '<b>Notice</b> <span class="muted" id="qa-muted">note</span> <button class="btn sm" id="qa-btn">Retry</button>', 'warn');
+    const out = {};
+    for (const [name, selector] of [['language toggle', '#lang-toggle button:not(.active)'], ['war mode toggle', '#mode-toggle button:not(.active)'], ['target stock select', '#cover-days'], ['button in an alert', '#qa-btn'], ['muted text in an alert', '#qa-muted']]) out[name] = ratio(document.querySelector(selector));
+    setAlert('qa-contrast', null);
+    return { theme: document.documentElement.dataset.theme, out };
+  });
+  assert.equal(contrast.theme, 'light');
+  for (const [name, ratio] of Object.entries(contrast.out)) assert.ok(ratio >= 4.5, `${name}: contrast ${ratio.toFixed(2)} in the Light theme`);
+  // A refresh that fails while older data is on screen says so and says how old the data is; it clears on success.
+  overviewFails = true;
+  await page.evaluate(() => loadOverview(false));
+  await page.waitForFunction(() => /Could not refresh:.*fixture outage.*The data on screen is from/.test(document.querySelector('#alert-area').textContent));
+  overviewFails = false;
+  await page.evaluate(() => loadOverview(false));
+  await page.waitForFunction(() => !/Could not refresh/.test(document.querySelector('#alert-area').textContent));
+  // The reply's own time sets the clocks, not the moment it arrived (the server can answer from a 25 s cache).
+  assert.deepEqual(await page.evaluate(() => { const at = Date.now() - 20000; stampOverview({ serverTime: 1800000000, fetchedAt: at }); return [state.overviewAt === at, state.skew === 1800000000 * 1000 - at]; }), [true, true]);
+  await page.evaluate(() => loadOverview(false));
+  // A second count-up pass during the first one must end on the real figure, not on a half-animated frame.
+  const counted = await page.evaluate(async () => {
+    const host = document.querySelector('#bs-totals');
+    host.innerHTML = '<div class="bs-total"><strong>2.35B</strong></div><div class="bs-total"><strong>$5,000,000</strong></div>';
+    animateNumbers(host);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    animateNumbers();
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    return [...host.querySelectorAll('strong')].map((el) => el.textContent);
+  });
+  assert.deepEqual(counted, ['2.35B', '$5,000,000']);
   assert.deepEqual(errors, []);
   const releaseNotes = "## What's new\n\n- **FF Scouter** uses the saved key.\n- Added `Weav3r` and target groups.\n\n## Fixes\n\n" + Array.from({ length: 12 }, (_, i) => '- Update improvement ' + (i + 1)).join('\n') + '\n\n<img src=x onerror="window.qaUnsafeNotes = true">';
   await page.evaluate((notes) => {

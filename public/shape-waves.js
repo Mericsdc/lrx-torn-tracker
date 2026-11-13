@@ -153,7 +153,7 @@
     const gctx = glowC.getContext('2d');
     let W = 0, H = 0, dpr = 1, cols = 0, rows = 0, town = null;
     let raf = 0, running = false, t0 = 0, introStart = 0, last = 0;
-    const reduce = () => Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+    const reduce = () => document.body.classList.contains('no-anim') || Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
     const LEVELS = 10;
 
     // Sprite atlas: [color][kind][level] pre-rendered once per resize → per-cell blit
@@ -396,7 +396,7 @@ void main() {
 
     let W = 0, H = 0, dpr = 1, cols = 0, rows = 0, ready = false;
     let raf = 0, running = false, t0 = 0, introStart = 0, last = 0;
-    const reduce = () => Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+    const reduce = () => document.body.classList.contains('no-anim') || Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 
     function resize() {
       const r = canvas.getBoundingClientRect();

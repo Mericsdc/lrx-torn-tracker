@@ -9,7 +9,7 @@
     "build:preview": "node tools/build-preview.js",
     "test:all": "npm test && npm run test:premium",
     "test": "npm run test:node && npm run test:unit",
-    "test:node": "node --test tests/core.test.js tests/session.test.js tests/ff-script.test.js tests/updater.test.js",
+    "test:node": "node --test tests/core.test.js tests/account.test.js tests/torn-api.test.js tests/session.test.js tests/session-guard.test.js tests/ff-script.test.js tests/updater.test.js tests/torntools.test.js tests/nav-guard.test.js",
     "test:unit": "vitest run",
     "test:watch": "vitest",
     "test:premium": "node --test tests/premium/*.test.js",

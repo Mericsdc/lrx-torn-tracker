@@ -76,8 +76,34 @@ function flushHistory() {
 const saveHistory = () => { if (!historyTimer) historyTimer = setTimeout(flushHistory, 10_000); };
 const ffKey = () => config.ffscouterKey || config.apiKey;
 
+/* history.json holds ONE player's records (stats, net worth, company days, purchases, busts ...).
+   ownerId survives Log Out, so a different player who signs in later, or a key of another player saved in
+   Settings, never inherits them. Returns true when the previous player's records were dropped. */
+const playerIdOf = (value) => { const id = Number(value); return Number.isInteger(id) && id > 0 ? id : null; };
+const historyOwner = () => playerIdOf(history.ownerId) ?? playerIdOf(history.lastOverview?.player?.id);
+function adoptPlayer(playerId) {
+  const id = playerIdOf(playerId);
+  if (!id) return false;
+  const previous = historyOwner();
+  const changed = previous != null && previous !== id;
+  if (changed) {
+    history = { days: [], addiction: {}, user: {}, stockOrders: {}, stockDeliveries: { at: 0, items: [] }, eduNames: history.eduNames };
+    // The previous player's separate log and FFScouter keys are not this player's.
+    config.logKey = ''; config.ffscouterKey = '';
+    logStatus = { ok: null, error: null, at: 0 };
+    halloweenInfo = null;
+    saveConfig();
+  }
+  if (history.ownerId !== id) {
+    history.ownerId = id;
+    if (changed) flushHistory(); else saveHistory(); // a dropped history leaves the disk at once
+  }
+  return changed;
+}
+
 /** Torn şirket günü her gün 18:00 TCT (UTC)'de yenilenir */
 const tctDate = (ms = Date.now()) => new Date(ms - 18 * 3600_000).toISOString().slice(0, 10);
+const xanBound = (day) => day.bound || (day.exactStart ? 'exact' : 'atLeast');
 function next18TctMs(ms = Date.now()) {
   const d = new Date(ms);
   const t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 18, 0, 0, 0);
@@ -127,17 +153,30 @@ async function cached(key, ttl, loader) {
   return promise;
 }
 
+// Torn answered "too many requests" (error 5 or HTTP 429; the limit is per player, shared with every other tool
+// using the key): stop asking for half a minute instead of hammering a limited key. Requests fail fast meanwhile.
+let tornPausedUntil = 0;
+const RATE_PAUSE_MS = 30_000;
+const rateLimited = () => new ApiError(T('Torn API istek sınırına ulaşıldı. Yarım dakika içinde kendiliğinden yeniden denenecek.', 'Torn API rate limit reached. It will be tried again by itself within half a minute.'), 5);
+// Body of a Torn API reply. The API is untrusted input: anything but a JSON object is unreadable.
+function tornReply(res, text) {
+  let json = null;
+  try { json = JSON.parse(text); } catch {}
+  if (res.status === 429 || Number(json?.error?.code) === 5) { tornPausedUntil = Date.now() + RATE_PAUSE_MS; throw rateLimited(); }
+  if (!json || typeof json !== 'object' || Array.isArray(json)) throw new ApiError(T(`Torn API yanıtı okunamadı (HTTP ${res.status})`, `Could not read the Torn API response (HTTP ${res.status})`), 'BAD_RESPONSE');
+  if (json.error) throw new ApiError(`Torn API: ${json.error.error}`, json.error.code);
+  return json;
+}
+
 async function tornRaw(pathq) {
   if (!config.apiKey) throw new ApiError(T('API key ayarlanmamış. Ayarlar sekmesinden ekleyin.', 'API key not set. Add it in Settings.'), 'NO_KEY');
+  if (Date.now() < tornPausedUntil) throw rateLimited();
   await throttle();
+  if (Date.now() < tornPausedUntil) throw rateLimited(); // the limit was hit while this call waited its turn
   const sep = pathq.includes('?') ? '&' : '?';
   const url = `https://api.torn.com/${pathq}${sep}key=${encodeURIComponent(config.apiKey)}&comment=TornTracker`;
   const res = await fetch(url, { headers: { 'User-Agent': 'TornTracker/1.0' }, signal: AbortSignal.timeout(20_000) });
-  const text = await res.text();
-  let json;
-  try { json = JSON.parse(text); } catch { throw new ApiError(T(`Torn API yanıtı okunamadı (HTTP ${res.status})`, `Could not read the Torn API response (HTTP ${res.status})`), 'BAD_RESPONSE'); }
-  if (json.error) throw new ApiError(`Torn API: ${json.error.error}`, json.error.code);
-  return json;
+  return tornReply(res, await res.text());
 }
 const torn = (pathq, ttl = 30_000) => cached('torn:' + pathq, ttl, () => tornRaw(pathq));
 
@@ -168,25 +207,45 @@ async function getOverview(force = false) {
     getEducationNames().catch(() => history.eduNames || {}),
   ]);
   if (gen !== keyGen) throw new ApiError(T('API key değişti, yeniden yükleniyor.', 'API key changed, reloading.'), 'KEY_CHANGED');
+  // When Torn sent this reply. It may come from the 25 s cache, so the page must not take "now" for it:
+  // every countdown and the TCT clock would run late by the cache age.
+  const fetchedAt = cache.get('torn:' + q)?.t || Date.now();
+  // The saved key can also change outside sign-in and Settings (config.json, TORN_API_KEY):
+  // another player's records are never continued under this one.
+  adoptPlayer(u.player_id);
 
   const icons = u.icons || {};
   const iconList = Object.values(icons).map(String);
   const drugIcon = iconList.find((t) => /^drug/i.test(t) || /drug cooldown/i.test(t)) || null;
   const bs = buildBattleStats(u);
-  const xanaxFromIcon = drugIcon ? /xanax/i.test(drugIcon) : false;
+  // Torn normally sends its clock; without it the local clock is close enough (and never an invalid date)
+  const serverTime = Number(u.server_time || u.timestamp) || Math.floor(Date.now() / 1000);
 
   // Bugün alınan Xanax (gün başındaki sayaçtan fark)
-  const today = tctDate((u.server_time || u.timestamp) * 1000);
+  const today = tctDate(serverTime * 1000);
   const xantaken = u.personalstats?.xantaken ?? null;
   if (xantaken != null) {
-    history.user[today] ||= { xanStart: xantaken };
+    if (!history.user[today]) {
+      // Start of the day's count (the day runs from 18:00 TCT). The app is often opened hours into the day, so the
+      // last value seen the day before is the starting point when there is one:
+      // - seen within 15 min before 18:00, or unchanged since: exact;
+      // - seen earlier: an upper bound, since some of the difference may have been taken before 18:00;
+      // - no record from the day before: the first value seen today, a lower bound.
+      const dayBefore = history.user[tctDate(serverTime * 1000 - 86400_000)];
+      const known = !!dayBefore && Number.isFinite(dayBefore.xanLast) && dayBefore.xanLast <= xantaken;
+      const dayStart = Date.parse(today + 'T18:00:00Z') / 1000;
+      const recent = known && Number.isFinite(dayBefore.xanLastAt) && dayStart - dayBefore.xanLastAt <= 15 * 60;
+      const bound = !known ? 'atLeast' : recent || dayBefore.xanLast === xantaken ? 'exact' : 'atMost';
+      history.user[today] = { xanStart: known ? dayBefore.xanLast : xantaken, bound };
+    }
     history.user[today].xanLast = xantaken;
+    history.user[today].xanLastAt = serverTime;
     pruneUserHistory();
   }
 
   const eduId = u.education_current;
   const result = {
-    serverTime: u.server_time || u.timestamp,
+    serverTime, fetchedAt,
     player: {
       id: u.player_id, name: u.name, level: u.level, rank: u.rank,
       image: u.profile_image, status: u.status, lastAction: u.last_action,
@@ -200,6 +259,10 @@ async function getOverview(force = false) {
       xanaxActive: bs.xanaxActive,
       xantaken,
       xanToday: xantaken != null ? xantaken - history.user[today].xanStart : null,
+      // exact / atLeast (counted only since the app was opened today) / atMost (from an older count of the day before).
+      // Records written before 'bound' existed only have exactStart.
+      xanTodayBound: xantaken != null ? xanBound(history.user[today]) : null,
+      xanTodayExact: xantaken != null ? xanBound(history.user[today]) === 'exact' : null,
       refills: u.personalstats?.refills ?? null,
     },
     education: {
@@ -221,7 +284,7 @@ async function getOverview(force = false) {
   };
   recordStats(today, bs, u.personalstats || {});
   history.lastOverview = result;
-  history.lastOverviewAt = Date.now();
+  history.lastOverviewAt = fetchedAt;
   saveHistory();
   return result;
 }
@@ -1223,11 +1286,10 @@ let logStatus = { ok: null, error: null, at: 0 };
 async function tornLogRaw(pathq) {
   const key = config.logKey || config.apiKey;
   if (!key) throw new ApiError(T('API key ayarlanmamış.', 'API key not set.'), 'NO_KEY');
+  if (Date.now() < tornPausedUntil) throw rateLimited();
   await throttle();
   const res = await fetch(`https://api.torn.com/${pathq}&key=${encodeURIComponent(key)}&comment=TornTracker`, { headers: { 'User-Agent': 'TornTracker/1.0' }, signal: AbortSignal.timeout(20_000) });
-  const json = await res.json().catch(() => ({ error: { code: 0, error: `HTTP ${res.status}` } }));
-  if (json.error) throw new ApiError(`Torn API: ${json.error.error}`, json.error.code);
-  return json;
+  return tornReply(res, await res.text());
 }
 
 function ingestLogs(list) {
@@ -1718,11 +1780,19 @@ async function sendFeedback(b) {
     Surum: APP_VERSION || '?', Dil: b.lang === 'en' ? 'EN' : 'TR',
   };
   if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contact)) payload._replyto = contact; // e-postaya "Yanıtla" ile dönülebilsin
-  const res = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(FEEDBACK_TO)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', Referer: 'https://github.com/Mericsdc/lrx-torn-tracker', 'User-Agent': 'LRX-Torn-Tracker' },
-    body: JSON.stringify(payload),
-  });
+  let res;
+  try {
+    res = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(FEEDBACK_TO)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', Referer: 'https://github.com/Mericsdc/lrx-torn-tracker', 'User-Agent': 'LRX-Torn-Tracker' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(20_000), // the Send button must not stay busy for minutes
+    });
+  } catch (e) {
+    throw new ApiError(e?.name === 'TimeoutError'
+      ? T('Geri bildirim servisi zamanında yanıt vermedi. Mesajın gönderilmedi, tekrar dene.', 'The feedback service did not respond in time. Your message was not sent, please try again.')
+      : T('Geri bildirim servisine ulaşılamadı. İnternet bağlantını kontrol et.', 'The feedback service could not be reached. Check your internet connection.'), 'FEEDBACK_FAIL');
+  }
   const j = await res.json().catch(() => ({}));
   if (!res.ok || String(j.success) !== 'true') throw new ApiError(j.message || T(`Gönderilemedi (HTTP ${res.status})`, `Could not send (HTTP ${res.status})`), 'FEEDBACK_FAIL');
   feedbackLast = Date.now();
@@ -1754,9 +1824,17 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=u
 
 function send(res, status, obj) {
   const body = JSON.stringify(obj);
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
   res.end(body);
 }
+/* The app page holds privileged controls (the saved key behind /api, the Torn tabs through the desktop bridge) and
+   shows text that comes from the Torn API. Only the app's own script files may run in it, so a name or message
+   that carries markup stays inert even where a template forgot to escape it. No inline scripts or handlers. */
+const PAGE_CSP = [
+  "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' data: https://fonts.gstatic.com", "img-src 'self' data: blob: https:", "connect-src 'self'",
+  "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-src 'none'", "frame-ancestors 'none'",
+].join('; ');
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -1776,6 +1854,33 @@ function readBody(req) {
   });
 }
 const maskKey = (k) => (k ? k.slice(0, 3) + '•'.repeat(Math.max(0, k.length - 6)) + k.slice(-3) : '');
+
+// Asks Torn who owns a key and whether its access is enough for the app. Nothing is saved here.
+async function verifyTornKey(key) {
+  const call = async (q) => {
+    await throttle();
+    const r = await fetch(`https://api.torn.com/${q}&key=${encodeURIComponent(key)}&comment=TornTracker`, { headers: { 'User-Agent': 'TornTracker/1.0' }, signal: AbortSignal.timeout(20_000) });
+    const j = await r.json().catch(() => ({ error: { error: `HTTP ${r.status}` } }));
+    if (!j || typeof j !== 'object') throw new ApiError(T(`Torn API yanıtı okunamadı (HTTP ${r.status})`, `Could not read the Torn API response (HTTP ${r.status})`), 'BAD_RESPONSE');
+    if (j.error) throw new ApiError(j.error.code === 2 ? T('API key geçersiz.', 'Invalid API key.') : `Torn API: ${j.error.error}`, j.error.code);
+    return j;
+  };
+  const [keyResponse, user] = await Promise.all([call('key/?selections=info'), call('user/?selections=basic')]);
+  const info = keyResponse.info || keyResponse;
+  const level = Number(info.access_level) || 0;
+  const customAccess = info.access_type === 'Custom' && ['profile', 'battlestats', 'bars', 'cooldowns'].every((s) => info.selections?.user?.includes(s));
+  if (level < 3 && !customAccess) {
+    const accessType = info.access_type || 'Public';
+    throw Object.assign(new ApiError(T(`Bu key "${accessType}" seviyesinde. Şirket ve faction verileri için en az "Limited Access" key gerekli.`,
+      `This key has "${accessType}" access. Company and faction data need at least a "Limited Access" key.`), 'KEY_ACCESS'), { status: 403 });
+  }
+  if (!playerIdOf(user.player_id)) throw new ApiError(T('Torn API oyuncu bilgisini döndürmedi. Tekrar deneyin.', 'The Torn API did not return the player. Please try again.'), 'BAD_RESPONSE');
+  // The overview asks Torn for more than the four selections checked above. A Custom key that lacks one of them is
+  // accepted (other pages still work), but the caller is told which ones so the user is not left guessing.
+  const granted = Array.isArray(info.selections?.user) ? info.selections.user : null;
+  const missing = info.access_type === 'Custom' && granted ? ['education', 'icons', 'personalstats', 'travel', 'money'].filter((s) => !granted.includes(s)) : [];
+  return { user, info, missing };
+}
 
 async function handleApi(req, res, url) {
   const p = url.pathname;
@@ -1870,9 +1975,18 @@ async function handleApi(req, res, url) {
         }
       }
       if (b.theme != null && !THEMES.has(b.theme)) return send(res, 400, { error: T('Geçersiz tema.', 'Invalid theme.') });
-      if (typeof b.apiKey === 'string' && b.apiKey.trim()) {
-        if (b.apiKey.trim() !== config.apiKey) premiumClient.reset();
-        config.apiKey = b.apiKey.trim(); resetKeyCaches();
+      // A different main key is checked with Torn before anything is saved: a key Torn rejects never replaces a
+      // working one, and a key of another player does not inherit this player's records or extra keys.
+      const newKey = typeof b.apiKey === 'string' ? b.apiKey.trim() : '';
+      let resetData = false, missingSelections = [];
+      if (newKey && newKey !== config.apiKey) {
+        const keyBefore = config.apiKey;
+        const { user, missing } = await verifyTornKey(newKey);
+        missingSelections = missing;
+        if (config.apiKey !== keyBefore) return send(res, 409, { error: T('API key bu sırada değişti. Tekrar deneyin.', 'The API key changed in the meantime. Please try again.'), code: 'KEY_CHANGED' });
+        premiumClient.reset();
+        resetData = adoptPlayer(user.player_id);
+        config.apiKey = newKey; resetKeyCaches();
         ffStatus = { ok: null, error: null, checkedAt: 0 };
       }
       if (typeof b.ffscouterKey === 'string') { config.ffscouterKey = b.ffscouterKey.trim(); ffCache.clear(); ffStatus = { ok: null, error: null, checkedAt: 0 }; }
@@ -1887,41 +2001,21 @@ async function handleApi(req, res, url) {
       if (b.deliveryMode === 'hours' || b.deliveryMode === '18tct') config.deliveryMode = b.deliveryMode;
       if (b.theme != null) config.theme = b.theme;
       saveConfig(); schedulePoll();
-      return send(res, 200, { ok: true });
+      return send(res, 200, { ok: true, resetData, missingSelections });
     }
     if (p === '/api/auth' && req.method === 'POST') {
       const b = await readBody(req);
       const key = String(b.apiKey || '').trim();
       if (!/^[A-Za-z0-9]{16}$/.test(key)) return send(res, 400, { error: T('API key 16 karakterlik harf/rakam olmalı.', 'The API key must be 16 letters and digits.') });
-      const call = async (q) => {
-        await throttle();
-        const r = await fetch(`https://api.torn.com/${q}&key=${encodeURIComponent(key)}&comment=TornTracker`, { headers: { 'User-Agent': 'TornTracker/1.0' }, signal: AbortSignal.timeout(20_000) });
-        const j = await r.json().catch(() => ({ error: { error: `HTTP ${r.status}` } }));
-        if (j.error) throw new ApiError(j.error.code === 2 ? T('API key geçersiz.', 'Invalid API key.') : `Torn API: ${j.error.error}`, j.error.code);
-        return j;
-      };
-      const [keyResponse, user] = await Promise.all([call('key/?selections=info'), call('user/?selections=basic')]);
-      const info = keyResponse.info || keyResponse;
-      const level = Number(info.access_level) || 0;
-      const customAccess = info.access_type === 'Custom' && ['profile', 'battlestats', 'bars', 'cooldowns'].every((s) => info.selections?.user?.includes(s));
-      if (level < 3 && !customAccess) {
-        const accessType = info.access_type || 'Public';
-        return send(res, 403, { error: T(`Bu key "${accessType}" seviyesinde. Şirket ve faction verileri için en az "Limited Access" key gerekli.`,
-          `This key has "${accessType}" access. Company and faction data need at least a "Limited Access" key.`) });
-      }
-      // Farklı bir oyuncuya geçildiyse önceki oyuncunun verilerini karıştırma
-      const prevPlayer = history.lastOverview?.player?.id;
-      if (prevPlayer && prevPlayer !== user.player_id) {
-        history = { days: [], addiction: {}, user: {}, stockOrders: {}, stockDeliveries: { at: 0, items: [] }, eduNames: history.eduNames };
-        config.logKey = ''; // önceki oyuncunun log key'i yeni oyuncuya ait değildir
-        saveHistory();
-      }
+      const { user, info, missing } = await verifyTornKey(key);
+      // Farklı bir oyuncuya geçildiyse önceki oyuncunun verilerini karıştırma (çıkış yapılmış olsa bile)
+      const resetData = adoptPlayer(user.player_id);
       if (config.apiKey !== key) premiumClient.reset();
       config.apiKey = key;
       resetKeyCaches();
       ffStatus = { ok: null, error: null, checkedAt: 0 };
       saveConfig(); schedulePoll();
-      return send(res, 200, { ok: true, player: { id: user.player_id, name: user.name, level: user.level }, accessType: info.access_type, resetData: !!(prevPlayer && prevPlayer !== user.player_id) });
+      return send(res, 200, { ok: true, player: { id: user.player_id, name: user.name, level: user.level }, accessType: info.access_type, resetData, missingSelections: missing });
     }
     if (p === '/api/logout' && req.method === 'POST') {
       premiumClient.reset();
@@ -1929,6 +2023,9 @@ async function handleApi(req, res, url) {
       config.ffscouterKey = '';
       config.logKey = '';
       resetKeyCaches();
+      // Remember whose records these are: the next sign-in may be a different player.
+      const owner = historyOwner();
+      if (owner) history.ownerId = owner;
       delete history.lastOverview; delete history.lastCompanyReport;
       saveConfig(); saveHistory();
       return send(res, 200, { ok: true });
@@ -2006,7 +2103,12 @@ async function handleApi(req, res, url) {
     }
     if (p === '/api/ffscouter/check') {
       const r = await fetch(`https://ffscouter.com/api/v1/check-key?key=${encodeURIComponent(ffKey())}`, { signal: AbortSignal.timeout(20_000) });
-      const j = await r.json().catch(() => ({}));
+      const j = await r.json().catch(() => null);
+      // A refused key (HTTP 401/403, or an error about registration, as /api/targets reads it) is "not registered";
+      // an outage or an unreadable reply is not
+      const refusal = j && typeof j === 'object' ? String(j.error || j.message || '') : '';
+      if (r.status === 401 || r.status === 403 || (!r.ok && /regist/i.test(refusal))) return send(res, 200, { registered: false, premium: false, raw: {} });
+      if (!r.ok || !j || typeof j !== 'object') throw new ApiError(T(`FFScouter şu anda yanıt vermiyor (HTTP ${r.status}). Biraz sonra tekrar dene.`, `FFScouter is not answering right now (HTTP ${r.status}). Please try again shortly.`), 'FFSCOUTER_HTTP', 'ffscouter');
       return send(res, 200, { registered: !!j.is_registered, premium: !!j.is_premium, raw: { registered_at: j.registered_at, last_used: j.last_used } });
     }
     return send(res, 404, { error: T('Bulunamadı', 'Not found') });
@@ -2032,6 +2134,11 @@ const server = http.createServer(async (req, res) => {
     const expected = `http://${req.headers.host}`;
     if (req.headers.origin !== expected) return send(res, 403, { error: 'Cross-origin requests are not allowed' });
   }
+  // ... nor triggered by one: a browser marks what another site requests (an image or script tag, a no-cors
+  // fetch) even when it sends no Origin header. Such a request could spend the player's Torn API allowance.
+  if (url.pathname.startsWith('/api/') && ['cross-site', 'same-site'].includes(req.headers['sec-fetch-site'])) {
+    return send(res, 403, { error: 'Cross-origin requests are not allowed' });
+  }
   if (url.pathname.startsWith('/api/')) return handleApi(req, res, url);
 
   const file = path.resolve(PUBLIC, '.' + (pathname === '/' ? '/index.html' : pathname));
@@ -2039,7 +2146,9 @@ const server = http.createServer(async (req, res) => {
   if (relative.startsWith('..') || path.isAbsolute(relative) || pathname.includes('\0')) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, buf) => {
     if (err) { res.writeHead(404); return res.end('Not found'); }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+    const headers = { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' };
+    if (path.extname(file) === '.html') Object.assign(headers, { 'Content-Security-Policy': PAGE_CSP, 'Referrer-Policy': 'same-origin' });
+    res.writeHead(200, headers);
     res.end(buf);
   });
 });

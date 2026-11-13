@@ -68,7 +68,8 @@ function purchaseCard() {
 }
 
 /* ---------- Etkinlikler ---------- */
-const tsDate = (s) => new Date(s * 1000).toLocaleDateString(state.lang === 'en' ? 'en-GB' : 'tr-TR', { day: 'numeric', month: 'short' });
+// Torn's calendar is in Torn time (UTC): the dates are shown in it, like everywhere else in the app
+const tsDate = (s) => new Date(s * 1000).toLocaleDateString(state.lang === 'en' ? 'en-GB' : 'tr-TR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 const leftText = (sec) => {
   const s = Math.max(0, sec); const d = Math.floor(s / 86400); const h = Math.floor((s % 86400) / 3600);
   return d ? `${d}${tr('g', 'd')} ${h}${tr('sa', 'h')}` : `${h}${tr('sa', 'h')} ${Math.floor((s % 3600) / 60)}${tr('dk', 'm')}`;
@@ -80,12 +81,12 @@ function eventsCard() {
   if (!d) return `<article class="glass card">${head}${toolState.evErr ? errorBox(toolState.evErr) : loadingBox()}</article>`;
   const now = Date.now() / 1000;
   const list = d.events.slice(0, 12).map((e) => {
-    const live = e.start <= now && e.end >= now;
+    const live = e.start <= now && e.end >= now, ended = e.end < now;
     return `<div class="ev-row ${live ? 'live' : ''}">
       <div><b>${esc(e.title)}</b> ${live ? `<span class="chip green">${tr('şimdi', 'now')}</span>` : ''} ${e.fixed ? '' : `<span class="chip dim" title="${tr('Başlangıç saati oyuncuya göre değişir', 'Start time depends on the player')}">${tr('kişisel saat', 'personal time')}</span>`}
         <div class="muted aw-desc">${esc(e.description || '')}</div></div>
       <div class="ev-when"><span class="mono">${tsDate(e.start)}${e.end - e.start > 86400 ? ` – ${tsDate(e.end)}` : ''}</span>
-        <span class="muted">${live ? `${tr('bitişe', 'ends in')} ${leftText(e.end - now)}` : `${tr('başlamasına', 'starts in')} ${leftText(e.start - now)}`}</span></div>
+        <span class="muted">${live ? `${tr('bitişe', 'ends in')} ${leftText(e.end - now)}` : ended ? tr('bitti', 'ended') : `${tr('başlamasına', 'starts in')} ${leftText(e.start - now)}`} · TCT</span></div>
     </div>`;
   }).join('') || `<div class="muted">${tr('Yaklaşan etkinlik yok.', 'No upcoming events.')}</div>`;
   return `<article class="glass card">${head}<div class="ev-list">${list}</div>
@@ -147,9 +148,9 @@ $('#tools-body')?.addEventListener('click', async (e) => {
   if (e.target.id === 'pur-add') {
     const name = toolState.add.name.trim().toLowerCase();
     const hit = (toolState.pur?.catalog || []).find(([, n]) => n.toLowerCase() === name);
-    const cost = Number(String(toolState.add.cost).replace(/[^\d.]/g, ''));
+    const cost = LRXTravelMath.parsePrice(toolState.add.cost);
     if (!hit) { toast(tr('Eşya bulunamadı; listeden seç.', 'Item not found; pick one from the list.')); return; }
-    if (!(cost > 0)) { toast(tr('Geçerli bir fiyat gir.', 'Enter a valid price.')); return; }
+    if (!(cost > 0)) { toast(tr('Geçerli bir fiyat gir: 830000, 830.000, 830k ya da 1.5m.', 'Enter a valid price: 830000, 830,000, 830k or 1.5m.')); return; }
     try { await savePurchase(hit[0], cost); toolState.add = { name: '', cost: '' }; renderTools(); toast(tr('Kaydedildi', 'Saved')); }
     catch (err) { toast(err.message); }
     return;
