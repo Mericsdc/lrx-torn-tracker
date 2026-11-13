@@ -8,17 +8,10 @@
 (() => {
   const L = window.LRXOverviewLayout, O = window.LRXOverview;
   const grid = $('#ow-grid'), bar = $('#ow-bar'), drawer = $('#ow-drawer');
-  // Free widget titles until LRXOverviewWidgets (overview-widgets.js) provides every title.
-  const FREE = {
-    profile: ['Profil kartı', 'Profile card'], drug: ['Xanax / drug sayacı', 'Xanax / drug timer'],
-    edu: ['Eğitim sayacı', 'Education timer'], day: ['Gün dönümü (18:00 TCT)', 'Day reset (18:00 TCT)'],
-    bars: ['Barlar', 'Bars'], chips: ['Durum çipleri', 'Status chips'], battle: ['Savaş gücü', 'Battle stats'],
-    company: ['Şirket özeti', 'Company summary'],
-  };
   const GRIP = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="5.5" cy="3.5" r="1.5"/><circle cx="10.5" cy="3.5" r="1.5"/><circle cx="5.5" cy="8" r="1.5"/><circle cx="10.5" cy="8" r="1.5"/><circle cx="5.5" cy="12.5" r="1.5"/><circle cx="10.5" cy="12.5" r="1.5"/></svg>';
   const DRAG_TYPE = 'application/x-lrx-widget'; // not text: a drop on a text field inserts nothing
 
-  const title = (id) => { const t = window.LRXOverviewWidgets?.titles?.[id] || FREE[id] || O.titles?.[id]; return t ? tr(t[0], t[1]) : id; };
+  const title = (id) => { const t = window.LRXOverviewWidgets.titles[id]; return t ? tr(t[0], t[1]) : id; }; // overview-widgets.js
   const defaultName = () => tr('Ana düzen', 'Main');
   const playerId = () => { const id = Number(state.overview?.player?.id); return Number.isInteger(id) && id > 0 ? id : null; };
   // Edit needs a known player (the host drops saves made before one is known) and the widget layout switched on.

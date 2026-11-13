@@ -34,7 +34,12 @@ test('every existing feature switch and all five themes remain Free in the share
   assert.equal(new Set(catalog.definitions.map((d) => d.id)).size, catalog.definitions.length);
   const themeSource = fs.readFileSync(path.join(__dirname, '../../public/workspace.js'), 'utf8');
   for (const theme of ['obsidian', 'ocean', 'forest', 'amethyst', 'light']) assert.ok(themeSource.includes("['" + theme + "'"));
-  assert.equal(catalog.premium.length, 5);
+  assert.equal(catalog.premium.length, 6);
+  assert.deepEqual({ ...catalog.byId.overview_widgets }, {
+    id: 'overview_widgets', tier: 'premium', module: 'overview',
+    title: ["Genel Bakış widget'ları", 'Overview widgets'],
+    description: ["Diğer sayfalardan widget'lar, S/M/L boyut ve kayıtlı düzenler.", 'Widgets from other pages, S/M/L sizes and saved layouts.'],
+  });
 });
 
 test('HTTP denies all paid operations to Free users, ignores forged flags, and rejects unknown features', async (t) => {

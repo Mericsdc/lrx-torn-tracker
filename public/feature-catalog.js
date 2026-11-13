@@ -12,6 +12,7 @@
     { id: 'events_advanced', tier: 'premium', module: 'events', title: ['Etkinlik planlayıcısı', 'Event planner'], description: ['Kişisel hedefler, hatırlatıcılar ve dönemler arası ilerleme.', 'Personal goals, reminders and progress across event runs.'] },
     { id: 'travel_advanced', tier: 'premium', module: 'travel', title: ['Seyahat stratejileri', 'Travel strategies'], description: ['Senaryoları karşılaştırın, fiyat geçmişini görün ve fiyat eşikleri belirleyin.', 'Compare scenarios, record price history and set price thresholds.'] },
     { id: 'merits_optimizer', tier: 'premium', module: 'merits', title: ['Akıllı Merit planlayıcı', 'Merit allocation planner'], description: ['Bütçenize ve önceliklerinize göre dağılım, karşılaştırma ve kayıtlı planlar.', 'Budgeted allocation, comparisons and saved plans based on your priorities.'] },
+    { id: 'overview_widgets', tier: 'premium', module: 'overview', title: ["Genel Bakış widget'ları", 'Overview widgets'], description: ["Diğer sayfalardan widget'lar, S/M/L boyut ve kayıtlı düzenler.", 'Widgets from other pages, S/M/L sizes and saved layouts.'] },
   ];
   const byId = Object.freeze(Object.fromEntries(definitions.map((d) => [d.id, Object.freeze(d)])));
   return Object.freeze({ version: 1, definitions: Object.freeze(definitions), byId, premium: Object.freeze(definitions.filter((d) => d.tier === 'premium')) });

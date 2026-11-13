@@ -15,9 +15,38 @@ const config = readConfig({ PREMIUM_MODE: 'test', PREMIUM_DB_PATH: ':memory:', P
 const { server, service } = createHttpServer(config, { fetchImpl: async () => { throw Error('External calls are forbidden in UI fixtures'); } });
 const children = []; let browser;
 const output = process.env.QA_OUTPUT || path.join(temp, 'screenshots'); fs.mkdirSync(output, { recursive: true });
-const MEMBER = 4037017, OTHER = 3000001;
+const MEMBER = 4037017, OTHER = 3000001, LAPSE = 3000002; // 4037017 is a permanent member and cannot lapse
 const DEFAULT_IDS = ['profile', 'drug', 'edu', 'day', 'bars', 'chips', 'battle']; // company is in the layout but hidden: not a director
 const PHOTO = 'https://profileimages.torn.com/ok.png';
+const NOW = Math.floor(Date.now() / 1000), MARK = '<b>x</b>'; // Torn text with markup: shown as text, never parsed
+// Every endpoint a Premium widget reads, answered with synthetic data. A function answers the route itself.
+const widgetData = {
+  '/api/stats': { battle: null, history: [
+    { date: '2026-11-06', str: 1200000, def: 970000, spd: 1080000, dex: 866000, total: 4116000 },
+    { date: '2026-11-12', str: 1240000, def: 975000, spd: 1088000, dex: 868000, total: 4171000 },
+    { date: '2026-11-13', str: 1250000, def: 980000, spd: 1100000, dex: 870000, total: 4200000 }] },
+  '/api/networth': { current: { total: 2500000000, bank: 1000000000, wallet: MARK }, timestamp: NOW,
+    history: [{ date: '2026-11-06', total: 2400000000 }, { date: '2026-11-12', total: 2450000000 }, { date: '2026-11-13', total: 2500000000 }] },
+  '/api/travel': { method: null, fetchedAt: NOW * 1000, serverNow: NOW, sources: { yata: true }, countries: [
+    { code: 'mex', name: MARK, minutes: 26, update: NOW, source: 'YATA', items: [{ id: 1, name: MARK, type: 'Flower', cost: 100, market: 500, qty: 1000, profit: 400 }] },
+    { code: 'uni', name: 'United Kingdom', minutes: 159, update: NOW, source: 'YATA', items: [{ id: 2, name: 'Plushie', type: 'Plushie', cost: 200, market: 1500, qty: 100, profit: 1300 }] }] },
+  '/api/job': { workstats: { man: 5000, int: 3000, end: 4000 }, job: { company_id: 0, job: 'None' },
+    jobpoints: { jobs: { army: 12 }, companies: { 1: { name: MARK, jobpoints: 30 } } },
+    types: { 1: { name: 'Hair Salon', positions: { Trainee: { man_required: 100, int_required: 100, end_required: 100, man_gain: 5, int_gain: 5, end_gain: 5 }, Director: { man_required: 1e6, int_required: 1e6, end_required: 1e6 } } } } },
+  '/api/shoplifting': { stores: [{ key: 'sally', name: "Sally's Sweet Shop", allDown: true, security: [] }, { key: 'bits', name: 'Bits n Bobs', allDown: false, security: [] }] },
+  '/api/crime-value': { fetchedAt: Date.now(), burglary: [], crimes: [{ crime: 'Burglary', best: 'Warehouse', value: 3600, options: [] }, { crime: 'Shoplifting', best: "Sally's Sweet Shop", value: 900, options: [] }] },
+  '/api/jail': { source: 'stats', total: { success: 120, fails: 10 }, last24: 3, last72: 9, score: 512, decay: [], lastBust: Date.now() - 3600000 },
+  '/api/awards': { totals: { honors: [1, 10], medals: [1, 10], awards: 2 }, awards: [
+    { name: 'Bar Breaker', kind: 'honor', type: 'Crimes', description: '', owned: false, pct: 0.92, cur: 920, goal: 1000, circulation: 100 },
+    { name: 'Owned', kind: 'medal', type: 'Level', description: '', owned: true, pct: 1, cur: 1, goal: 1, circulation: 9 },
+    { name: 'Halfway', kind: 'medal', type: 'Level', description: '', owned: false, pct: 0.5, cur: 50, goal: 100, circulation: 50 }] },
+  '/api/faction': { at: Date.now(), access: { inFaction: true, allowed: true, role: 'leader' }, oc: { crimes: [], notInOc: [], totals: { members: 2, inOc: 2 } },
+    myOc: { inOc: true, crime: { id: 77, name: 'Mob Mentality', difficulty: 3, status: 'Planning', readyAt: NOW + 7200, filled: 3, total: 4 }, slot: { role: 'Looter', cpr: 70, item: { name: 'Crowbar', ok: true } } } },
+  '/api/wars': { faction: { id: 5, name: 'Example' }, wars: [{ type: 'Ranked War', id: '1', factionId: 99, name: MARK, score: 1200, myScore: 1500 }] },
+  '/api/events': { seasonal: [], at: Date.now(), events: [{ title: 'Easter Egg Hunt', description: '', start: NOW + 3 * 86400 + 7200, end: NOW + 10 * 86400, exact: true, fixed: true }] },
+};
+const WIDGET_PATHS = Object.keys(widgetData);
+const forbidden = []; // requests the widgets must never make, from every page in this run
 let overviewPlayer = null;
 const overviewFixture = () => ({
   player: overviewPlayer, serverTime: Math.floor(Date.now() / 1000),
@@ -38,11 +67,29 @@ async function desktop(tornId) {
   children.push(child);
   const port = await new Promise((resolve, reject) => { child.once('message', (m) => resolve(m.port)); child.once('error', reject); child.once('exit', (code) => reject(Error('Fixture exited ' + code))); });
   const base = 'http://127.0.0.1:' + port, context = await browser.newContext({ viewport: { width: 1440, height: 1050 } });
+  // The page's own fetch() calls, logged the moment they are made, so a count is exact even while its clock is paused.
+  await context.addInitScript(() => {
+    const original = window.fetch;
+    window.qaFetches = [];
+    window.fetch = function (input, init) {
+      try { window.qaFetches.push([String(init?.method || 'GET').toUpperCase(), new URL(String(input?.url || input), location.href).pathname]); } catch {}
+      return original.apply(this, arguments);
+    };
+  });
   const page = await context.newPage(), errors = [];
   page.on('pageerror', (e) => errors.push(e.message)); page.on('console', (m) => { if (/Content Security Policy/i.test(m.text())) errors.push(m.text()); });
+  page.on('dialog', (d) => { errors.push('dialog: ' + d.message()); d.dismiss().catch(() => {}); });
+  page.on('request', (r) => {
+    const p = new URL(r.url()).pathname;
+    if (p === '/api/targets' || p === '/api/faction/report' || p === '/api/stock-order') forbidden.push(`${tornId} ${r.method()} ${p}`);
+  });
   await page.route('**/*', (route) => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
   await page.route(PHOTO, (route) => route.fulfill({ path: path.join(__dirname, '..', 'public', 'logo.png') }));
   await page.route((url) => url.pathname === '/api/overview', (route) => route.fulfill({ json: overviewFixture() }));
+  await page.route((url) => WIDGET_PATHS.includes(url.pathname), (route) => {
+    const answer = widgetData[new URL(route.request().url()).pathname];
+    return typeof answer === 'function' ? answer(route) : route.fulfill({ json: answer });
+  });
   await page.goto(base + '/#overview');
   return { page, base, errors, context };
 }
@@ -60,6 +107,41 @@ const layoutReply = (page, method = 'GET') => { const reply = page.waitForRespon
 const saveDirect = (page, playerId, widgets) => page.evaluate(({ playerId, widgets }) => fetch('/api/overview-layouts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ playerId, layouts: { v: 1, active: 0, layouts: [{ name: '', widgets }] } }) }).then((r) => r.status), { playerId, widgets });
 const overflow = (page) => page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth, elements: [...document.querySelectorAll('#view-overview *')].filter((el) => el.getBoundingClientRect().right > innerWidth + 1).slice(0, 8).map((el) => el.tagName + '.' + el.className) }));
 const shot = async (page, name, fullPage = true) => { await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' })); await page.screenshot({ path: path.join(output, name), fullPage }); };
+// Polls from Node: page.waitForFunction would wait on the page's own timers, which a paused page clock stops.
+async function until(page, fn, arg, what, timeout = 10000) {
+  for (const end = Date.now() + timeout; !(await page.evaluate(fn, arg));) {
+    if (Date.now() > end) throw Error('Timed out waiting for ' + what);
+    await new Promise((r) => setTimeout(r, 25));
+  }
+}
+const fetches = (page, paths) => page.evaluate((list) => window.qaFetches.filter(([method, p]) => method === 'GET' && list.includes(p)).length, [].concat(paths));
+// Waits briefly for the expected count, then checks it exactly (a count above it fails at once).
+async function expectFetches(page, paths, want, what) {
+  for (const end = Date.now() + 3000; (await fetches(page, paths)) < want && Date.now() < end;) await new Promise((r) => setTimeout(r, 25));
+  assert.equal(await fetches(page, paths), want, what);
+}
+// A new membership answer. status(true) hands back a request already in flight, which may predate the change the
+// test just made on the service (the Premium page asks too), so that one settles first. A refused answer is not thrown.
+const freshStatus = (page) => page.evaluate(async () => { await PremiumAccess.status().catch(() => {}); return PremiumAccess.status(true).then(() => true, () => false); });
+const shownOf = (page) => page.evaluate(() => LRXOverview.shown().widgets.map((w) => `${w.id}:${w.size}:${w.locked}`));
+// Language clicks and the Settings view reload the app config without awaiting it (app.js). A reply that lands after a
+// later setFeature() puts the old switch value back, so a switch is set only once every such reload has been applied.
+const trackConfigLoads = (page) => page.evaluate(() => {
+  if (window.qaConfigLoads) return;
+  const load = window.loadConfig;
+  window.qaConfigLoads = { pending: 0 };
+  window.loadConfig = (...args) => { window.qaConfigLoads.pending++; return load(...args).finally(() => { window.qaConfigLoads.pending--; }); };
+});
+const configLoaded = (page) => until(page, () => window.qaConfigLoads.pending === 0, null, 'the app config reloads');
+async function setSwitch(page, key, value) {
+  await trackConfigLoads(page); await configLoaded(page);
+  await page.evaluate(([k, v]) => setFeature(k, v), [key, value]);
+}
+const oneLayout = (...widgets) => ({ v: 1, active: 0, layouts: [{ name: '', widgets: widgets.map(([id, size]) => ({ id, size })) }] });
+const showSet = (page, set) => page.evaluate((s) => LRXOverview.commit(s, { save: false }), set);
+const tileOf = (page, id) => page.locator(`#ow-grid > article.glass.card.ow-w.ow-premium[data-widget="${id}"]`);
+const tileText = async (page, id) => (await tileOf(page, id).textContent()).replace(/\s+/g, ' ').trim();
+const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow-grid > [data-widget="${w}"] .ow-t-main`), id, `the ${id} tile's data`);
 (async () => {
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   browser = await chromium.launch({ executablePath: process.env.CHROME_EXE || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', headless: true });
@@ -242,6 +324,7 @@ const shot = async (page, name, fullPage = true) => { await page.evaluate(() => 
 
   // themes
   await page.setViewportSize({ width: 1440, height: 1050 });
+  await trackConfigLoads(page);
   await page.locator('[data-view="settings"]').click(); await page.locator('[data-set-tab="appearance"]').click();
   for (const theme of ['ocean', 'forest', 'amethyst', 'light', 'obsidian']) {
     await page.locator(`[data-theme-choice="${theme}"]`).click();
@@ -254,33 +337,209 @@ const shot = async (page, name, fullPage = true) => { await page.evaluate(() => 
     await page.evaluate(() => { showView('settings'); showSettingsTab('appearance'); });
   }
 
-  // TR / EN
+  // TR / EN (each language click reloads the app config in the background: wait until it is applied)
   await page.evaluate(() => showView('overview'));
   await page.locator('[data-lang="tr"]').click();
+  await configLoaded(page);
   assert.equal((await page.locator('#ow-grid > [data-widget="chips"] h3').textContent()).trim(), 'Durum');
   await page.evaluate(() => LRXOverview.commit({ v: 1, active: 0, layouts: [{ name: '', widgets: [] }] }, { save: false }));
   assert.equal((await page.locator('#ow-grid .ow-empty').textContent()).trim(), "Bu düzende widget yok. Eklemek için Düzenle'ye bas.");
   await page.locator('[data-lang="en"]').click();
+  await configLoaded(page);
   assert.equal((await page.locator('#ow-grid .ow-empty').textContent()).trim(), 'This layout has no widgets. Press Edit to add some.', 'a language change redraws the grid');
   assert.equal((await page.locator('#ow-grid > [data-widget="chips"] h3').textContent()).trim(), 'Status');
 
-  // Premium tiles before their widgets exist: the host creates them, shows the lock state, removes them again.
-  // The service does not know the module yet, so a fresh answer for this member is a lapse.
-  await page.waitForFunction(() => LRXOverview.access() === 'lapsed');
-  await page.evaluate(() => LRXOverview.commit({ v: 1, active: 0, layouts: [{ name: '', widgets: [{ id: 'drug', size: 'S' }, { id: 'gym', size: 'L' }] }] }, { save: false }));
-  const gym = page.locator('#ow-grid > article.glass.card.ow-w.ow-premium[data-widget="gym"]');
-  assert.deepEqual(await visibleIds(page), ['drug', 'gym']);
-  assert.equal(await gym.getAttribute('data-size'), 'M', 'after a lapse a Premium widget shows at its default size');
-  assert.ok((await gym.textContent()).includes('Gym gains') && (await gym.textContent()).includes('Unlocks with Premium'));
-  await page.evaluate(() => setFeature('app.premiumPromos', false));
-  assert.ok((await gym.textContent()).includes('Not available'));
-  await page.evaluate(() => setFeature('app.premiumPromos', true));
-  await page.evaluate(() => setFeature('app.overviewLayout', false));
-  assert.equal(await gym.isVisible(), false, 'classic: Premium tiles are hidden');
-  await page.evaluate(() => setFeature('app.overviewLayout', true));
-  await page.evaluate(() => LRXOverview.commit(LRXOverviewLayout.defaultSet(), { save: false }));
-  assert.equal(await page.locator('#ow-grid > .ow-premium').count(), 0);
+  // Premium widgets. 4037017 is a permanent member: the service grants the module.
+  // member: networth and travel tiles render escaped data
+  await showSet(page, oneLayout(['networth', 'S'], ['travel', 'M']));
+  await tileReady(page, 'networth');
+  await tileReady(page, 'travel');
+  assert.equal(await page.evaluate(() => LRXOverview.access()), 'active');
+  const networthS = await tileText(page, 'networth');
+  for (const part of ['Networth', '$2.50B', '+$50.0M']) assert.ok(networthS.includes(part), 'networth S: ' + networthS);
+  const travelM = await tileText(page, 'travel');
+  for (const part of ['Travel profit', `${MARK} · ${MARK}`, '$6.92K/h', 'United Kingdom']) assert.ok(travelM.includes(part), 'travel M: ' + travelM);
+  assert.equal(await page.locator('#ow-grid > .ow-premium b').count(), 0, 'Torn data never becomes markup');
+  assert.equal(await tileOf(page, 'travel').getAttribute('data-size'), 'M');
+  await shot(page, 'overview-member-1440.png');
+  await tileOf(page, 'networth').locator('.ow-t').click();
+  assert.equal(await page.evaluate(() => state.view), 'networth', 'a click on the tile opens its page');
+  await page.evaluate(() => showView('overview'));
 
+  // member: S/M/L chips resize and a second layout is saved and switched
+  posts.length = 0;
+  await page.locator('#ow-edit').click();
+  const sizeBtn = (id, size) => page.locator(`#ow-grid > [data-widget="${id}"] .ow-sizes [data-ow-size="${size}"]`);
+  assert.deepEqual(await page.locator('#ow-grid > [data-widget="networth"] .ow-sizes button').allTextContents(), ['S', 'M']);
+  assert.deepEqual(await page.locator('#ow-grid > [data-widget="travel"] .ow-sizes button').allTextContents(), ['S', 'M', 'L']);
+  await sizeBtn('travel', 'L').click();
+  assert.equal(await tileOf(page, 'travel').getAttribute('data-size'), 'L');
+  assert.equal(await sizeBtn('travel', 'L').getAttribute('aria-pressed'), 'true');
+  assert.equal(await tileOf(page, 'travel').evaluate((el) => getComputedStyle(el).gridColumnStart), 'span 3');
+  await sizeBtn('networth', 'M').click();
+  assert.equal(await tileOf(page, 'networth').getAttribute('data-size'), 'M');
+  assert.ok((await tileText(page, 'networth')).includes('Last 7 days'), 'M adds the next lines');
+  await page.locator('#ow-duplicate').click();
+  await page.locator('#ow-name').fill('War');
+  await page.locator('#ow-name').press('Tab');
+  await sizeBtn('travel', 'S').click();
+  const twoSaved = layoutReply(page, 'POST');
+  await page.locator('#ow-done').click();
+  assert.equal((await twoSaved).status(), 200);
+  assert.equal(posts.length, 1, 'Done saves once');
+  assert.equal(posts[0].layouts.active, 1, 'the copy is the active layout');
+  assert.deepEqual(posts[0].layouts.layouts.map((l) => l.name), ['', 'War']);
+  assert.deepEqual(posts[0].layouts.layouts.map((l) => l.widgets), [[{ id: 'networth', size: 'M' }, { id: 'travel', size: 'L' }], [{ id: 'networth', size: 'M' }, { id: 'travel', size: 'S' }]]);
+  const layoutSelect = page.locator('#ow-layout');
+  assert.deepEqual(await layoutSelect.locator('option').allTextContents(), ['Main', 'War']);
+  const switched = layoutReply(page, 'POST');
+  await layoutSelect.selectOption('0');
+  assert.equal((await switched).status(), 200);
+  assert.equal(posts[1].layouts.active, 0, 'choosing a layout saves it as the active one');
+  assert.equal(await tileOf(page, 'travel').getAttribute('data-size'), 'L');
+  await page.evaluate(() => localStorage.removeItem('tt.cache.overviewLayouts.4037017')); // the choice must come from the saved config
+  await page.reload(); await open(page);
+  await page.waitForFunction((id) => LRXOverview.owner() === id && LRXOverview.access() === 'active', MEMBER);
+  await waitForIds(page, ['networth', 'travel']);
+  assert.deepEqual(await page.evaluate(() => LRXOverview.shown().widgets.map((w) => w.id + ':' + w.size)), ['networth:M', 'travel:L']);
+
+  // member: a layout name with markup is shown as text
+  await page.locator('#ow-edit').click();
+  await page.locator('#ow-name').fill('<img src=x onerror=alert(1)>');
+  await page.locator('#ow-name').press('Tab');
+  const nameSaved = layoutReply(page, 'POST');
+  await page.locator('#ow-done').click();
+  await nameSaved;
+  const hostileName = '<img src=x onerror=alert'; // cleaned and cut to 24 characters
+  assert.equal(posts[posts.length - 1].layouts.layouts[0].name, hostileName);
+  assert.equal(await layoutSelect.locator('option').first().textContent(), hostileName);
+  assert.equal(await page.locator('#ow-name').inputValue(), hostileName);
+  assert.equal(await page.locator('#ow-bar img, #ow-grid > .ow-premium img').count(), 0, 'the name never becomes an element');
+
+  // every Premium widget renders from its page's endpoint; Daily order hint needs company mode
+  await page.evaluate(() => {
+    state.targets = { faction: { id: 99, name: 'Rival' }, me: { totals: { noXanax: 1000, withXanax: 650 } }, members: [
+      { id: 11, name: 'Alpha', level: 30, bs: 600, status: { state: 'Okay' } }, { id: 12, name: 'Beta', level: 20, bs: 200, status: { state: 'Hospital' } },
+      { id: 13, name: 'Gamma', level: 50, bs: 5000, status: { state: 'Okay' } }] };
+  });
+  const ALL = [['gym', 'L'], ['networth', 'M'], ['travel', 'L'], ['job', 'M'], ['crimes', 'L'], ['jail', 'M'], ['awards', 'M'], ['oc', 'M'], ['war', 'L'], ['events', 'M'], ['orders', 'L']];
+  await showSet(page, oneLayout(...ALL));
+  for (const [id] of ALL) if (id !== 'orders') await tileReady(page, id);
+  const expected = {
+    gym: ['Speed +12,000 · Strength +10,000', 'Last 7 days'], job: ['42', '1 position fits'], crimes: ['1 shop without security', 'Burglary', "Sally's Sweet Shop"],
+    jail: ['3 / 9', '512'], awards: ['Bar Breaker', '92%', 'Halfway'], oc: ['3/4', 'Mob Mentality', 'Looter'],
+    war: ['1,500 – 1,200', '2 suitable targets', MARK, 'Alpha'], events: ['Easter Egg Hunt', 'starts in 3d'], orders: ['Company mode only'],
+  };
+  for (const [id, parts] of Object.entries(expected)) {
+    const text = await tileText(page, id);
+    for (const part of parts) assert.ok(text.includes(part), `${id}: "${part}" in "${text}"`);
+  }
+  assert.match(await tileText(page, 'oc'), /ready in (2h 0m|1h 5\dm)/, 'the OC countdown (the fixture is two hours ahead of the run start)');
+  assert.equal(await page.locator('#ow-grid > .ow-premium :is(b,img,i)').count(), 0, 'Torn data never becomes markup');
+  await page.evaluate(() => {
+    state.companyMode = true;
+    state.company = { company: { name: 'Fixture Co' }, totals: { need: 50, orderCost: 25000 }, products: [
+      { name: '<b>x</b>', daysLeftWithOrder: 0.6, sold_amount: 40, need: 50, orderCost: 25000 }, { name: 'Candle', daysLeftWithOrder: 4.2, sold_amount: 12, need: 0, orderCost: 0 }] };
+    LRXOverview.apply();
+  });
+  const orders = await tileText(page, 'orders');
+  for (const part of [`${MARK} · 0.6d`, `Order today: ${MARK} ×50`, 'Candle', '$25,000']) assert.ok(orders.includes(part), `orders: "${part}" in "${orders}"`);
+  await shot(page, 'overview-widgets-1440.png');
+  await page.setViewportSize({ width: 600, height: 1050 });
+  const narrowAll = await overflow(page);
+  assert.ok(narrowAll.scroll <= narrowAll.width, 'every widget at 600: ' + JSON.stringify(narrowAll));
+  await shot(page, 'overview-widgets-600.png');
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.evaluate(() => { state.companyMode = false; state.company = null; LRXOverview.apply(); });
+
+  // off: with app.premiumPromos off the Premium group leaves the add list and the tiles read "Not available"
+  await showSet(page, oneLayout(['drug', 'S'], ['gym', 'M'], ['networth', 'S']));
+  await setSwitch(page, 'app.premiumPromos', false);
+  assert.equal(await page.evaluate(() => LRXOverview.access()), 'off');
+  for (const id of ['gym', 'networth']) {
+    const text = await tileText(page, id);
+    assert.ok(text.includes('Not available') && !text.includes('Premium'), id + ': ' + text);
+    assert.equal(await tileOf(page, id).locator('a, button').count(), 0, 'no sales text and no link');
+  }
+  await page.locator('#ow-edit').click(); await page.locator('#ow-add').click();
+  assert.equal((await page.locator('#ow-drawer').textContent()).includes('Premium'), false, 'no Premium group');
+  assert.equal(await page.locator('#ow-drawer [data-add="travel"]').count(), 0);
+  await page.evaluate(() => LRXOverviewEdit.stop());
+  await setSwitch(page, 'app.premiumPromos', true);
+  await page.waitForFunction(() => LRXOverview.access() === 'active');
+  await setSwitch(page, 'app.overviewLayout', false);
+  assert.equal(await tileOf(page, 'gym').isVisible(), false, 'classic: Premium tiles are hidden');
+  await setSwitch(page, 'app.overviewLayout', true);
+
+  // Premium page Open goes to the Overview edit mode
+  await page.evaluate(() => showView('premium'));
+  const openModule = page.locator('#view-premium [data-feature-slot="overview_widgets"] [data-advanced-open="overview_widgets"]');
+  await openModule.waitFor();
+  assert.ok((await page.locator('#view-premium [data-feature-slot="overview_widgets"]').textContent()).includes('Overview widgets'));
+  assert.equal((await openModule.textContent()).replace(/\s+/g, ' ').trim(), 'Open ↗');
+  await openModule.click();
+  assert.equal(await page.evaluate(() => state.view), 'overview');
+  assert.equal(await page.evaluate(() => LRXOverviewEdit.active()), true, 'edit mode is on');
+  assert.equal(await page.evaluate(() => !!window.LRXAdvanced), false, 'no workbench is loaded for this module');
+  await page.evaluate(() => LRXOverviewEdit.stop());
+
+  // fetch policy: the page clock is under test control from here on
+  const networthFixture = widgetData['/api/networth'];
+  await page.clock.install();
+  await page.reload(); await open(page);
+  await page.waitForFunction((id) => LRXOverview.owner() === id && LRXOverview.access() === 'active', MEMBER);
+  await page.clock.pauseAt(await page.evaluate(() => Date.now()) + 1000);
+  const networthGets = () => fetches(page, '/api/networth');
+  await page.evaluate(() => showView('premium'));
+  await showSet(page, oneLayout(['drug', 'S'], ['networth', 'S']));
+  const policyStart = await networthGets();
+  await page.clock.runFor(130000);
+  assert.equal(await networthGets(), policyStart, 'no request while another view is shown');
+  await freshStatus(page); // a grant lasts 60 s; the app renews it every 30 s
+  await page.evaluate(() => showView('overview'));
+  await expectFetches(page, '/api/networth', policyStart + 1, 'showing the Overview loads the tile once');
+  await page.clock.runFor(30000);
+  await freshStatus(page);
+  await page.clock.runFor(29000);
+  assert.equal(await networthGets(), policyStart + 1, 'within 59 s there is one request');
+  widgetData['/api/networth'] = (route) => route.fulfill({ status: 500, json: { error: '<i>networth down</i>' } });
+  await page.clock.runFor(2000);
+  await expectFetches(page, '/api/networth', policyStart + 2, 'after 61 s there are two');
+  await until(page, () => document.querySelector('#ow-grid > [data-widget="networth"] .ow-t-err')?.textContent.includes('<i>networth down</i>'), null, 'the error line');
+  assert.equal(await tileOf(page, 'networth').locator('i').count(), 0, 'the error is shown as text');
+  assert.ok((await tileText(page, 'networth')).includes('$2.50B'), 'the last data stays in the frame');
+  widgetData['/api/networth'] = networthFixture;
+  await page.clock.runFor(30000);
+  assert.equal(await networthGets(), policyStart + 2, 'a failed attempt counts: no retry within 60 s');
+
+  // page off: setFeature('page.networth', false) shows the Settings note and no request follows
+  await freshStatus(page);
+  await setSwitch(page, 'page.networth', false);
+  assert.ok((await tileText(page, 'networth')).includes('Turned off in Settings'));
+  const offStart = await networthGets();
+  await page.clock.runFor(130000);
+  assert.equal(await networthGets(), offStart, 'a page switched off loads nothing');
+  await freshStatus(page);
+  await setSwitch(page, 'page.networth', true);
+  await expectFetches(page, '/api/networth', offStart + 1, 'switched on again, the due tile loads at once');
+
+  // unknown: /api/premium/status fails, Premium tiles show the checking placeholder and no widget request is made
+  const QUIET = ['/api/networth', '/api/stats', '/api/jail', '/api/awards']; // no page loads these in the background
+  await page.route('**/api/premium/status', (route) => route.fulfill({ status: 503, json: { code: 'PREMIUM_SERVICE_UNREACHABLE', error: 'Unavailable' } }));
+  await freshStatus(page);
+  assert.equal(await page.evaluate(() => LRXOverview.access()), 'unknown');
+  const unknownStart = await fetches(page, QUIET);
+  await showSet(page, oneLayout(['networth', 'S'], ['gym', 'M'], ['jail', 'S'], ['awards', 'S']));
+  for (const id of ['networth', 'gym', 'jail', 'awards']) assert.ok((await tileText(page, id)).includes('Checking membership…'), id);
+  await page.clock.runFor(130000);
+  assert.equal(await fetches(page, QUIET), unknownStart, 'no widget request while membership is unknown');
+  await page.unroute('**/api/premium/status');
+  await freshStatus(page);
+  assert.equal(await page.evaluate(() => LRXOverview.access()), 'active');
+  await expectFetches(page, QUIET, unknownStart + 4, 'access back: each due tile loads once');
+  await page.clock.resume();
+
+  assert.deepEqual(forbidden, [], 'never: POST /api/stock-order, /api/faction/report, /api/targets');
   assert.deepEqual(errors, []);
   await context.close();
 
@@ -497,7 +756,61 @@ const shot = async (page, name, fullPage = true) => { await page.evaluate(() => 
   assert.deepEqual(savedIds(freePosts[5]), ['profile', 'edu', 'drug', 'day', 'bars', 'chips', 'battle', 'company']);
   assert.deepEqual(free.errors, []);
 
-  console.log(JSON.stringify({ ok: true, assertions: ['default layout with the tall profile first', 'company hidden by company mode, never by the grid', 'profile name as text and Torn profile link', 'fixed IDs stay in the DOM', 'saved layout after reload', 'corrupt cached copy and failed request fall back quietly', 'a failed request is asked again; an unconfirmed save toasts and sends nothing', 'a default-screen change confirmed late never replaces the saved layouts', 'free cards before the layout reply', 'another player sees the default layout; a save toasts and sends nothing', 'commit saves once and caches; 409 reloads; errors toast', 'empty layout hint', 'classic switch', 'widths 1440/1100/760/640/600', 'five themes', 'TR/EN', 'Premium tiles show their lock state and hide in classic', 'edit mode shows a handle and × for each shown widget', '× removes chips and #mini-row stays in the DOM', 'keyboard: ArrowLeft twice on battle moves it two places; Delete on day removes it', 'drag drug onto edu moves drug after edu', 'add list: chips comes back last; Premium items are disabled with a lock', 'no Edit before an overview player is known', 'Done saves: after a reload the order is the same', 'a Done with no change sends nothing', 'leaving the Overview while editing saves and closes edit mode', 'hiding the window or switching the layout off saves and closes edit mode', 'lrx-premium-reset closes edit mode without saving', 'two-step Reset to default', '640 px with the drawer open: no sideways scrolling; the drawer is below the grid', 'edit mode in five themes at 1440 and 640', 'one column: drop by the vertical midpoint', 'no page errors or CSP reports'], screenshots: output }));
+  // lapsed: 3000002 becomes a member, saves a second layout with sizes, lapses and renews.
+  // The test-payment action accepts only synthetic payer IDs (9000000000 and up), so the days are granted directly.
+  const ADMIN = { tornId: MEMBER, admin: true };
+  overviewPlayer = { ...overviewPlayer, id: LAPSE, name: 'Lapsing player' };
+  const lapse = await desktop(LAPSE), lp = lapse.page, lapsePosts = [];
+  lp.on('request', (r) => { if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/overview-layouts') lapsePosts.push(r.postDataJSON()); });
+  await open(lp);
+  await lp.waitForFunction((id) => LRXOverview.owner() === id && PremiumAccess.snapshot()?.account?.tornId === id && LRXOverview.access() === 'lapsed', LAPSE);
+  await service.adminAction(ADMIN, 'subscription', { torn_id: LAPSE, days: 30, reason: 'QA membership' });
+  await freshStatus(lp);
+  assert.equal(await lp.evaluate(() => LRXOverview.access()), 'active', 'a member now');
+  const sized = { v: 1, active: 1, layouts: [
+    { name: '', widgets: [{ id: 'drug', size: 'S' }, { id: 'networth', size: 'M' }, { id: 'travel', size: 'L' }] },
+    { name: 'War', widgets: [{ id: 'travel', size: 'S' }, { id: 'gym', size: 'L' }] }] };
+  const sizedSave = layoutReply(lp, 'POST');
+  await lp.evaluate((s) => LRXOverview.commit(s), sized);
+  assert.equal((await sizedSave).status(), 200);
+  assert.equal(lapsePosts.length, 1);
+  assert.equal(lapsePosts[0].layouts.active, 1);
+  assert.deepEqual(lapsePosts[0].layouts.layouts.map((l) => l.widgets), sized.layouts.map((l) => l.widgets));
+  assert.deepEqual(await shownOf(lp), ['travel:S:null', 'gym:L:null']);
+  await tileReady(lp, 'gym');
+
+  await service.adminAction(ADMIN, 'subscription', { torn_id: LAPSE, days: -1000, reason: 'QA lapse' });
+  await freshStatus(lp);
+  assert.equal(await lp.evaluate(() => LRXOverview.access()), 'lapsed');
+  assert.deepEqual(await shownOf(lp), ['drug:S:null', 'networth:S:premium', 'travel:M:premium'], 'a lapse shows layout 1 at default sizes with locked tiles');
+  for (const id of ['networth', 'travel']) {
+    assert.ok((await tileText(lp, id)).includes('Unlocks with Premium'), id);
+    assert.equal(await tileOf(lp, id).locator('button[data-goto-view="premium"]').count(), 1, id + ': a link to the Premium page');
+  }
+  const kept = await lp.evaluate(() => fetch('/api/overview-layouts').then((r) => r.json()));
+  assert.equal(kept.layouts.active, 1, 'the saved config still holds layout 2 as active');
+  assert.deepEqual(kept.layouts.layouts.map((l) => l.widgets), sized.layouts.map((l) => l.widgets), 'and every saved size');
+  assert.equal(lapsePosts.length, 1, 'a lapse saves nothing');
+  await shot(lp, 'overview-lapsed-1440.png');
+  await lp.setViewportSize({ width: 600, height: 1050 });
+  const narrowLapsed = await overflow(lp);
+  assert.ok(narrowLapsed.scroll <= narrowLapsed.width, 'lapsed at 600: ' + JSON.stringify(narrowLapsed));
+  await shot(lp, 'overview-lapsed-600.png');
+  await lp.setViewportSize({ width: 1440, height: 1050 });
+  await tileOf(lp, 'networth').locator('button[data-goto-view="premium"]').click();
+  assert.equal(await lp.evaluate(() => state.view), 'premium', 'the locked tile leads to the Premium page');
+  await lp.evaluate(() => showView('overview'));
+
+  await service.adminAction(ADMIN, 'subscription', { torn_id: LAPSE, days: 30, reason: 'QA renewal' });
+  await freshStatus(lp);
+  assert.equal(await lp.evaluate(() => LRXOverview.access()), 'active');
+  assert.deepEqual(await shownOf(lp), ['travel:S:null', 'gym:L:null'], 'renewed: the chosen layout and its sizes return');
+  await tileReady(lp, 'travel');
+  assert.equal(lapsePosts.length, 1, 'a renewal saves nothing');
+  assert.deepEqual(lapse.errors, []);
+  assert.deepEqual(forbidden, [], 'never: POST /api/stock-order, /api/faction/report, /api/targets');
+
+  console.log(JSON.stringify({ ok: true, assertions: ['default layout with the tall profile first', 'company hidden by company mode, never by the grid', 'profile name as text and Torn profile link', 'fixed IDs stay in the DOM', 'saved layout after reload', 'corrupt cached copy and failed request fall back quietly', 'a failed request is asked again; an unconfirmed save toasts and sends nothing', 'a default-screen change confirmed late never replaces the saved layouts', 'free cards before the layout reply', 'another player sees the default layout; a save toasts and sends nothing', 'commit saves once and caches; 409 reloads; errors toast', 'empty layout hint', 'classic switch', 'widths 1440/1100/760/640/600', 'five themes', 'TR/EN', 'member: networth and travel tiles render escaped data', 'a tile click opens its page', 'member: S/M/L chips resize and a second layout is saved and switched', 'member: a layout name with markup is shown as text', 'every Premium widget renders; orders without company mode shows the note', 'off: no Premium group, tiles read Not available; Premium tiles hide in classic', 'Premium page Open goes to the Overview edit mode', 'fetch policy: none on another view, 1 within 59 s, 2 after 61 s; a failed attempt counts', 'page off: the Settings note and no request', 'unknown: the checking placeholder and no widget request', 'never requested: POST /api/stock-order, /api/faction/report, /api/targets', 'lapsed: default sizes and locked tiles, saved layout kept; renewal restores it','edit mode shows a handle and × for each shown widget', '× removes chips and #mini-row stays in the DOM', 'keyboard: ArrowLeft twice on battle moves it two places; Delete on day removes it', 'drag drug onto edu moves drug after edu', 'add list: chips comes back last; Premium items are disabled with a lock', 'no Edit before an overview player is known', 'Done saves: after a reload the order is the same', 'a Done with no change sends nothing', 'leaving the Overview while editing saves and closes edit mode', 'hiding the window or switching the layout off saves and closes edit mode', 'lrx-premium-reset closes edit mode without saving', 'two-step Reset to default', '640 px with the drawer open: no sideways scrolling; the drawer is below the grid', 'edit mode in five themes at 1440 and 640', 'one column: drop by the vertical midpoint', 'no page errors or CSP reports'], screenshots: output }));
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => {
   await browser?.close();
   for (const child of children) { child.kill(); await new Promise((r) => child.exitCode !== null ? r() : child.once('exit', r)); }

@@ -31,8 +31,21 @@ html[data-theme="light"] .ow-profile { --pm-accent:#8e6326; --pm-soft:#b4853610;
 .ow-profile:empty { border:1px solid var(--stroke); border-radius:20px; background:linear-gradient(160deg,var(--panel),var(--panel-end)); }
 .view.active #ow-grid > .ow-profile { animation:riseIn .55s var(--ease-out) both; }
 
-/* Premium tiles until their widget renders them: the title and the lock state. */
+/* Premium tiles (overview-widgets.js): a one-liner, then the lines M and L add; the lock state or a note otherwise. */
 .ow-premium .ow-lock { font-size:12px; }
+.ow-premium .card-head { margin-bottom:8px; }
+.ow-t { display:flex; flex-direction:column; gap:4px; min-width:0; border-radius:8px; }
+.ow-premium[data-ow-view] .ow-t { cursor:pointer; }
+.ow-t:focus-visible { outline:2px solid var(--tq); outline-offset:3px; }
+.ow-t p { margin:0; min-width:0; overflow-wrap:anywhere; }
+.ow-t-main { font-size:17px; font-weight:600; line-height:1.3; color:var(--text); font-variant-numeric:tabular-nums; }
+.ow-t-sub, .ow-t-note { font-size:12.5px; }
+.ow-t-err { font-size:12px; color:var(--danger); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.ow-t-list { display:flex; flex-direction:column; gap:3px; margin:6px 0 0; padding:6px 0 0; border-top:1px solid var(--stroke); list-style:none; font-size:12.5px; }
+.ow-t-list li { display:flex; justify-content:space-between; gap:10px; min-width:0; }
+.ow-t-list li > span:first-child { min-width:0; overflow-wrap:anywhere; color:var(--muted); }
+.ow-t-list li > span:last-child { flex:none; max-width:60%; overflow-wrap:anywhere; text-align:right; }
+.ow-t-cta { align-self:flex-start; margin-top:8px; }
 
 /* Classic switch (app.overviewLayout off): today's fixed screen on a 6-column grid. */
 #ow-grid.ow-classic { grid-template-columns:repeat(6,minmax(0,1fr)); grid-auto-rows:auto; }

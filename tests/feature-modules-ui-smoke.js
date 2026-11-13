@@ -61,7 +61,7 @@ async function capture(page, name) { await page.evaluate(() => window.scrollTo({
   browser = await chromium.launch({ headless: true, executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' });
   const free = await desktop(234567), member = await desktop(123456);
   assert.equal(await free.page.locator('script[src="/advanced-modules.js"]').count(), 0, 'unused advanced bundle not loaded');
-  assert.equal(await free.page.locator('#view-premium .fx-entry.is-locked').count(), 5);
+  assert.equal(await free.page.locator('#view-premium .fx-entry.is-locked').count(), 6);
   const forged = await free.page.request.post(free.base + '/api/premium/feature-run', { data: { featureId: 'appearance_custom_themes', premium: true, tornId: 4037017 } }); assert.equal(forged.status(), 403);
   await free.page.evaluate(() => showView('travel')); await free.page.locator('#tv-cap').waitFor();
   await free.page.locator('#tv-cap').fill('25'); await free.page.locator('#tv-cap').dispatchEvent('change');

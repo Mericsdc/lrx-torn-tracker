@@ -1,19 +1,15 @@
 /* Overview widget host. The Overview cards are widgets in one ordered CSS grid (#ow-grid). The rules (default
    layout, repair, access) live in overview-layout.js; each Torn player's saved set lives in the app config behind
    /api/overview-layouts. The cards keep the fixed IDs app.js renders into, whether or not their widget is shown:
-   a widget outside the layout only gets the class `ow-off`. `hidden` on #ov-company belongs to company mode. */
+   a widget outside the layout only gets the class `ow-off`. `hidden` on #ov-company belongs to company mode.
+   Premium tiles are created here and drawn from LRXOverviewWidgets (overview-widgets.js); each loads from its page's
+   endpoint only while the Overview is on screen, at most once a minute (see refresh()). */
 (() => {
-  const L = window.LRXOverviewLayout;
+  const L = window.LRXOverviewLayout, W = window.LRXOverviewWidgets;
   const grid = $('#ow-grid');
   const CACHE = 'tt.cache.overviewLayouts.'; // + Torn player ID: the last set the server confirmed for that player
   const CLASSIC = ['drug', 'edu', 'day', 'bars', 'battle', 'company']; // the fixed screen shown with the switch off
-  // Premium tile titles until LRXOverviewWidgets (overview-widgets.js) provides them.
-  const TITLES = {
-    gym: ['Gym kazancı', 'Gym gains'], networth: ['Networth', 'Networth'], travel: ['Seyahat kârı', 'Travel profit'],
-    job: ['İş asistanı', 'Job assistant'], crimes: ['Suç merkezi', 'Crime hub'], jail: ['Jail bustları', 'Jail busts'],
-    awards: ['Merit takibi', 'Merit tracker'], oc: ['Faction OC', 'Faction OC'], war: ['Savaş', 'War'],
-    events: ['Etkinlik takvimi', 'Event calendar'], orders: ['Günlük sipariş önerisi', 'Daily order hint'],
-  };
+  const EVERY = 15_000, AGAIN = 60_000; // the refresh check; the least time between two loads of one tile
   const LOCKS = {
     premium: () => tr('Premium ile açılır', 'Unlocks with Premium'),
     checking: () => tr('Üyelik kontrol ediliyor…', 'Checking membership…'),
@@ -25,6 +21,7 @@
   // unsaved: the player changed the set since it was loaded and that change is still to be saved (or is being edited).
   // fallback: `current` grew from the default set, not from the player's cached or confirmed copy.
   let loadedFor = null, loading = null, stamp = 0, unsaved = false, fallback = true, saving = Promise.resolve(), hint = null;
+  const tiles = {}; // Premium widget id → (el, locked) => void: draws that tile
 
   const playerId = () => { const id = Number(state.overview?.player?.id); return Number.isInteger(id) && id > 0 ? id : null; };
   const cell = (id) => grid.querySelector(`:scope > .ow-w[data-widget="${id}"]`);
@@ -46,12 +43,99 @@
     return el;
   }
   function paintTile(el, w) {
-    const render = O.tiles[w.id];
-    if (typeof render === 'function') { try { render(el, w.locked); } catch (e) { console.warn('[overview]', e); } return; }
-    const [trTitle, enTitle] = window.LRXOverviewWidgets?.titles?.[w.id] || TITLES[w.id];
-    const html = `<div class="card-head"><h3>${esc(tr(trTitle, enTitle))}</h3></div>${w.locked ? `<p class="ow-lock muted">${esc(LOCKS[w.locked]())}</p>` : ''}`;
-    if (el.lastHtml !== html) { el.lastHtml = html; el.innerHTML = html; }
+    const render = tiles[w.id];
+    if (typeof render === 'function') { try { render(el, w.locked); } catch (e) { console.warn('[overview]', e); } }
   }
+
+  /* ---------- Premium tiles ---------- */
+  // id → { at: last load attempt (Date.now()), busy, has, value, error }. Emptied for another player.
+  let slots = {}, epoch = 0, timer = 0;
+  const slot = (id) => (slots[id] ||= { at: -Infinity, busy: false, has: false, value: undefined, error: null });
+  // Why an unlocked tile shows a note instead of data (and loads nothing), or null.
+  function noteFor(def) {
+    if (def.needs.some((key) => !feat(key)) || def.off?.()) return tr('Ayarlarda kapalı', 'Turned off in Settings');
+    const note = def.note?.();
+    if (note) return note;
+    if (viewHidden(def.view)) return tr('Bu sayfa şu an senin için gizli', 'This page is hidden for you right now');
+    return null;
+  }
+  // The tile body: [html, opens its page on a click].
+  function tileBody(id, def, locked, size) {
+    if (locked === 'premium') return [`<p class="ow-lock muted">${esc(LOCKS.premium())}</p><button type="button" class="btn sm ghost ow-t-cta" data-goto-view="premium">${esc(tr('Premium’a bak', 'See Premium'))}</button>`, false];
+    if (locked) return [`<p class="ow-lock muted">${esc(LOCKS[locked]())}</p>`, false];
+    const note = noteFor(def);
+    if (note) return [`<p class="ow-t-note muted">${esc(note)}</p>`, false];
+    const s = slot(id);
+    if (def.load && !s.has && !s.error) return [`<p class="ow-t-note muted">${esc(tr('Yükleniyor…', 'Loading…'))}</p>`, true];
+    let html = '', error = s.error;
+    try { if (!def.load || s.has) html = def.html(s.value, size); } catch (e) { error = e?.message || String(e); }
+    return [html + (error ? `<p class="ow-t-err" title="${esc(error)}">⚠ ${esc(error)}</p>` : ''), true];
+  }
+  // The title and body are made once and then only updated, so edit mode's controls (prepended) stay in place.
+  function renderTile(id, el, locked) {
+    const def = W.premium[id], [trTitle, enTitle] = W.titles[id];
+    let head = el.querySelector(':scope > .card-head'), body = el.querySelector(':scope > .ow-t');
+    if (!head || !body) {
+      head?.remove(); body?.remove();
+      head = Object.assign(document.createElement('div'), { className: 'card-head' });
+      head.append(document.createElement('h3'));
+      body = Object.assign(document.createElement('div'), { className: 'ow-t' });
+      el.append(head, body);
+    }
+    const title = tr(trTitle, enTitle), h3 = head.firstElementChild;
+    if (h3.textContent !== title) h3.textContent = title;
+    const [html, opens] = tileBody(id, def, locked, el.dataset.size);
+    if (body.lastHtml !== html) { body.lastHtml = html; body.innerHTML = html; }
+    if (opens) {
+      el.dataset.owView = def.view;
+      body.setAttribute('role', 'link'); body.tabIndex = 0;
+      body.setAttribute('aria-label', tr(`${title}: sayfayı aç`, `${title}: open the page`));
+    } else if (el.dataset.owView) {
+      delete el.dataset.owView;
+      body.removeAttribute('role'); body.removeAttribute('tabindex'); body.removeAttribute('aria-label');
+    }
+  }
+  for (const id of Object.keys(W.premium)) tiles[id] = (el, locked) => renderTile(id, el, locked);
+  const repaint = (id) => { const w = shown?.widgets.find((x) => x.id === id), el = w && cell(id); if (el?.classList.contains('ow-premium')) paintTile(el, w); };
+  const repaintAll = () => { for (const w of shown?.widgets || []) if (W.premium[w.id]) repaint(w.id); };
+
+  // Loads the tiles that are due: only while the Overview is on screen, for an unlocked tile whose page is on, at most
+  // once a minute each. The attempt time is kept whether the load succeeds or fails; a failure keeps the last data.
+  function refresh() {
+    if (state.view !== 'overview' || !trackerVisible() || !shown) return;
+    for (const w of shown.widgets) {
+      const def = W.premium[w.id];
+      if (!def?.load || w.locked || noteFor(def)) continue;
+      const s = slot(w.id), now = Date.now();
+      if (s.busy || now - s.at < AGAIN) continue;
+      s.at = now; s.busy = true;
+      const mine = epoch;
+      let task;
+      try { task = Promise.resolve(def.load()); } catch (e) { task = Promise.reject(e); }
+      task.then((value) => { if (mine === epoch) { s.value = value; s.has = true; s.error = null; } },
+        (e) => { if (mine === epoch) s.error = e?.message || String(e); })
+        .finally(() => { s.busy = false; if (mine === epoch) repaint(w.id); });
+    }
+  }
+  // Every 15 s while the app runs; restarted when the Overview is shown, so a tile loads again a minute after it was shown.
+  function cycle() { clearTimeout(timer); timer = setTimeout(() => { if (state.view === 'overview') { repaintAll(); refresh(); } cycle(); }, EVERY); }
+  function forget() { epoch++; slots = {}; }
+
+  // A click on a tile with data (not on edit controls, a button or a link) opens its page; so does Enter on its body.
+  grid.addEventListener('click', (e) => {
+    const el = e.target.closest?.('#ow-grid > .ow-premium[data-ow-view]');
+    if (!el || e.target.closest('.ow-ctl, button, a, input, select, [data-goto-view], [data-open-url]')) return;
+    showView(el.dataset.owView);
+  });
+  grid.addEventListener('keydown', (e) => {
+    const body = e.target.closest?.('#ow-grid > .ow-premium[data-ow-view] > .ow-t');
+    if (e.key !== 'Enter' || body !== e.target) return;
+    e.preventDefault();
+    showView(body.parentElement.dataset.owView);
+  });
+  // The daily order hint follows the company report app.js draws (it never fetches).
+  const reportKpis = $('#report-kpis');
+  if (reportKpis) new MutationObserver(() => repaint('orders')).observe(reportKpis, { childList: true });
   function showHint(on) {
     if (!on) { hint?.remove(); return; }
     hint ||= Object.assign(document.createElement('p'), { className: 'ow-empty' });
@@ -83,10 +167,12 @@
     for (const el of grid.querySelectorAll(':scope > .ow-w')) if (!ids.has(el.dataset.widget)) el.classList.add('ow-off');
     LRXProfileCard.paint(cell('profile'), LRXProfileCard.html(state.overview?.player));
     for (const fn of O.onApplied) { try { fn(); } catch (e) { console.warn('[overview]', e); } }
+    refresh();
   }
 
   // The player's cached copy paints at once, so the free cards never wait for the server.
   function load(id) {
+    if (id !== loadedFor) forget(); // another player: none of the loaded tile data is theirs
     stamp++; loadedFor = id; ownerId = null; unsaved = false;
     const own = id && cached(id);
     current = own || L.defaultSet(); fallback = !own;
@@ -154,9 +240,8 @@
   const O = window.LRXOverview = {
     current: () => current, access, shown: () => shown, owner: () => ownerId,
     commit, apply,
-    tiles: {}, // premium widget id → (el, locked) => void, filled by the widget definitions
+    tiles, // Premium widget id → (el, locked) => void, one for each widget in LRXOverviewWidgets.premium
     onApplied: [], // run after every apply(), e.g. to redraw edit controls
-    titles: TITLES, // the interim Premium titles above, also read by the edit module's add list
   };
 
   const previousRendered = window.onOverviewRendered;
@@ -169,9 +254,12 @@
   };
   const previousLang = window.onLangChanged;
   window.onLangChanged = () => { previousLang?.(); apply(); };
+  const previousShown = window.onViewShown;
+  window.onViewShown = (v) => { previousShown?.(v); if (v === 'overview') { refresh(); cycle(); } };
   // Another Premium identity (sign-in, Log Out, a new key): forget the player; the next overview loads theirs.
-  window.addEventListener('lrx-premium-reset', () => { stamp++; loading = null; loadedFor = null; ownerId = null; unsaved = false; fallback = true; current = L.defaultSet(); apply(); });
+  window.addEventListener('lrx-premium-reset', () => { forget(); stamp++; loading = null; loadedFor = null; ownerId = null; unsaved = false; fallback = true; current = L.defaultSet(); apply(); });
   window.addEventListener('lrx-feature-access-changed', apply);
   FEATURE_HOOKS.push(apply);
   apply();
+  cycle();
 })();

@@ -104,6 +104,9 @@
     const b = e.target.closest('[data-advanced-open]'); if (!b) return;
     const id = b.dataset.advancedOpen;
     if (!can(id)) { showView('premium'); return; }
+    // A module that lives in the app itself (e.g. the Overview widgets) opens there instead of a workbench.
+    const opener = window.PremiumOpeners && Object.hasOwn(window.PremiumOpeners, id) ? window.PremiumOpeners[id] : null;
+    if (typeof opener === 'function') { opener(); return; }
     b.disabled = true;
     try { await loadModule(); await window.LRXAdvanced.open(id, b.closest('[data-feature-slot]')); } catch (error) { toast(window.LRXAdvanced?.errorText ? window.LRXAdvanced.errorText(error) : error.message); } finally { b.disabled = false; }
   });
