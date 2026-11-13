@@ -130,6 +130,29 @@ const shot = async (page, name, fullPage = true) => { await page.evaluate(() => 
   assert.equal(posts[0].playerId, MEMBER);
   assert.deepEqual(posts[0].layouts.layouts[0].widgets.map((w) => w.id), ['battle', 'drug']);
 
+  // a change made on the default screen (no readable cached copy, failed request) never replaces the saved layouts
+  // when the save's own request confirms the player late
+  await page.evaluate(() => localStorage.setItem('tt.cache.overviewLayouts.4037017', '{bad'));
+  await page.route(failing, (route) => route.request().method() === 'GET' ? route.fulfill({ status: 500, json: { error: 'fixture outage' } }) : route.continue());
+  await page.reload();
+  const failedAtLoad = layoutReply(page);
+  await open(page);
+  assert.equal((await failedAtLoad).status(), 500);
+  await page.locator('#ow-grid > [data-widget="profile"] .pm-profile').waitFor();
+  assert.deepEqual(await visibleIds(page), DEFAULT_IDS);
+  await page.unroute(failing);
+  posts.length = 0;
+  const lateReply = layoutReply(page);
+  await page.evaluate(() => { document.querySelector('#toast').textContent = ''; return LRXOverview.commit(LRXOverviewLayout.remove(LRXOverview.current(), 0, 'chips')); });
+  assert.equal((await lateReply).status(), 200, 'the save asked again and the player was confirmed');
+  assert.equal(posts.length, 0, 'the default-screen change is not saved over the saved layouts');
+  assert.equal(await page.locator('#toast').textContent(), 'Your saved layout was loaded; the change you made on the default screen was not saved.');
+  assert.equal(await page.evaluate(() => LRXOverview.owner()), MEMBER);
+  await waitForIds(page, ['battle', 'drug']);
+  assert.deepEqual(await page.evaluate(() => fetch('/api/overview-layouts').then((r) => r.json()).then((r) => r.layouts.layouts[0].widgets.map((w) => w.id))), ['battle', 'drug'], 'the server keeps the saved layouts');
+  await page.evaluate(() => LRXOverview.commit(LRXOverview.current()));
+  assert.equal(posts.length, 1, 'a change made on the loaded layout saves');
+
   // free cards first
   let released = false;
   const slow = (url) => url.pathname === '/api/overview-layouts';
@@ -259,7 +282,7 @@ const shot = async (page, name, fullPage = true) => { await page.evaluate(() => 
   assert.equal(await page.locator('#ow-grid > .ow-premium').count(), 0);
 
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ ok: true, assertions: ['default layout with the tall profile first', 'company hidden by company mode, never by the grid', 'profile name as text and Torn profile link', 'fixed IDs stay in the DOM', 'saved layout after reload', 'corrupt cached copy and failed request fall back quietly', 'a failed request is asked again; an unconfirmed save toasts and sends nothing', 'free cards before the layout reply', 'another player sees the default layout; a save toasts and sends nothing', 'commit saves once and caches; 409 reloads; errors toast', 'empty layout hint', 'classic switch', 'widths 1440/1100/760/640/600', 'five themes', 'TR/EN', 'Premium tiles show their lock state and hide in classic', 'no page errors or CSP reports'], screenshots: output }));
+  console.log(JSON.stringify({ ok: true, assertions: ['default layout with the tall profile first', 'company hidden by company mode, never by the grid', 'profile name as text and Torn profile link', 'fixed IDs stay in the DOM', 'saved layout after reload', 'corrupt cached copy and failed request fall back quietly', 'a failed request is asked again; an unconfirmed save toasts and sends nothing', 'a default-screen change confirmed late never replaces the saved layouts', 'free cards before the layout reply', 'another player sees the default layout; a save toasts and sends nothing', 'commit saves once and caches; 409 reloads; errors toast', 'empty layout hint', 'classic switch', 'widths 1440/1100/760/640/600', 'five themes', 'TR/EN', 'Premium tiles show their lock state and hide in classic', 'no page errors or CSP reports'], screenshots: output }));
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => {
   await browser?.close();
   for (const child of children) { child.kill(); await new Promise((r) => child.exitCode !== null ? r() : child.once('exit', r)); }

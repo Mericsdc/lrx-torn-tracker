@@ -22,8 +22,9 @@
   I18N['ov.status'] = ['Durum', 'Status'];
 
   let current = L.defaultSet(), shown = null, ownerId = null;
-  // unsaved: the player changed the set since it was loaded and that change is still to be saved (or is being edited)
-  let loadedFor = null, loading = null, stamp = 0, unsaved = false, saving = Promise.resolve(), hint = null;
+  // unsaved: the player changed the set since it was loaded and that change is still to be saved (or is being edited).
+  // fallback: `current` grew from the default set, not from the player's cached or confirmed copy.
+  let loadedFor = null, loading = null, stamp = 0, unsaved = false, fallback = true, saving = Promise.resolve(), hint = null;
 
   const playerId = () => { const id = Number(state.overview?.player?.id); return Number.isInteger(id) && id > 0 ? id : null; };
   const cell = (id) => grid.querySelector(`:scope > .ow-w[data-widget="${id}"]`);
@@ -87,22 +88,28 @@
   // The player's cached copy paints at once, so the free cards never wait for the server.
   function load(id) {
     stamp++; loadedFor = id; ownerId = null; unsaved = false;
-    current = (id && cached(id)) || L.defaultSet();
+    const own = id && cached(id);
+    current = own || L.defaultSet(); fallback = !own;
     apply();
     return ask(id);
   }
   // Asks the local server for the player's set (never a Torn request). The reply is used only when it is for the
   // overview's own player; otherwise (the server has not switched players yet) the default set shows and nothing is
   // saved. A failed request keeps what is shown, and the player stays unconfirmed: the next overview render and the
-  // next save ask again. A set the player changed meanwhile is kept, so an edit in progress is never replaced.
+  // next save ask again. A set the player changed meanwhile is kept, so an edit in progress is never replaced, unless
+  // that edit began on the default set while the player has saved layouts: it never replaces them.
   function ask(id) {
     if (!id) { loading = null; return Promise.resolve(); }
     const mine = stamp;
     const task = api('/api/overview-layouts').then((r) => {
       if (mine !== stamp) return;
-      if (r.playerId !== id || playerId() !== id) { if (!unsaved) { current = L.defaultSet(); apply(); } return; }
+      if (r.playerId !== id || playerId() !== id) { if (!unsaved) { current = L.defaultSet(); fallback = true; apply(); } return; }
       ownerId = id;
-      if (unsaved) return; // commit() saves that newer set
+      if (unsaved && fallback && r.layouts != null) {
+        unsaved = false; // persist() sends nothing now
+        toast(tr('Kayıtlı düzenin yüklendi; varsayılan ekranda yaptığın değişiklik kaydedilmedi.', 'Your saved layout was loaded; the change you made on the default screen was not saved.'));
+      } else if (unsaved) { fallback = false; return; } // commit() saves that newer set
+      fallback = false;
       current = L.normalize(r.layouts);
       remember(id, current);
       apply();
@@ -130,6 +137,7 @@
       if (playerId()) { unsaved = false; toast(tr('Düzen kaydedilemedi: bu oyuncunun kayıtlı düzenleri yüklenemedi.', 'Could not save the layout: the saved layouts for this player could not be loaded.')); }
       return;
     }
+    if (!unsaved) return; // the change gave way to the player's saved layout (they were told) or to a reload
     try {
       const r = await api('/api/overview-layouts', { method: 'POST', body: JSON.stringify({ playerId: id, layouts: current }) });
       if (ownerId === id) remember(id, L.normalize(r.layouts));
@@ -161,7 +169,7 @@
   const previousLang = window.onLangChanged;
   window.onLangChanged = () => { previousLang?.(); apply(); };
   // Another Premium identity (sign-in, Log Out, a new key): forget the player; the next overview loads theirs.
-  window.addEventListener('lrx-premium-reset', () => { stamp++; loading = null; loadedFor = null; ownerId = null; unsaved = false; current = L.defaultSet(); apply(); });
+  window.addEventListener('lrx-premium-reset', () => { stamp++; loading = null; loadedFor = null; ownerId = null; unsaved = false; fallback = true; current = L.defaultSet(); apply(); });
   window.addEventListener('lrx-feature-access-changed', apply);
   FEATURE_HOOKS.push(apply);
   apply();
