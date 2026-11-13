@@ -111,7 +111,24 @@ const shot = async (page, name, fullPage = true) => { await page.evaluate(() => 
   assert.deepEqual(await visibleIds(page), DEFAULT_IDS, 'an unreadable cached copy falls back to the default layout');
   assert.equal(await page.locator('#alert-area .alert').count(), 0, 'a failed layout request raises no alert');
   assert.equal(await page.evaluate(() => LRXOverview.owner()), null);
+
+  // a failed layout request is asked again; until the player is confirmed a save is refused out loud, never skipped quietly
+  posts.length = 0;
+  const askedAgain = layoutReply(page);
+  await page.evaluate(() => LRXOverview.commit(LRXOverviewLayout.remove(LRXOverview.current(), 0, 'chips')));
+  assert.equal(await page.locator('#toast').textContent(), 'Could not save the layout: the saved layouts for this player could not be loaded.');
+  assert.equal((await askedAgain).status(), 500, 'the save asked for the player\'s layouts once more first');
+  assert.equal(posts.length, 0, 'nothing is saved for an unconfirmed player');
   await page.unroute(failing);
+  const retried = layoutReply(page);
+  await page.evaluate(() => loadOverview(true));
+  assert.equal((await retried).status(), 200, 'the next overview render asks again');
+  await page.waitForFunction((id) => LRXOverview.owner() === id, MEMBER);
+  await waitForIds(page, ['battle', 'drug']); // the refused edit gives way to the saved layout
+  await page.evaluate(() => LRXOverview.commit(LRXOverview.current()));
+  assert.equal(posts.length, 1, 'once confirmed, a commit saves');
+  assert.equal(posts[0].playerId, MEMBER);
+  assert.deepEqual(posts[0].layouts.layouts[0].widgets.map((w) => w.id), ['battle', 'drug']);
 
   // free cards first
   let released = false;
@@ -135,8 +152,9 @@ const shot = async (page, name, fullPage = true) => { await page.evaluate(() => 
   await waitForIds(page, DEFAULT_IDS);
   assert.match(await profile.getAttribute('data-open-url'), /XID=3000001$/);
   assert.equal(await page.evaluate(() => LRXOverview.owner()), null);
-  await page.evaluate(() => LRXOverview.commit(LRXOverviewLayout.remove(LRXOverview.current(), 0, 'chips')));
+  await page.evaluate(() => { document.querySelector('#toast').textContent = ''; return LRXOverview.commit(LRXOverviewLayout.remove(LRXOverview.current(), 0, 'chips')); });
   assert.equal(posts.length, 0, 'nothing is saved under another player');
+  assert.equal(await page.locator('#toast').textContent(), 'Could not save the layout: the saved layouts for this player could not be loaded.');
   assert.equal(await page.evaluate(() => localStorage.getItem('tt.cache.overviewLayouts.3000001')), null);
   overviewPlayer = { ...overviewPlayer, id: MEMBER, name: '<b>Bold</b>' };
   const backReply = layoutReply(page);
@@ -241,7 +259,7 @@ const shot = async (page, name, fullPage = true) => { await page.evaluate(() => 
   assert.equal(await page.locator('#ow-grid > .ow-premium').count(), 0);
 
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ ok: true, assertions: ['default layout with the tall profile first', 'company hidden by company mode, never by the grid', 'profile name as text and Torn profile link', 'fixed IDs stay in the DOM', 'saved layout after reload', 'corrupt cached copy and failed request fall back quietly', 'free cards before the layout reply', 'another player sees the default layout and nothing is saved', 'commit saves once and caches; 409 reloads; errors toast', 'empty layout hint', 'classic switch', 'widths 1440/1100/760/640/600', 'five themes', 'TR/EN', 'Premium tiles show their lock state and hide in classic', 'no page errors or CSP reports'], screenshots: output }));
+  console.log(JSON.stringify({ ok: true, assertions: ['default layout with the tall profile first', 'company hidden by company mode, never by the grid', 'profile name as text and Torn profile link', 'fixed IDs stay in the DOM', 'saved layout after reload', 'corrupt cached copy and failed request fall back quietly', 'a failed request is asked again; an unconfirmed save toasts and sends nothing', 'free cards before the layout reply', 'another player sees the default layout; a save toasts and sends nothing', 'commit saves once and caches; 409 reloads; errors toast', 'empty layout hint', 'classic switch', 'widths 1440/1100/760/640/600', 'five themes', 'TR/EN', 'Premium tiles show their lock state and hide in classic', 'no page errors or CSP reports'], screenshots: output }));
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => {
   await browser?.close();
   for (const child of children) { child.kill(); await new Promise((r) => child.exitCode !== null ? r() : child.once('exit', r)); }

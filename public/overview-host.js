@@ -22,7 +22,8 @@
   I18N['ov.status'] = ['Durum', 'Status'];
 
   let current = L.defaultSet(), shown = null, ownerId = null;
-  let loadedFor = null, loading = null, stamp = 0, edits = 0, saving = Promise.resolve(), hint = null;
+  // unsaved: the player changed the set since it was loaded and that change is still to be saved (or is being edited)
+  let loadedFor = null, loading = null, stamp = 0, unsaved = false, saving = Promise.resolve(), hint = null;
 
   const playerId = () => { const id = Number(state.overview?.player?.id); return Number.isInteger(id) && id > 0 ? id : null; };
   const cell = (id) => grid.querySelector(`:scope > .ow-w[data-widget="${id}"]`);
@@ -83,20 +84,25 @@
     for (const fn of O.onApplied) { try { fn(); } catch (e) { console.warn('[overview]', e); } }
   }
 
-  // The player's cached copy paints at once, so the free cards never wait for the server. The server's reply is used
-  // only when it is for the overview's own player; otherwise (the server has not switched players yet) the default
-  // set shows and nothing is saved. A failed request keeps what is shown.
+  // The player's cached copy paints at once, so the free cards never wait for the server.
   function load(id) {
-    const mine = ++stamp, before = edits;
-    loadedFor = id; ownerId = null;
+    stamp++; loadedFor = id; ownerId = null; unsaved = false;
     current = (id && cached(id)) || L.defaultSet();
     apply();
+    return ask(id);
+  }
+  // Asks the local server for the player's set (never a Torn request). The reply is used only when it is for the
+  // overview's own player; otherwise (the server has not switched players yet) the default set shows and nothing is
+  // saved. A failed request keeps what is shown, and the player stays unconfirmed: the next overview render and the
+  // next save ask again. A set the player changed meanwhile is kept, so an edit in progress is never replaced.
+  function ask(id) {
     if (!id) { loading = null; return Promise.resolve(); }
+    const mine = stamp;
     const task = api('/api/overview-layouts').then((r) => {
       if (mine !== stamp) return;
-      if (r.playerId !== id || playerId() !== id) { current = L.defaultSet(); apply(); return; }
+      if (r.playerId !== id || playerId() !== id) { if (!unsaved) { current = L.defaultSet(); apply(); } return; }
       ownerId = id;
-      if (edits !== before) return; // changed while loading: commit() saves that newer set
+      if (unsaved) return; // commit() saves that newer set
       current = L.normalize(r.layouts);
       remember(id, current);
       apply();
@@ -108,7 +114,7 @@
   // Shows `set` at once; with `save`, stores it for the confirmed player. Saves run one at a time, each sending the
   // whole current set (a request without one would store the default set over the player's layouts).
   function commit(set, { save = true } = {}) {
-    current = L.normalize(set); edits++;
+    current = L.normalize(set); unsaved = true;
     apply();
     if (!save) return Promise.resolve();
     const run = saving.then(persist);
@@ -117,8 +123,13 @@
   }
   async function persist() {
     if (loading) await loading;
+    if (ownerId == null && playerId() && loadedFor === playerId()) await ask(playerId()); // not confirmed yet: ask once more
     const id = ownerId;
-    if (id == null || id !== playerId()) return; // not confirmed as this player's set: nothing is saved
+    if (id == null || id !== playerId()) {
+      // Never a quiet no-op: the player is told, and the next confirmed reply shows their saved layout again.
+      if (playerId()) { unsaved = false; toast(tr('Düzen kaydedilemedi: bu oyuncunun kayıtlı düzenleri yüklenemedi.', 'Could not save the layout: the saved layouts for this player could not be loaded.')); }
+      return;
+    }
     try {
       const r = await api('/api/overview-layouts', { method: 'POST', body: JSON.stringify({ playerId: id, layouts: current }) });
       if (ownerId === id) remember(id, L.normalize(r.layouts));
@@ -140,11 +151,17 @@
   };
 
   const previousRendered = window.onOverviewRendered;
-  window.onOverviewRendered = () => { previousRendered?.(); const id = playerId(); if (id !== loadedFor) load(id); else apply(); };
+  window.onOverviewRendered = () => {
+    previousRendered?.();
+    const id = playerId();
+    if (id !== loadedFor) { load(id); return; }
+    apply();
+    if (id && ownerId == null && !loading) ask(id); // the last request failed or answered for another player
+  };
   const previousLang = window.onLangChanged;
   window.onLangChanged = () => { previousLang?.(); apply(); };
   // Another Premium identity (sign-in, Log Out, a new key): forget the player; the next overview loads theirs.
-  window.addEventListener('lrx-premium-reset', () => { stamp++; loading = null; loadedFor = null; ownerId = null; current = L.defaultSet(); apply(); });
+  window.addEventListener('lrx-premium-reset', () => { stamp++; loading = null; loadedFor = null; ownerId = null; unsaved = false; current = L.defaultSet(); apply(); });
   window.addEventListener('lrx-feature-access-changed', apply);
   FEATURE_HOOKS.push(apply);
   apply();
