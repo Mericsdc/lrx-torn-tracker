@@ -13,10 +13,14 @@
 #ow-grid > .ow-w.ow-off { display:none; }
 .ow-empty { grid-column:1 / -1; padding:28px 20px; border:1px dashed var(--stroke-2); border-radius:var(--radius); color:var(--muted); text-align:center; }
 
-/* Four columns make a timer a quarter of the row: a smaller ring leaves its text the room it had. */
+/* Four columns make a timer a quarter of the row: a smaller ring, and a value that scales with the room beside it, so
+   a multi-day countdown ("12d 05:12:56", 12 mono characters) stays on one line. 13.5cqi fits 12 characters of 0.6em
+   with room to spare; only a far narrower card (edit mode with the add list open) wraps it at the space. */
 @media (min-width:1201px) {
   #ow-grid:not(.ow-classic) > .timer-card[data-size="S"] { gap:14px; padding:16px; }
   #ow-grid:not(.ow-classic) > .timer-card[data-size="S"] :is(.ring-wrap,.ring) { width:64px; height:64px; }
+  #ow-grid:not(.ow-classic) > .timer-card[data-size="S"] .timer-body { flex:1 1 0; container-type:inline-size; }
+  #ow-grid:not(.ow-classic) > .timer-card[data-size="S"] .timer-value { font-size:clamp(12px,13.5cqi,25px); }
 }
 
 /* Split from the bars card: the status chips are their own widget. */

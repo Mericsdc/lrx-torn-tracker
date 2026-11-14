@@ -54,7 +54,8 @@ const overviewFixture = () => ({
   bars: { energy: { current: 120, maximum: 150, fulltime: 900 }, nerve: { current: 35, maximum: 60, fulltime: 3600 }, happy: { current: 3500, maximum: 5000, fulltime: 7200 }, life: { current: 2400, maximum: 3000, fulltime: 1200 }, chain: { current: 0 } },
   cooldowns: { drug: 3600, booster: 0, medical: 1800 },
   drug: { cooldown: 3600, xanaxActive: true, xanToday: 1, xantaken: 812, refills: 40 },
-  education: { timeLeft: 7200, currentId: 12, current: 'Bachelor of Biology', code: 'BIO', duration: 86400, completed: 20, totalCourses: 100 },
+  // Torn courses run for days: the education countdown reads "12d 05:12:57".
+  education: { timeLeft: 12 * 86400 + 5 * 3600 + 777, currentId: 12, current: 'Bachelor of Biology', code: 'BIO', duration: 30 * 86400, completed: 20, totalCourses: 100 },
   bank: { amount: 2500000000, timeLeft: 86400 * 3 },
 });
 async function desktop(tornId) {
@@ -313,12 +314,22 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   assert.equal(await page.locator('[data-widget="chips"] #mini-row').count(), 1, 'the chips card is restored');
   await waitForIds(page, DEFAULT_IDS);
 
-  // widths
-  for (const [width, columns] of [[1440, 4], [1100, 2], [760, 2], [640, 2], [600, 1]]) {
+  // widths; at 4 columns the multi-day education countdown stays on one line beside its ring
+  for (const [width, columns] of [[1440, 4], [1366, 4], [1280, 4], [1100, 2], [760, 2], [640, 2], [600, 1]]) {
     await page.setViewportSize({ width, height: 900 });
     const m = await overflow(page);
     assert.ok(m.scroll <= m.width, 'no sideways scroll at ' + width + ': ' + JSON.stringify(m));
     assert.equal(await page.locator('#ow-grid').evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length), columns, 'columns at ' + width);
+    if (columns === 4) {
+      const edu = await page.evaluate(() => {
+        const v = document.querySelector('[data-timer="edu"]'), text = document.createRange();
+        text.selectNodeContents(v);
+        return { text: v.textContent, lines: text.getClientRects().length, clipped: v.scrollWidth > v.clientWidth, size: getComputedStyle(v).fontSize };
+      });
+      assert.match(edu.text, /^\d+d \d\d:\d\d:\d\d$/, 'the education countdown has a day part at ' + width);
+      assert.equal(edu.lines, 1, 'the education countdown is one line at ' + width + ': ' + JSON.stringify(edu));
+      assert.equal(edu.clipped, false, 'the education countdown is not cut off at ' + width + ': ' + JSON.stringify(edu));
+    }
     await shot(page, 'overview-' + width + '.png');
   }
 
@@ -369,6 +380,18 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   // member: S/M/L chips resize and a second layout is saved and switched
   posts.length = 0;
   await page.locator('#ow-edit').click();
+  // in edit mode a click, Enter or a drag attempt on an unlocked tile's body opens nothing; only the controls act
+  const stillEditing = async (what) => assert.deepEqual(await page.evaluate(() => [state.view, LRXOverviewEdit.active()]), ['overview', true], what);
+  const networthBody = tileOf(page, 'networth').locator('.ow-t');
+  assert.equal(await tileOf(page, 'networth').getAttribute('data-ow-view'), 'networth', 'the tile is unlocked and opens its page outside edit mode');
+  await networthBody.click();
+  await stillEditing('edit mode: a click on a tile body opens nothing');
+  await networthBody.press('Enter');
+  await stillEditing('edit mode: Enter on a tile body opens nothing');
+  const nb = await networthBody.boundingBox();
+  await page.mouse.move(nb.x + nb.width / 2, nb.y + nb.height / 2); await page.mouse.down();
+  await page.mouse.move(nb.x + nb.width / 2 + 10, nb.y + nb.height / 2 + 20, { steps: 8 }); await page.mouse.up();
+  await stillEditing('edit mode: a drag that did not start on the handle is no click on the tile');
   const sizeBtn = (id, size) => page.locator(`#ow-grid > [data-widget="${id}"] .ow-sizes [data-ow-size="${size}"]`);
   assert.deepEqual(await page.locator('#ow-grid > [data-widget="networth"] .ow-sizes button').allTextContents(), ['S', 'M']);
   assert.deepEqual(await page.locator('#ow-grid > [data-widget="travel"] .ow-sizes button').allTextContents(), ['S', 'M', 'L']);
@@ -560,6 +583,12 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   const savedIds = (post) => post.layouts.layouts[0].widgets.map((w) => w.id);
   const editing = () => fp.evaluate(() => LRXOverviewEdit.active());
 
+  // the profile card opens the player's Torn profile in a tab (openInTab is recorded here, not run)
+  await fp.evaluate(() => { window.qaOpened = []; window.qaOpenInTab = window.openInTab; window.openInTab = (url) => { window.qaOpened.push(url); }; });
+  const profileCard = fp.locator('#ow-grid > [data-widget="profile"] .pm-profile');
+  await profileCard.click();
+  assert.deepEqual(await fp.evaluate(() => window.qaOpened), ['https://www.torn.com/profiles.php?XID=3000001'], 'outside edit mode the profile card opens the Torn profile');
+
   // edit mode shows a handle and × for each shown widget
   await fp.locator('#ow-edit').click();
   assert.equal(await editing(), true);
@@ -580,6 +609,17 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   assert.equal(await removeBtn('battle').getAttribute('aria-label'), 'Kaldır');
   await fp.locator('[data-lang="en"]').click();
   assert.equal((await fp.locator('#ow-add').textContent()).trim(), '+ Add widget');
+
+  // edit mode: a click on the profile card, or a press on it that did not start on the handle, opens no Torn tab
+  await fp.evaluate(() => { window.qaOpened = []; });
+  await profileCard.click();
+  assert.deepEqual(await fp.evaluate(() => window.qaOpened), [], 'edit mode: a click on the profile card opens no tab');
+  const pb = await profileCard.boundingBox();
+  await fp.mouse.move(pb.x + pb.width / 2, pb.y + pb.height / 2); await fp.mouse.down();
+  await fp.mouse.move(pb.x + pb.width / 2 + 10, pb.y + pb.height / 2 + 40, { steps: 8 }); await fp.mouse.up();
+  assert.deepEqual(await fp.evaluate(() => window.qaOpened), [], 'edit mode: a drag that did not start on the handle is no click on the profile card');
+  assert.deepEqual(await fp.evaluate(() => [state.view, LRXOverviewEdit.active()]), ['overview', true], 'edit mode stays on');
+  await fp.evaluate(() => { window.openInTab = window.qaOpenInTab; });
 
   // × removes chips and #mini-row stays in the DOM
   await removeBtn('chips').click();
@@ -810,7 +850,7 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   assert.deepEqual(lapse.errors, []);
   assert.deepEqual(forbidden, [], 'never: POST /api/stock-order, /api/faction/report, /api/targets');
 
-  console.log(JSON.stringify({ ok: true, assertions: ['default layout with the tall profile first', 'company hidden by company mode, never by the grid', 'profile name as text and Torn profile link', 'fixed IDs stay in the DOM', 'saved layout after reload', 'corrupt cached copy and failed request fall back quietly', 'a failed request is asked again; an unconfirmed save toasts and sends nothing', 'a default-screen change confirmed late never replaces the saved layouts', 'free cards before the layout reply', 'another player sees the default layout; a save toasts and sends nothing', 'commit saves once and caches; 409 reloads; errors toast', 'empty layout hint', 'classic switch', 'widths 1440/1100/760/640/600', 'five themes', 'TR/EN', 'member: networth and travel tiles render escaped data', 'a tile click opens its page', 'member: S/M/L chips resize and a second layout is saved and switched', 'member: a layout name with markup is shown as text', 'every Premium widget renders; orders without company mode shows the note', 'off: no Premium group, tiles read Not available; Premium tiles hide in classic', 'Premium page Open goes to the Overview edit mode', 'fetch policy: none on another view, 1 within 59 s, 2 after 61 s; a failed attempt counts', 'page off: the Settings note and no request', 'unknown: the checking placeholder and no widget request', 'never requested: POST /api/stock-order, /api/faction/report, /api/targets', 'lapsed: default sizes and locked tiles, saved layout kept; renewal restores it','edit mode shows a handle and × for each shown widget', '× removes chips and #mini-row stays in the DOM', 'keyboard: ArrowLeft twice on battle moves it two places; Delete on day removes it', 'drag drug onto edu moves drug after edu', 'add list: chips comes back last; Premium items are disabled with a lock', 'no Edit before an overview player is known', 'Done saves: after a reload the order is the same', 'a Done with no change sends nothing', 'leaving the Overview while editing saves and closes edit mode', 'hiding the window or switching the layout off saves and closes edit mode', 'lrx-premium-reset closes edit mode without saving', 'two-step Reset to default', '640 px with the drawer open: no sideways scrolling; the drawer is below the grid', 'edit mode in five themes at 1440 and 640', 'one column: drop by the vertical midpoint', 'no page errors or CSP reports'], screenshots: output }));
+  console.log(JSON.stringify({ ok: true, assertions: ['default layout with the tall profile first', 'company hidden by company mode, never by the grid', 'profile name as text and Torn profile link', 'fixed IDs stay in the DOM', 'saved layout after reload', 'corrupt cached copy and failed request fall back quietly', 'a failed request is asked again; an unconfirmed save toasts and sends nothing', 'a default-screen change confirmed late never replaces the saved layouts', 'free cards before the layout reply', 'another player sees the default layout; a save toasts and sends nothing', 'commit saves once and caches; 409 reloads; errors toast', 'empty layout hint', 'classic switch', 'widths 1440/1366/1280/1100/760/640/600', 'a multi-day education countdown is one line at 1280/1366/1440', 'five themes', 'TR/EN', 'member: networth and travel tiles render escaped data', 'a tile click opens its page', 'edit mode: a click, Enter or a drag attempt on a tile body opens nothing', 'member: S/M/L chips resize and a second layout is saved and switched', 'member: a layout name with markup is shown as text', 'every Premium widget renders; orders without company mode shows the note', 'off: no Premium group, tiles read Not available; Premium tiles hide in classic', 'Premium page Open goes to the Overview edit mode', 'fetch policy: none on another view, 1 within 59 s, 2 after 61 s; a failed attempt counts', 'page off: the Settings note and no request', 'unknown: the checking placeholder and no widget request', 'never requested: POST /api/stock-order, /api/faction/report, /api/targets', 'lapsed: default sizes and locked tiles, saved layout kept; renewal restores it','the profile card opens the Torn profile; in edit mode a click or a drag attempt on it opens no tab', 'edit mode shows a handle and × for each shown widget', '× removes chips and #mini-row stays in the DOM', 'keyboard: ArrowLeft twice on battle moves it two places; Delete on day removes it', 'drag drug onto edu moves drug after edu', 'add list: chips comes back last; Premium items are disabled with a lock', 'no Edit before an overview player is known', 'Done saves: after a reload the order is the same', 'a Done with no change sends nothing', 'leaving the Overview while editing saves and closes edit mode', 'hiding the window or switching the layout off saves and closes edit mode', 'lrx-premium-reset closes edit mode without saving', 'two-step Reset to default', '640 px with the drawer open: no sideways scrolling; the drawer is below the grid', 'edit mode in five themes at 1440 and 640', 'one column: drop by the vertical midpoint', 'no page errors or CSP reports'], screenshots: output }));
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => {
   await browser?.close();
   for (const child of children) { child.kill(); await new Promise((r) => child.exitCode !== null ? r() : child.once('exit', r)); }

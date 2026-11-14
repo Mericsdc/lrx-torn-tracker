@@ -16,8 +16,9 @@ const crypto = require('crypto');
 
 const APP = path.resolve(__dirname, '..');
 const OUT = path.resolve(APP, '..', '..', '..', 'updates');
-// Not part of the installed app: local data and tooling caches, plus the repository's docs, tests, CI and website.
-const SKIP = new Set(['data', 'node_modules', 'dist', '.git', '.fallow', '.hallmark', '.sites-state', '.openai', '.gitnexus', '.vitest', 'coverage', '.github', 'docs', 'tests', 'website']);
+// Not part of the installed app: local data and tooling caches (.superpowers is the planning/review workspace), plus the
+// repository's docs, tests, CI and website.
+const SKIP = new Set(['data', 'node_modules', 'dist', '.git', '.fallow', '.hallmark', '.sites-state', '.openai', '.gitnexus', '.vitest', '.superpowers', 'coverage', '.github', 'docs', 'tests', 'website']);
 
 function listFiles(dir, base = '') {
   const out = [];

@@ -34,15 +34,19 @@
       return [{ id: w.id, size: w.sizes.includes(entry.size) ? entry.size : w.size }];
     });
   }
+  // A layout's widgets: the default ones when the list is unreadable or none of its entries can be shown (corrupt, or
+  // only widgets of another version), so it is never shown blank by accident.
+  function layoutWidgets(list) {
+    if (!Array.isArray(list)) return defaultWidgets();
+    const clean = cleanWidgets(list);
+    return clean.length || !list.length ? clean : defaultWidgets();
+  }
   // A saved set, possibly old, corrupt or hand-edited. Never throws and never gives a blank set for unreadable input;
   // an empty widget list stays empty because the player removed everything on purpose.
   function normalize(raw) {
     try {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !Array.isArray(raw.layouts) || !raw.layouts.length) return defaultSet();
-      const layouts = raw.layouts.slice(0, MAX_LAYOUTS).map((l) => ({
-        name: cleanName(l?.name),
-        widgets: Array.isArray(l?.widgets) ? cleanWidgets(l.widgets) : defaultWidgets(),
-      }));
+      const layouts = raw.layouts.slice(0, MAX_LAYOUTS).map((l) => ({ name: cleanName(l?.name), widgets: layoutWidgets(l?.widgets) }));
       const active = Number.isInteger(raw.active) && raw.active >= 0 && raw.active < layouts.length ? raw.active : 0;
       return { v: 1, active, layouts };
     } catch {

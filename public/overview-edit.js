@@ -249,6 +249,13 @@
   grid.addEventListener('dragend', endDrag);
 
   /* ---------- input ---------- */
+  // While editing, a click or Enter inside a widget reaches only its edit controls: the profile card opens no Torn tab,
+  // a Premium tile does not leave the Overview, and a press that did not start on the handle (so no drag) is not a
+  // click either. Caught on the way down, before the host's tile handlers and the document's [data-open-url] handler.
+  const inert = (e) => editing && !!widgetOf(e.target) && !e.target.closest('.ow-ctl');
+  const swallow = (e) => { e.preventDefault(); e.stopPropagation(); };
+  grid.addEventListener('click', (e) => { if (inert(e)) swallow(e); }, true);
+  grid.addEventListener('keydown', (e) => { if (e.key === 'Enter' && inert(e)) swallow(e); }, true);
   grid.addEventListener('keydown', (e) => {
     const handle = editing && e.target.closest?.('.ow-handle'), id = widgetOf(handle)?.dataset.widget;
     if (!id || e.altKey || e.ctrlKey || e.metaKey) return;

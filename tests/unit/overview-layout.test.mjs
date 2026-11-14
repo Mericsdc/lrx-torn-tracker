@@ -93,6 +93,15 @@ describe('repairing a saved set', () => {
     expect(set.layouts[1]).toEqual({ name: 'B', widgets: [] });
     expect(set.layouts[2]).toEqual({ name: 'C', widgets: defaultSet().layouts[0].widgets });
   });
+
+  it('a non-empty list with no usable entry gets the default widgets, never a blank Overview; [] stays []', () => {
+    const allUnknown = [{ id: 'nope', size: 'S' }, { id: '__proto__' }, null, 'drug', { id: 42 }];
+    const set = normalize({ active: 1, layouts: [{ name: 'A', widgets: allUnknown }, { name: 'B', widgets: [] }] });
+    expect(set.layouts[0]).toEqual({ name: 'A', widgets: defaultSet().layouts[0].widgets });
+    expect(set.layouts[1]).toEqual({ name: 'B', widgets: [] });
+    expect(set.active).toBe(1);
+    expect(normalize(set)).toEqual(set);
+  });
 });
 
 describe('what each Premium access state shows', () => {
