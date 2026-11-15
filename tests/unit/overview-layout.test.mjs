@@ -3,7 +3,8 @@ import layout from '../../public/overview-layout.js';
 
 const { defaultSet, normalize, view, move, remove, add, resize, select, duplicate, rename, removeLayout, reset } = layout;
 
-const DEFAULT_IDS = ['profile', 'drug', 'edu', 'day', 'bars', 'chips', 'battle', 'company'];
+const DEFAULT_IDS = ['profile', 'timers', 'bars', 'chips', 'battle', 'company'];
+const FREE_IDS = ['profile', 'drug', 'edu', 'day', 'timers', 'bars', 'chips', 'battle', 'company'];
 const PREMIUM_IDS = ['gym', 'networth', 'travel', 'job', 'crimes', 'jail', 'awards', 'oc', 'war', 'events', 'orders'];
 const ids = (widgets) => widgets.map((w) => w.id);
 const find = (widgets, id) => widgets.find((w) => w.id === id);
@@ -28,27 +29,28 @@ function memberSet() {
 }
 
 describe('defaults and the widget catalogue', () => {
-  it("default set is today's Overview with the tall profile first", () => {
+  it("default set is today's Overview with the profile first, at S", () => {
     const set = defaultSet();
     expect(ids(set.layouts[0].widgets)).toEqual(DEFAULT_IDS);
-    expect(set.layouts[0].widgets.map((w) => w.size)).toEqual(['P', 'S', 'S', 'S', 'M', 'S', 'L', 'W']);
+    expect(set.layouts[0].widgets.map((w) => w.size)).toEqual(['S', 'L', 'M', 'S', 'L', 'W']);
     expect(set.active).toBe(0);
-    expect(set.v).toBe(1);
+    expect(set.v).toBe(2);
     expect(set.layouts).toHaveLength(1);
     expect(set.layouts[0].name).toBe('');
-    // At 4 columns the cards between the profile and the full-width company fill 3 rows x 3 columns beside it.
-    const beside = set.layouts[0].widgets.slice(1, -1).reduce((cells, w) => cells + layout.SPAN[w.size], 0);
-    expect(beside).toBe(9);
+    // At 4 columns the live timer strip, bars and chips fill the 2 rows x 3 columns beside the S profile (it is always 1 column).
+    const beside = set.layouts[0].widgets.slice(1, 4).reduce((cells, w) => cells + layout.SPAN[w.size], 0);
+    expect(beside).toBe(6);
     // Each call is a fresh copy, so editing one never changes the next default.
     expect(defaultSet().layouts[0].widgets[0]).not.toBe(set.layouts[0].widgets[0]);
   });
 
   it('the widget catalogue matches the plan table and is frozen', () => {
-    expect(ids(layout.WIDGETS)).toEqual([...DEFAULT_IDS, ...PREMIUM_IDS]);
+    expect(ids(layout.WIDGETS)).toEqual([...FREE_IDS, ...PREMIUM_IDS]);
     expect(layout.WIDGETS.filter((w) => w.tier === 'premium').map((w) => w.id)).toEqual(PREMIUM_IDS);
     const row = (id) => ({ tier: layout.byId[id].tier, sizes: layout.byId[id].sizes, size: layout.byId[id].size });
-    expect(row('profile')).toEqual({ tier: 'free', sizes: ['P'], size: 'P' });
+    expect(row('profile')).toEqual({ tier: 'free', sizes: ['S', 'M', 'L'], size: 'S' });
     for (const id of ['drug', 'edu', 'day']) expect(row(id)).toEqual({ tier: 'free', sizes: ['S'], size: 'S' });
+    expect(row('timers')).toEqual({ tier: 'free', sizes: ['L', 'W'], size: 'L' });
     expect(row('bars')).toEqual({ tier: 'free', sizes: ['M', 'L'], size: 'M' });
     expect(row('chips')).toEqual({ tier: 'free', sizes: ['S', 'M', 'L'], size: 'S' });
     expect(row('battle')).toEqual({ tier: 'free', sizes: ['M', 'L'], size: 'L' });
@@ -56,10 +58,38 @@ describe('defaults and the widget catalogue', () => {
     for (const id of ['gym', 'travel', 'crimes', 'war']) expect(row(id)).toEqual({ tier: 'premium', sizes: ['S', 'M', 'L'], size: 'M' });
     for (const id of ['networth', 'job', 'jail', 'awards', 'oc', 'events']) expect(row(id)).toEqual({ tier: 'premium', sizes: ['S', 'M'], size: 'S' });
     expect(row('orders')).toEqual({ tier: 'premium', sizes: ['M', 'L'], size: 'M' });
-    expect(layout.SPAN).toEqual({ S: 1, M: 2, L: 3, W: 4, P: 1 });
+    expect(layout.SPAN).toEqual({ S: 1, M: 2, L: 3, W: 4 });
     expect(layout.MAX_LAYOUTS).toBe(5);
     expect(layout.MAX_NAME).toBe(24);
     for (const value of [layout, layout.WIDGETS, layout.WIDGETS[0], layout.WIDGETS[0].sizes, layout.byId, layout.SPAN]) expect(Object.isFrozen(value)).toBe(true);
+  });
+});
+
+describe('the live timer strip takes the place of the three timer cards once', () => {
+  const S = (id) => ({ id, size: 'S' });
+  const old = (v) => ({ ...(v === undefined ? {} : { v }), active: 0, layouts: [
+    { name: 'A', widgets: [S('drug'), { id: 'bars', size: 'M' }, S('edu'), S('chips'), S('day')] },
+    { name: 'B', widgets: [S('drug'), S('edu')] },
+  ] });
+
+  it('a saved set from before the strip gets one strip where the first timer card was', () => {
+    for (const v of [1, undefined]) {
+      const set = normalize(old(v));
+      expect(set.v).toBe(2);
+      expect(set.layouts[0].widgets).toEqual([{ id: 'timers', size: 'L' }, { id: 'bars', size: 'M' }, S('chips')]);
+      expect(set.layouts[1].widgets).toEqual([S('drug'), S('edu')]);
+    }
+  });
+
+  it('a set saved after the strip is never migrated, so cards put back stay', () => {
+    const back = { v: 2, active: 0, layouts: [{ name: '', widgets: [S('drug'), S('edu'), S('day')] }] };
+    expect(normalize(back).layouts[0].widgets).toEqual([S('drug'), S('edu'), S('day')]);
+    expect(normalize(normalize(old(1)))).toEqual(normalize(old(1)));
+  });
+
+  it('a set that already has the strip keeps its cards and its strip', () => {
+    const both = normalize({ v: 1, active: 0, layouts: [{ name: '', widgets: [S('drug'), { id: 'timers', size: 'W' }, S('edu'), S('day')] }] });
+    expect(both.layouts[0].widgets).toEqual([S('drug'), { id: 'timers', size: 'W' }, S('edu'), S('day')]);
   });
 });
 
@@ -73,6 +103,11 @@ describe('repairing a saved set', () => {
     expect(normalize({ layouts: [{ name: 'x', widgets }] }).layouts[0].widgets).toEqual([{ id: 'drug', size: 'S' }, { id: 'bars', size: 'M' }, { id: 'gym', size: 'L' }]);
     const junk = [null, 'drug', { id: 'constructor' }, { id: 'toString' }, { id: 42 }, { id: 'edu', size: 'S' }];
     expect(normalize({ layouts: [{ name: 'x', widgets: junk }] }).layouts[0].widgets).toEqual([{ id: 'edu', size: 'S' }]);
+  });
+
+  it("the profile's old single size P becomes S, the size it was shown at", () => {
+    const set = normalize({ v: 1, active: 0, layouts: [{ name: '', widgets: [{ id: 'profile', size: 'P' }, { id: 'drug', size: 'S' }] }] });
+    expect(set.layouts[0].widgets).toEqual([{ id: 'profile', size: 'S' }, { id: 'drug', size: 'S' }]);
   });
 
   it('at most five layouts, 24-character names, active index reset', () => {
@@ -163,7 +198,7 @@ describe('editing a layout', () => {
     const added = add(set, 0, 'gym', 'active');
     expect(added.layouts[0].widgets).toEqual([...set.layouts[0].widgets, { id: 'gym', size: 'M' }]);
     expect(add(added, 0, 'gym', 'active')).toEqual(added);
-    expect(add(set, 0, 'drug', 'active')).toEqual(set);
+    expect(add(set, 0, 'timers', 'active')).toEqual(set);
     expect(add(set, 0, 'nope', 'active')).toEqual(set);
     // A hidden free card can be re-added whatever the access.
     const hidden = remove(set, 0, 'chips');
@@ -176,6 +211,11 @@ describe('editing a layout', () => {
     expect(find(resize(set, 0, 'bars', 'L', 'active').layouts[0].widgets, 'bars').size).toBe('L');
     expect(resize(set, 0, 'bars', 'S', 'active')).toEqual(set);
     expect(resize(set, 0, 'gym', 'L', 'active')).toEqual(set);
+    const withProfile = normalize({ v: 1, active: 0, layouts: [{ name: '', widgets: [{ id: 'profile', size: 'S' }] }] });
+    for (const size of ['M', 'L', 'S']) expect(find(resize(withProfile, 0, 'profile', size, 'active').layouts[0].widgets, 'profile').size).toBe(size);
+    expect(resize(withProfile, 0, 'profile', 'L', 'lapsed')).toEqual(withProfile);
+    expect(resize(withProfile, 0, 'profile', 'W', 'active')).toEqual(withProfile);
+    expect(view(resize(withProfile, 0, 'profile', 'L', 'active'), 'lapsed').widgets[0].size).toBe('S');
   });
 
   it('move places a widget and keeps the others in order', () => {

@@ -15,7 +15,7 @@ const events = { events: [{ title: 'Easter Egg Hunt', description: '', kind: 'ev
 const merits = { tracks: [{ id: '1', name: 'Education Length', level: 1, description: 'Course time reduction' }, { id: '2', name: 'Bank Interest', level: 0, description: 'Bank bonus' }, { id: '3', name: 'Life Points', level: 2, description: 'Life bonus' }], available: 30, awards: 40, at: now * 1000, source: 'desktop-api-snapshot' };
 async function desktop(tornId) {
   const dir = path.join(temp, String(tornId)); fs.mkdirSync(dir);
-  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ theme: 'ocean', features: { 'app.splash': false, 'app.animations': false, 'app.updates': false } }));
+  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ theme: 'ocean', features: { 'app.splash': false, 'app.animations': false, 'app.updates': false, 'app.newYearWelcome': false } }));
   const child = fork(path.join(__dirname, 'preview-server.js'), { env: { ...process.env, TORN_DATA_DIR: dir, TORN_API_KEY: '', TORN_PREMIUM_SERVICE_URL: 'http://127.0.0.1:' + server.address().port, TORN_PREMIUM_TEST_MODE: '1', TORN_PREMIUM_TEST_TOKEN: secret, TORN_PREMIUM_TEST_TORN_ID: String(tornId) }, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] }); children.push(child);
   const port = await new Promise((resolve, reject) => { child.once('message', (m) => resolve(m.port)); child.once('error', reject); child.once('exit', (c) => reject(Error('Desktop exited: ' + c))); });
   const base = 'http://127.0.0.1:' + port, context = await browser.newContext({ viewport: { width: 1440, height: 1050 } }), page = await context.newPage();
@@ -70,7 +70,7 @@ async function capture(page, name) { await page.evaluate(() => window.scrollTo({
   assert.equal(await free.page.locator('#theme-options .theme-choice').count(), 5);
   await free.page.locator('[data-theme-choice="light"]').click(); await free.page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
   await free.page.evaluate(() => showSettingsTab('torn'));
-  for (const key of ['torn.ffScouterScript', 'torn.tornw3bScript', 'torn.liveFight']) assert.equal(await free.page.locator('[data-feature="' + key + '"]').isEnabled(), true);
+  for (const key of ['torn.ffScouterScript', 'torn.tornw3bScript', 'torn.openMarketScript', 'torn.bazaarUndercut', 'torn.profileWorkStats', 'torn.liveFight']) assert.equal(await free.page.locator('[data-feature="' + key + '"]').isEnabled(), true);
   service.store.adjustSubscription({ tornId: 4037017, admin: true }, { torn_id: 123456, days: 30, reason: 'Feature UI fixture membership' });
   await member.page.evaluate(() => PremiumAccess.status(true));
   let slot = await show(member.page, 'appearance_custom_themes');

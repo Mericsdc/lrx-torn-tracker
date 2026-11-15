@@ -7,8 +7,9 @@
    reset or another player closes edit mode without saving. */
 (() => {
   const L = window.LRXOverviewLayout, O = window.LRXOverview;
-  const grid = $('#ow-grid'), bar = $('#ow-bar'), drawer = $('#ow-drawer');
+  const grid = $('#ow-grid'), head = $('#ow-head'), bar = $('#ow-bar'), drawer = $('#ow-drawer');
   const GRIP = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="5.5" cy="3.5" r="1.5"/><circle cx="10.5" cy="3.5" r="1.5"/><circle cx="5.5" cy="8" r="1.5"/><circle cx="10.5" cy="8" r="1.5"/><circle cx="5.5" cy="12.5" r="1.5"/><circle cx="10.5" cy="12.5" r="1.5"/></svg>';
+  const PENCIL = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg>';
   const DRAG_TYPE = 'application/x-lrx-widget'; // not text: a drop on a text field inserts nothing
 
   const title = (id) => { const t = window.LRXOverviewWidgets.titles[id]; return t ? tr(t[0], t[1]) : id; }; // overview-widgets.js
@@ -34,7 +35,10 @@
 
   /* ---------- the bar ---------- */
   const select = make('select', { id: 'ow-layout', className: 'ow-layout' });
-  const editBtn = make('button', { id: 'ow-edit', type: 'button', className: 'btn sm ghost' });
+  // The layout picker and Edit sit in the page header beside Refresh (#ow-head); the tools get a row only while editing.
+  const editBtn = make('button', { id: 'ow-edit', type: 'button', className: 'btn glass-pill', innerHTML: PENCIL });
+  const editLabel = make('span');
+  editBtn.append(editLabel);
   const nameInput = make('input', { id: 'ow-name', type: 'text', className: 'input ow-name', maxLength: L.MAX_NAME, autocomplete: 'off', spellcheck: false });
   const dupBtn = make('button', { id: 'ow-duplicate', type: 'button', className: 'btn sm' });
   const delBtn = make('button', { id: 'ow-delete', type: 'button', className: 'btn sm' });
@@ -42,11 +46,13 @@
   const addBtn = make('button', { id: 'ow-add', type: 'button', className: 'btn sm' }, { 'aria-controls': 'ow-drawer', 'aria-expanded': 'false' });
   const doneBtn = make('button', { id: 'ow-done', type: 'button', className: 'btn sm primary' });
   const premiumTools = [nameInput, dupBtn, delBtn], editTools = [...premiumTools, resetBtn, addBtn, doneBtn];
-  bar.replaceChildren(select, editBtn, ...editTools);
+  head.replaceChildren(select, editBtn);
+  bar.replaceChildren(...editTools);
 
   function drawBar() {
     const set = O.current(), view = O.shown(), on = usable(), premium = O.access() === 'active';
-    bar.hidden = !on;
+    head.hidden = !on;
+    bar.hidden = !(on && editing);
     select.hidden = !(on && premium && set.layouts.length > 1);
     if (!select.hidden) {
       const key = JSON.stringify([state.lang, set.layouts.map((l) => l.name)]);
@@ -55,7 +61,7 @@
     }
     setAttr(select, 'aria-label', tr('Düzen', 'Layout'));
     editBtn.hidden = !on || editing;
-    setText(editBtn, tr('Düzenle', 'Edit'));
+    setText(editLabel, tr('Düzenle', 'Edit'));
     for (const el of editTools) el.hidden = !editing;
     for (const el of premiumTools) el.hidden = !(editing && premium);
     nameInput.placeholder = defaultName();

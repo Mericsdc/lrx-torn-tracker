@@ -10,7 +10,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   tabList: () => ipcRenderer.invoke('tab-list'),
   tabNavigate: (tabId, url) => ipcRenderer.invoke('tab-navigate', { tabId, url }),
   tabAction: (tabId, action) => ipcRenderer.invoke('tab-action', { tabId, action }),
-  tornChatSend: (payload) => ipcRenderer.invoke('torn-chat-send', payload),
   setTornCookies: (payload) => ipcRenderer.invoke('set-torn-cookies', payload),
   setViewVisibility: (visible) => ipcRenderer.invoke('set-view-visibility', visible),
   tornToolsInfo: () => ipcRenderer.invoke('torntools-info'),

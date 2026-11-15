@@ -64,7 +64,7 @@ function main() {
   }
   process.env.TORN_DATA_DIR = persistentDataDir;
 
-  const { startServer, stockProductNames, ingestStockDeliveries, warMemberStatuses, warGroupLabels, flushData, myPlayerId, getCrimeValue, crimeValueForPage, purchaseCostsForPage, seasonalActive, halloweenForPage, ffScriptBridge } = require('../server/server');
+  const { startServer, stockProductNames, ingestStockDeliveries, warMemberStatuses, profileWorkStats, warGroupLabels, flushData, myPlayerId, getCrimeValue, crimeValueForPage, purchaseCostsForPage, seasonalActive, halloweenForPage, ffScriptBridge } = require('../server/server');
   app.on('will-quit', () => { try { flushData(); } catch {} });
   const { ensureTornTools } = require('./torntools');
   const { externalGoogleLogin } = require('./external-login');
@@ -311,6 +311,7 @@ function main() {
   const onlyOn = (match, body) => `if (${match}.test(location.href)) { ${body}
 }`;
   const STOCK_PAGE = /^https:\/\/www\.torn\.com\/companies\.php/i;
+  const PROFILE_PAGE = /^https:\/\/www\.torn\.com\/profiles\.php\?(.*&)?XID=\d+(&|#|$)/i;
 
   const TORN_HELPERS = [
     { name: 'fast-slots', feature: 'torn.fastSlots', match: /^https:\/\/www\.torn\.com\/page\.php\?(.*&)?sid=slots(&|#|$)/i },
@@ -327,6 +328,13 @@ function main() {
     { name: 'jail-helper', feature: 'torn.jailHelper', match: /^https:\/\/www\.torn\.com\/jailview\.php/i },
     { name: 'sell-guard', feature: 'torn.sellGuard', match: /^https:\/\/www\.torn\.com\/(page\.php\?(.*&)?sid=ItemMarket|bazaar\.php)/i,
       prelude: () => `window.__lrxCosts=${JSON.stringify(purchaseCostsForPage())};` },
+    // Bazaar → Add items / Manage: a −$1 button per item; only the player's click on that item fills its price box (weav3r.dev, no
+    // Torn request). The player's own ID keeps their own listings out of the "cheapest" pick.
+    { name: 'bazaar-undercut', feature: 'torn.bazaarUndercut', needsFocus: true, match: /^https:\/\/www\.torn\.com\/bazaar\.php/i,
+      prelude: () => `window.__lrxMe=${JSON.stringify(myPlayerId() || '')};` },
+    // Profiles: working stats (Hall of Fame) and the company's stars above "Life". The owner chose automatic lookups:
+    // two public Torn API requests per profile with the saved key, kept in memory (server.js profileWorkStats).
+    { name: 'profile-work-stats', feature: 'torn.profileWorkStats', needsFocus: true, match: PROFILE_PAGE, after: (id) => profileTick(id) },
     { name: 'poker-helper', feature: 'torn.pokerHelper', match: /^https:\/\/www\.torn\.com\/page\.php\?(.*&)?sid=holdem/i },
     // Etkinlik yardımcıları (event): yalnızca oyuncunun etkinlik penceresinde çalışır. Tarihler her yıl
     // Torn takviminden (API) gelir; kişisel başlangıç saati (user/calendar) dahil.
@@ -393,6 +401,28 @@ function main() {
     if (!featureEnabled('torn.warHelper')) return;
     if (tabs.has(activeTabId)) warTick(activeTabId);
   }, 20_000);
+
+  // Profile page: the page gives the player and company IDs, the server looks the numbers up (cached) and the
+  // helper shows them. Only for the tab the player is looking at, and only into the same page it was asked for.
+  async function profileTick(id) {
+    const t = tabs.get(id);
+    if (!t || !tabViewed(id)) return;
+    if (t.profileBusy) { t.profileAgain = true; return; } // e.g. the next profile opened while this one was read
+    const wc = t.view.webContents;
+    const url = wc.isDestroyed() ? '' : wc.getURL();
+    if (!PROFILE_PAGE.test(url)) return;
+    t.profileBusy = true;
+    try {
+      const info = await wc.executeJavaScript(`${PROFILE_PAGE}.test(location.href) && window.__lrxProfile ? window.__lrxProfile.scan() : null`, false);
+      if (!info?.playerId) return;
+      const stats = await profileWorkStats(info.playerId, info.companyId);
+      if (wc.isDestroyed() || wc.getURL() !== url || !tabViewed(id) || !featureEnabled('torn.profileWorkStats')) return;
+      await wc.executeJavaScript(onlyOn(PROFILE_PAGE, `window.__lrxProfile && window.__lrxProfile.update(${JSON.stringify({ playerId: String(info.playerId), ...stats })})`), false);
+    } catch {} finally {
+      t.profileBusy = false;
+      if (t.profileAgain) { t.profileAgain = false; profileTick(id); }
+    }
+  }
 
   // Torn olmayan pop-up'lar (Google ile giriş vb.) ayrı küçük pencerede açılır.
   // Aynı oturumu (partition) paylaşırlar; böylece Google girişi Torn sekmesine geri döner.
@@ -624,51 +654,8 @@ function main() {
     t.view.webContents.loadURL(url).catch((e) => log('nav err:', e.message));
   });
 
-  /* Profil sayfasından Torn private chat'i açıp mesajı gönderir.
-     Selector'lar TornTools'un chat v3 seçicileriyle aynı (#chatRoot [class*='item___'] …). */
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  async function waitProfileLoaded(wc, ms = 25000) {
-    const end = Date.now() + ms;
-    while (Date.now() < end) {
-      if (wc.isDestroyed()) return false;
-      if (!wc.isLoading() && /profiles\.php/i.test(wc.getURL())) return true;
-      await sleep(200);
-    }
-    return false;
-  }
-  // Torn rules: the app never clicks Torn's buttons or sends a message for the user.
-  // It only fills the text into a chat box the user already opened; the user presses Enter.
-  const chatJs = (name) => `(() => {
-    const target = ${JSON.stringify(String(name || '').toLowerCase())};
-    const box = [...document.querySelectorAll("#chatRoot [class*='item___']")].find((b) => {
-      const h = b.querySelector("button [class*='title___'], button [class*='name___'], [class*='chat-box-header__name']");
-      return h && b.querySelector('textarea') && h.textContent.trim().toLowerCase().includes(target);
-    });
-    const ta = box && box.querySelector('textarea');
-    if (!ta) return { ok: false, step: 'box' };
-    ta.scrollIntoView({ block: 'nearest' });
-    ta.focus();
-    return { ok: true };
-  })()`;
-
-  ipcMain.handle('torn-chat-send', async (_event, { tabId, name, message }) => {
-    if (!fromAppPage(_event)) return { ok: false, step: 'denied' };
-    const t = tabs.get(tabId);
-    if (!t) return { ok: false, step: 'tab' };
-    const wc = t.view.webContents;
-    try {
-      if (!(await waitProfileLoaded(wc))) return { ok: false, step: 'load' };
-      const opened = await wc.executeJavaScript(chatJs(name), false);
-      if (!opened?.ok) return opened || { ok: false, step: 'box' };
-      wc.focus();
-      await sleep(150);
-      await wc.insertText(String(message || '').replace(/\s*\n+\s*/g, ' ').trim());
-      return { ok: true, sent: false };
-    } catch (e) {
-      log('torn-chat-send err:', e.message);
-      return { ok: false, step: 'error', error: e.message };
-    }
-  });
+  // Torn rules: the app never types into, clicks on or sends anything on Torn. Rehab messages are only copied
+  // (public/app.js); the player pastes and sends them. There is deliberately no chat IPC here.
 
   ipcMain.handle('tab-action', async (_event, { tabId, action }) => {
     const t = tabs.get(tabId);
@@ -954,7 +941,10 @@ function main() {
 
       mainWindow.show();
       mainWindow.focus();
-      mainWindow.loadURL(appOrigin);
+      // --newyear-preview shows the New Year scene, the dressed-up logo, the snow and the celebration outside their
+      // days, for checking a build early.
+      const newYearPreview = process.argv.includes('--newyear-preview') ? '/?newyear=1' : '';
+      mainWindow.loadURL(appOrigin + newYearPreview);
       log('mainWindow ready on port', port);
     } catch (err) {
       log('createWindow ERROR:', err);

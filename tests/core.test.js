@@ -109,6 +109,12 @@ test('the app page allows only its own script files: no inline script, handler o
     assert.equal(/\bhref\s*=\s*["'`]javascript:/i.test(text), false, `javascript: link in public/${file}`);
   }
 });
+test('Torn rules: the app has no way to type a message into Torn chat; rehab messages are only copied', () => {
+  const read = (...parts) => fs.readFileSync(path.join(__dirname, '..', ...parts), 'utf8');
+  for (const [file, text] of [['src/main/electron-main.js', read('src', 'main', 'electron-main.js')], ['src/main/preload.js', read('src', 'main', 'preload.js')], ['public/app.js', read('public', 'app.js')]]) {
+    for (const token of ['torn-chat-send', 'tornChatSend', 'insertText(', 'data-send-rehab']) assert.equal(text.includes(token), false, `${token} in ${file}`);
+  }
+});
 test('themes and group endpoints persist validated values', async () => {
   for (const theme of ['obsidian', 'ocean', 'forest', 'amethyst', 'light']) {
     assert.equal((await request('/api/config', { theme })).status, 200);

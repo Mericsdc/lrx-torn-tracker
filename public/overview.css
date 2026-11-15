@@ -1,5 +1,6 @@
-/* Overview widget grid (overview-host.js). Spans follow LRXOverviewLayout.SPAN: S 1, M 2, L 3 and W 4 columns; the
-   profile (P) is 1 column and 3 rows. The layout's order is kept at every width; sizes are capped to the columns. */
+/* Overview widget grid (overview-host.js). Spans follow LRXOverviewLayout.SPAN: S 1, M 2, L 3 and W 4 columns, except
+   the profile, which is always 1 column and whose size sets its height (below). The layout's order is kept at every
+   width; sizes are capped to the columns. */
 .ow-wrap { display:flex; align-items:flex-start; gap:16px; min-width:0; }
 #ow-grid { flex:1; min-width:0; grid-template-columns:repeat(4,minmax(0,1fr)); grid-auto-rows:minmax(110px,auto); }
 #ow-grid > .ow-w { min-width:0; }
@@ -7,7 +8,25 @@
 #ow-grid > [data-size="M"] { grid-column:span 2; }
 #ow-grid > [data-size="L"] { grid-column:span 3; }
 #ow-grid > [data-size="W"] { grid-column:span 4; }
-#ow-grid > [data-size="P"] { grid-column:span 1; grid-row:span 3; }
+/* The profile: S is 2 rows, so in the default layout it ends with the Bars card; L and M are 3 rows (M is below). */
+#ow-grid > .ow-profile[data-size] { grid-column:span 1; grid-row:span 2; }
+#ow-grid > .ow-profile[data-size="L"] { grid-row:span 3; }
+/* M at 4 columns: the whole photo, as wide as the card and at its own shape, so nothing is cut off and no side is left
+   empty. The card fills its 3 rows (Battle Stats sits beside it), so nothing is left empty below it either: the room
+   the photo leaves holds the profile details. They take only that room (a 0px basis adds no height to the rows) and
+   show whole lines only: a line that does not fit wraps into a second column, which is clipped. The frame keeps its
+   minimum height for the initial shown without a photo; the cap only matters for an extreme shape. At 2 columns
+   every size is 3 rows and M looks like the others. */
+@media (min-width:1201px) {
+  #ow-grid > .ow-profile[data-size="M"] { grid-row:span 3; }
+  #ow-grid > .ow-profile[data-size="M"] .pm-profile-frame { flex:none; }
+  #ow-grid > .ow-profile[data-size="M"] .pm-profile:not(.is-missing) .pm-profile-photo { position:static; display:block; width:100%; height:auto; max-height:70vh; object-fit:cover; object-position:center top; }
+  #ow-grid > .ow-profile[data-size="M"] .pm-profile-more { display:flex; flex:1 1 0px; flex-flow:column wrap; align-content:flex-start; min-height:0; margin:0; padding:0; overflow:hidden; border:1px solid var(--stroke); border-radius:12px; background:var(--pm-soft); }
+  #ow-grid > .ow-profile[data-size="M"] .pm-profile-more > div { flex:1 0 auto; display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; min-height:30px; padding:0 11px; border-top:1px solid var(--stroke); font-size:12px; }
+  #ow-grid > .ow-profile[data-size="M"] .pm-profile-more > div:first-child { border-top:0; }
+  #ow-grid > .ow-profile[data-size="M"] .pm-profile-more dt { flex:none; color:var(--muted); font-size:10.5px; letter-spacing:.5px; text-transform:uppercase; }
+  #ow-grid > .ow-profile[data-size="M"] .pm-profile-more dd { min-width:0; margin:0; overflow:hidden; color:var(--text); text-align:right; text-overflow:ellipsis; white-space:nowrap; }
+}
 /* A widget that is not in the layout stays in the DOM (app.js renders into its IDs) but is not displayed.
    `hidden` on the company summary belongs to company mode and is never used for this. */
 #ow-grid > .ow-w.ow-off { display:none; }
@@ -23,8 +42,46 @@
   #ow-grid:not(.ow-classic) > .timer-card[data-size="S"] .timer-value { font-size:clamp(12px,13.5cqi,25px); }
 }
 
-/* Split from the bars card: the status chips are their own widget. */
-#ow-grid > [data-widget="chips"] .mini-row { margin-top:0; padding-top:0; border-top:0; }
+/* The live timer strip (Addendum 2). A header says whether the data on screen is live (a pulsing green dot, amber and
+   still once it is DELAYED); below it the three countdowns sit side by side with a line between them, each over a bar
+   that drains every second. A countdown scales with its segment (13cqi: 12 mono characters of 0.6em, "12d 05:12:56",
+   fit on one line). When the strip is narrower than 520 px its segments stack. The pulse and the glide stop under the
+   Animations switch (body.no-anim) and the system's reduced motion. */
+#ow-grid > .ls-card { display:flex; flex-direction:column; gap:12px; padding:14px 18px 16px; container:ls / inline-size; }
+.ls-head { display:flex; align-items:center; justify-content:space-between; gap:12px; min-width:0; }
+.ls-live { display:inline-flex; flex:none; align-items:center; gap:8px; color:var(--muted); font-size:10.5px; font-weight:700; letter-spacing:1.4px; }
+.ls-dot { flex:none; width:8px; height:8px; border-radius:50%; background:var(--muted-2); }
+.ls-live.is-live { color:var(--ok); }
+.ls-live.is-live .ls-dot { background:var(--ok); animation:lsPulse 1.8s ease-out infinite; }
+.ls-live.is-stale { color:var(--warn); }
+.ls-live.is-stale .ls-dot { background:var(--warn); box-shadow:0 0 8px color-mix(in srgb,var(--warn) 55%,transparent); }
+@keyframes lsPulse { 0% { box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 60%,transparent); } 70%, 100% { box-shadow:0 0 0 7px transparent; } }
+.ls-fresh { min-width:0; overflow:hidden; color:var(--muted); font:500 11px var(--mono); text-overflow:ellipsis; white-space:nowrap; }
+.ls-row { display:grid; flex:1; grid-template-columns:repeat(3,minmax(0,1fr)); }
+.ls-seg { display:flex; flex-direction:column; justify-content:center; min-width:0; padding:2px 18px; container-type:inline-size; }
+.ls-seg:first-child { padding-left:0; }
+.ls-seg:last-child { padding-right:0; }
+.ls-seg + .ls-seg { border-left:1px solid var(--stroke); }
+.ls-seg .eyebrow { display:flex; align-items:center; gap:7px; min-width:0; overflow:hidden; white-space:nowrap; }
+.ls-seg .eyebrow > :last-child { overflow:hidden; text-overflow:ellipsis; }
+.ls-icon { flex:none; font-size:13px; }
+.ls-value { margin:6px 0 3px; color:var(--text); font-size:clamp(14px,13cqi,28px); font-weight:600; letter-spacing:-0.5px; white-space:nowrap; }
+.ls-value.ready { color:var(--ow-accent); }
+.ls-bar { height:3px; margin-top:11px; overflow:hidden; border-radius:3px; background:var(--stroke); }
+.ls-bar > i { display:block; width:0; height:100%; border-radius:inherit; background:linear-gradient(90deg,color-mix(in srgb,var(--ow-accent) 28%,transparent),var(--ow-accent)); transition:width 1s linear; }
+.ls-seg.done .ls-bar > i { background:var(--ow-accent); box-shadow:0 0 8px color-mix(in srgb,var(--ow-accent) 60%,transparent); }
+/* Reduced motion: no pulse; the global rule in styles.css cuts the bars' glide to .01ms. */
+@media (prefers-reduced-motion:reduce) { .ls-live.is-live .ls-dot { animation:none; } }
+@container ls (max-width:520px) {
+  .ls-row { grid-template-columns:minmax(0,1fr); }
+  .ls-seg, .ls-seg:first-child, .ls-seg:last-child { padding:10px 0; }
+  .ls-seg + .ls-seg { border-top:1px solid var(--stroke); border-left:0; }
+}
+
+/* Split from the bars card: Status is its own widget. Its rows fill the card down to its bottom (1fr rows), so the card
+   ends with the widget beside it and nothing is left empty under the rows. */
+#ow-grid > [data-widget="chips"] { display:flex; flex-direction:column; }
+#ow-grid > [data-widget="chips"] .mini-row { flex:1 1 auto; margin-top:0; }
 
 /* The profile card is profile-card.js, the same component as on the Premium page. */
 .ow-profile { --pm-accent:#e1c38d; --pm-soft:#e1c38d12; --pm-border:#e1c38d45; }
@@ -59,6 +116,11 @@ html[data-theme="light"] .ow-profile { --pm-accent:#8e6326; --pm-soft:#b4853610;
 
 /* Edit mode (overview-edit.js): the bar, dashed frames with a control strip, drop marks and the add list. */
 #view-overview { --ow-accent:var(--gold,var(--tq)); --ow-line:color-mix(in srgb,var(--ow-accent) 62%,transparent); --ow-field:var(--field,rgba(8,10,12,.92)); }
+/* The layout picker and Edit live in the page header (#ow-head), on the Overview only; the edit tools get their own
+   row above the grid only while editing. */
+.ow-head { display:flex; align-items:center; gap:8px; min-width:0; }
+.main:not(:has(#view-overview.active)) .ow-head { display:none; }
+.ow-head select { height:36px; min-width:0; max-width:200px; }
 .ow-bar { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; min-width:0; }
 .ow-bar :is(.btn,select,.input) { height:32px; }
 .ow-bar .btn { padding:0 12px; font-size:12.5px; }
@@ -105,8 +167,17 @@ html[data-theme="light"] .ow-add-item:not(:disabled) { background:var(--bg-2); }
 
 @media (max-width:1200px) {
   #ow-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  /* Two columns: every profile size is three rows, which fill the space beside the live strip (below), so no hole is
+     left before the Bars card. */
+  #ow-grid > .ow-profile[data-size] { grid-row:span 3; }
   #ow-grid > :is([data-size="L"],[data-size="W"]) { grid-column:span 2; }
   #ow-grid.ow-classic > .ow-w:is([data-widget="drug"],[data-widget="edu"],[data-widget="day"]) { grid-column:span 6; }
+}
+/* Two columns: right beside a shown profile (after it or before it; the shown widgets are the grid's first children, in
+   layout order) the live strip is one column and three rows with its segments stacked, where the three cards were.
+   Anywhere else it keeps both columns with its segments side by side, so no column is left empty beside it. */
+@media (min-width:640px) and (max-width:1200px) {
+  #ow-grid > .ow-profile:not(.ow-off) + .ls-card[data-size], #ow-grid > .ls-card[data-size]:has(+ .ow-profile:not(.ow-off)) { grid-column:span 1; grid-row:span 3; }
 }
 @media (max-width:900px) {
   #ow-grid.ow-classic > .ow-w:is([data-widget="bars"],[data-widget="battle"]) { grid-column:span 6; }
@@ -119,7 +190,7 @@ html[data-theme="light"] .ow-add-item:not(:disabled) { background:var(--bg-2); }
 @media (max-width:639px) {
   #ow-grid { grid-template-columns:minmax(0,1fr); }
   #ow-grid > .ow-w[data-size] { grid-column:span 1; }
-  #ow-grid > [data-size="P"] { grid-row:auto; }
+  #ow-grid > .ow-profile[data-size] { grid-row:auto; }
   /* One column: the drop mark goes above or below the widget. */
   #ow-grid > .ow-w.ow-drop-before { box-shadow:0 -8px 0 -4px var(--ow-accent); }
   #ow-grid > .ow-w.ow-drop-after { box-shadow:0 8px 0 -4px var(--ow-accent); }

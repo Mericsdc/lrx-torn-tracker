@@ -32,7 +32,6 @@ const I18N = {
   'nav.stock': ['Stok Durumu', 'Stock Status'],
   'nav.report': ['Günlük Rapor', 'Daily Report'],
   'nav.employees': ['Çalışanlar', 'Employees'],
-  'nav.income': ['Gelir Tablosu', 'Income Statement'],
   'nav.war': ['Savaş Hedefleri', 'War Targets'],
   'nav.settings': ['Ayarlar', 'Settings'],
   'top.refresh': ['Yenile', 'Refresh'],
@@ -52,22 +51,17 @@ const I18N = {
   'ws.extTitle': ['Harici Tarayıcıda Aç', 'Open in your external browser'],
   'ov.edu': ['Eğitim', 'Education'],
   'ov.dayReset': ['Günün Bitmesine (18:00 TCT)', 'Until Day Reset (18:00 TCT)'],
+  'ls.day': ['Gün dönümü', 'Day reset'],
   'ov.bars': ['Barlar', 'Bars'],
   'ov.battlePower': ['Savaş Gücü', 'Battle Stats'],
-  'stock.capacity': ['Depo Kapasitesi', 'Storage Capacity'],
+  'stock.products': ['Ürünler', 'Products'],
   'report.eyebrow': ['Günlük Satış & Sipariş Raporu', 'Daily Sales & Order Report'],
   'report.targetStock': ['Hedef stok', 'Target stock'],
   'report.copyBtn': ['Raporu Kopyala', 'Copy Report'],
   'report.tableTitle': ['Ürün Bazlı Satış', 'Sales by Product'],
   'report.tableSub': ['Son gün verisi · ortalama son 7 kayıt', 'Last day · average of the last 7 records'],
-  'report.orderList': ['Sipariş Listesi', 'Order List'],
   'emp.tableTitle': ['Çalışanlar & Addiction', 'Employees & Addiction'],
-  'emp.tableSub': ['Addiction etkinliği düşürür · -8 ve sonrası için REHAB önerilir', 'Addiction lowers effectiveness · Rehab recommended at -8 or worse'],
-  'inc.pnlTitle': ['Günlük Gelir Tablosu', 'Daily Income Statement'],
-  'inc.lastDay': ['Son gün', 'Last day'],
-  'inc.donutTitle': ['Ürün Gelir Dağılımı', 'Revenue by Product'],
-  'inc.histTitle': ['Gelir Geçmişi', 'Income History'],
-  'inc.dayByDay': ['Gün Gün', 'Day by Day'],
+  'emp.tableSub': ['Addiction verimi düşürür · -8 veya altında Rehab önerilir', 'Addiction lowers effectiveness · Rehab recommended at -8 or worse'],
   'war.enemyFaction': ['Rakip Faction', 'Enemy Faction'],
   'war.factionPh': ['Faction ID gir (örn. 8205)', 'Enter faction ID (e.g. 8205)'],
   'war.scanBtn': ['Tara', 'Scan'],
@@ -163,7 +157,6 @@ const VIEW_META = {
   stock: { tr: ['Stok Durumu', 'Şirket deposu, ürün stokları ve kalan gün'], en: ['Stock Status', 'Company storage, product stock and days left'] },
   report: { tr: ['Günlük Rapor', 'Ne kadar satıldı, ne kadar sipariş vermelisin'], en: ['Daily Report', 'What sold and how much you should order'] },
   employees: { tr: ['Çalışanlar', 'Addiction, effectiveness ve aktivite takibi'], en: ['Employees', 'Addiction, effectiveness and activity tracking'] },
-  income: { tr: ['Gelir Tablosu', 'Gelir, maliyet, maaş ve net kâr'], en: ['Income Statement', 'Revenue, COGS, wages and net profit'] },
   war: { tr: ['Savaş Hedefleri', 'Savaş gücüne uygun rakipler · FFScouter'], en: ['War Targets', 'Opponents that suit your battle stats · FFScouter'] },
   settings: { tr: ['Ayarlar', 'API key ve rapor tercihleri'], en: ['Settings', 'API keys and reporting preferences'] },
 };
@@ -243,49 +236,15 @@ const nowTct = () => Date.now() + state.skew;
 const tctTime = (ms) => new Date(ms).toISOString().slice(11, 19);
 const tctDateStr = (ms) => new Date(ms - 18 * 3600_000).toISOString().slice(0, 10);
 
-const REHAB_TEMPLATES = {
-  en_polite: 'Hey {name}, I see your addiction is at {addiction} right now. Could you please go to REHAB as soon as possible? Thanks!',
-  en_firm: 'Hi {name}, your company addiction is currently at {addiction}, which is hurting our effectiveness. Please fly to Switzerland and go to REHAB as soon as possible. Thank you!',
-  en_short: 'Hey {name}, your addiction is at {addiction} — could you please do a quick REHAB run when you can? Appreciate it!',
-};
-state.rehabTplKey = REHAB_TEMPLATES[localStorage.getItem('tt.rehabTplEnKey')] ? localStorage.getItem('tt.rehabTplEnKey') : 'en_polite';
-state.rehabTpl = localStorage.getItem('tt.rehabTplEn') || REHAB_TEMPLATES[state.rehabTplKey];
-state.rehabFilter = localStorage.getItem('tt.rehabFilter') || 'crit';
-
-function formatRehabMsg(name, addiction) {
-  return (state.rehabTpl || REHAB_TEMPLATES.en_polite)
-    .replace(/\{name\}/gi, decode(name))
-    .replace(/\{addiction\}/gi, String(addiction));
+/* Rehab: employees at addiction -8 or worse get one polite message. It is always English (Torn's shared language,
+   the owner's choice), whatever the app language, and it is only copied: the player sends it on Torn (Torn rules). */
+const REHAB_AT = -8;
+const needsRehab = (e) => (e?.addiction ?? 0) <= REHAB_AT;
+function rehabMessage(name, addiction) {
+  return `Hi ${decode(name)}, your addiction is at ${addiction} right now, which lowers your work effectiveness. When you get a chance, could you please fly to Switzerland and do a Rehab? Thank you!`;
 }
-/* Rehab mesajını hazırla: açık chat kutusuna yazar ya da panoya kopyalar. Gönderme her zaman kullanıcıda (Torn kuralları). */
-const chatSending = new Set();
-async function sendRehabChat(emp, btn) {
-  const name = decode(emp.name);
-  const msg = formatRehabMsg(emp.name, emp.addiction);
-  const fallback = async (why) => {
-    await copyText(msg, tr(`Chat açılamadı (${why}) · Mesaj kopyalandı, Ctrl+V ile yapıştır`, `Couldn't open chat (${why}) · Message copied, paste with Ctrl+V`));
-    openInTab(`https://www.torn.com/messages.php#/p=compose&XID=${emp.id}`, { activate: true });
-  };
-  if (!window.electronAPI?.tornChatSend) return fallback(tr('tarayıcı modu', 'browser mode'));
-  if (chatSending.has(emp.id)) return;
-  chatSending.add(emp.id);
-  btn?.classList.add('spin');
-  toast(tr(`${name} profili açılıyor…`, `Opening ${name}'s profile…`));
-  try {
-    const url = `https://www.torn.com/profiles.php?XID=${emp.id}`;
-    const tab = openInTab(url, { activate: true, reuse: true });
-    const r = await window.electronAPI.tornChatSend({ tabId: tab.id, name, message: msg });
-    if (r?.ok) toast(tr(`Mesaj chat kutusuna yazıldı · göndermek için Enter'a bas`, `Message typed into the chat box · press Enter to send it`));
-    else if (r?.step === 'box') await copyText(msg, tr(`Mesaj kopyalandı · profilde Chat'e tıkla, Ctrl+V ile yapıştır ve gönder`, `Message copied · click Chat on the profile, paste with Ctrl+V and send`));
-    else if (r?.step === 'load' && state.tornLoggedIn === false) await fallback(tr("Torn'a giriş yapılmamış", 'not logged in to Torn'));
-    else await fallback(r?.step || tr('hata', 'error'));
-  } catch (e) {
-    await fallback(e.message);
-  } finally {
-    chatSending.delete(emp.id);
-    btn?.classList.remove('spin');
-  }
-}
+// Settings of the old message generator (filter, template choice, custom template) are no longer used.
+try { ['tt.rehabFilter', 'tt.rehabTplEn', 'tt.rehabTplEnKey'].forEach((k) => localStorage.removeItem(k)); } catch {}
 
 async function copyText(txt, okMsg = tr('Kopyalandı', 'Copied')) {
   try { await navigator.clipboard.writeText(txt); } catch {
@@ -359,6 +318,7 @@ function lastActionChip(la) {
 
 /* ---------------- navigation ---------------- */
 function showView(v) {
+  v = window.LRXFinance?.alias(v) ?? v; // networth / income are tabs of the Finance page (finance.js)
   if (state.view === 'overview' && v !== 'overview') window.LRXOverviewEdit?.stop(); // saves the layout edit, if any
   state.view = v;
   $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === v));
@@ -423,21 +383,44 @@ function setRing(card, frac, done) {
   c.style.strokeDashoffset = C * (1 - Math.max(0, Math.min(1, frac)));
   $(card).classList.toggle('done', !!done);
 }
+/* One countdown, painted wherever it is shown: its single card (the ring) and the live strip (the bar). `frac` is the
+   part still to run, 0–1; a finished timer reads READY / IDLE, and its ring and bar are full. */
+function paintTimer(key, { value, sub, frac, ready }) {
+  $$(`[data-timer="${key}"]`).forEach((el) => { el.textContent = value; el.classList.toggle('ready', ready); });
+  $$(`[data-sub="${key}"]`).forEach((el) => { el.textContent = sub; });
+  const part = Math.max(0, Math.min(1, frac));
+  setRing('#t-' + key, part, ready);
+  const seg = $(`.ls-seg[data-ls="${key}"]`);
+  if (!seg) return;
+  seg.classList.toggle('done', ready);
+  $('.ls-bar > i', seg).style.width = (part * 100).toFixed(2) + '%';
+}
+/* The live strip's header says how old the overview on screen is: LIVE while it is fresh, DELAYED (amber) once three
+   30-second refreshes were missed, and nothing at all before the first overview arrives. */
+const LIVE_STALE_S = 90;
+function paintLive(now = Date.now()) {
+  const live = $('#ls-live'), fresh = $('#ls-fresh');
+  if (!live || !fresh) return;
+  const label = $('[data-ls-label]', live);
+  if (!state.overview || !state.overviewAt) {
+    live.classList.remove('is-live', 'is-stale');
+    label.textContent = '—'; fresh.textContent = '';
+    return;
+  }
+  const age = Math.max(0, Math.floor((now - state.overviewAt) / 1000)), stale = age > LIVE_STALE_S;
+  const ago = age < 60 ? tr(`${age} sn`, `${age} s`)
+    : age < 3600 ? tr(`${Math.floor(age / 60)} dk`, `${Math.floor(age / 60)} min`)
+      : age < 86400 ? tr(`${Math.floor(age / 3600)} sa`, `${Math.floor(age / 3600)} h`)
+        : tr(`${Math.floor(age / 86400)} gün`, `${Math.floor(age / 86400)} d`);
+  live.classList.toggle('is-live', !stale);
+  live.classList.toggle('is-stale', stale);
+  label.textContent = stale ? tr('GECİKMELİ', 'DELAYED') : tr('CANLI', 'LIVE');
+  fresh.textContent = stale ? tr(`son veri ${ago} önce`, `last data ${ago} ago`) : tr(`${ago} önce güncellendi`, `updated ${ago} ago`);
+}
 
 function renderOverview() {
   const o = state.overview; if (!o) return;
-  // sidebar me
   const p = o.player;
-  $('#me-chip').style.cursor = 'pointer';
-  $('#me-chip').dataset.openUrl = `https://www.torn.com/profiles.php?XID=${p.id}`;
-  $('#me-chip').dataset.tabLabel = `${decode(p.name)} [${p.id}]`;
-  $('#me-chip').title = tr('Profilimi sekmede aç', 'Open my profile in a tab');
-  const fac = p.faction || {};
-  const ftag = fac.faction_tag && fac.faction_tag !== 'None' ? fac.faction_tag : '';
-  $('#me-chip').innerHTML = `<div class="avatar" style="background-image:url('${esc(p.image || '')}')"></div>
-    <div class="me-meta"><strong>${esc(p.name)} <span class="muted">[${p.id}]</span></strong>
-      <small>Lv ${p.level}${ftag ? ` · <b class="me-ftag" title="Faction: ${esc(decode(fac.faction_name || ftag))}${fac.position ? ` · ${esc(fac.position)}` : ''}">${esc(ftag)}</b>` : ''}</small>
-      <small class="me-job" title="${tr('İş', 'Job')}: ${esc(jobLabel(p.job))}">💼 ${esc(jobLabel(p.job))}</small></div>`;
   syncCompanyMode();
 
   // status chip
@@ -454,23 +437,32 @@ function renderOverview() {
       <div class="bar"><i style="width:${w}%;background:${col}"></i></div></div>`;
   }).join('');
 
-  const chips = [];
-  if (o.travel) chips.push(`<span class="chip blue">✈ ${esc(o.travel.description)}</span>`);
+  // Status: one row per value, the label on the left and the value on the right; the state is a colour (st-tq, st-ok
+  // for a cooldown that is over, st-warn while one runs, st-orange, st-blue). Torn text goes through esc().
+  const rows = [];
+  const row = (state, label, value, title = '') => rows.push(`<div class="st-row${state ? ' ' + state : ''}"${title ? ` title="${esc(title)}"` : ''}><span class="st-k">${esc(label)}</span><span class="st-v">${value}</span></div>`);
+  if (o.travel) row('st-blue', tr('Yolculuk', 'Travel'), `✈ ${esc(decode(o.travel.description || ''))}`, decode(o.travel.description || ''));
   if (o.drug.xanToday != null) {
     // exact: counted from just before 18:00 TCT · atLeast: only since the app was first opened today · atMost: from an older count of the day before
     const bound = o.drug.xanTodayBound || (o.drug.xanTodayExact === false ? 'atLeast' : 'exact');
     const title = bound === 'atLeast' ? tr('18:00 TCT gün dönümünden beri; uygulama bugün ilk açıldığı andan itibaren sayıldı (dünkü kayıt yok)', 'Since the 18:00 TCT day change; counted from when the app was first opened today (no record from the day before)')
       : bound === 'atMost' ? tr('En fazla bu kadar: uygulama dünkü sayıyı 18:00 TCT gün dönümünden çok önce gördü, bir kısmı dün alınmış olabilir', 'At most this many: the app last saw the count well before the 18:00 TCT day change, so some may have been taken the day before')
       : tr('18:00 TCT gün dönümünden beri (uygulamanın ondan hemen önce gördüğü sayıya göre)', 'Since the 18:00 TCT day change (from the count the app saw just before it)');
-    chips.push(`<span class="chip tq" title="${title}">${tr('Bugün Xanax', 'Xanax Today')}: ${bound === 'atLeast' ? '≥ ' : bound === 'atMost' ? '≤ ' : ''}${o.drug.xanToday}</span>`);
+    row('st-tq', tr('Bugün Xanax', 'Xanax Today'), `${bound === 'atLeast' ? '≥ ' : bound === 'atMost' ? '≤ ' : ''}${o.drug.xanToday}`, title);
   }
-  if (o.drug.xantaken != null) chips.push(`<span class="chip">${tr('Toplam Xanax', 'Total Xanax')}: ${n0(o.drug.xantaken)}</span>`);
-  if (o.drug.refills != null) chips.push(`<span class="chip">${tr('Refill', 'Refills')}: ${n0(o.drug.refills)}</span>`);
-  chips.push(`<span class="chip ${o.cooldowns.booster ? 'warn' : ''}">Booster CD: <span data-cd="booster">${o.cooldowns.booster ? human(o.cooldowns.booster) : tr('yok', 'none')}</span></span>`);
-  chips.push(`<span class="chip ${o.cooldowns.medical ? 'warn' : ''}">Medical CD: <span data-cd="medical">${o.cooldowns.medical ? human(o.cooldowns.medical) : tr('yok', 'none')}</span></span>`);
-  if (o.bars.chain?.current) chips.push(`<span class="chip orange">Chain: ${o.bars.chain.current}</span>`);
-  if (o.bank) chips.push(`<span class="chip ${o.bank.timeLeft > 0 ? '' : 'green'}">🏦 ${tr('Banka', 'Bank')}: ${cmoney(o.bank.amount)} · ${o.bank.timeLeft > 0 ? `${human(o.bank.timeLeft)} ${tr('kaldı', 'left')}` : tr('bitti, çekilebilir', 'done, ready to withdraw')}</span>`);
-  $('#mini-row').innerHTML = chips.join('');
+  if (o.drug.xantaken != null) row('', tr('Toplam Xanax', 'Total Xanax'), n0(o.drug.xantaken));
+  if (o.drug.refills != null) row('', tr('Refill', 'Refills'), n0(o.drug.refills));
+  for (const [k, label] of [['booster', 'Booster CD'], ['medical', 'Medical CD']]) {
+    const left = o.cooldowns[k];
+    row(left ? 'st-warn' : 'st-ok', label, `<span data-cd="${k}">${left ? human(left) : tr('Hazır', 'Ready')}</span>`);
+  }
+  if (o.bars.chain?.current) row('st-orange', 'Chain', `${n0(o.bars.chain.current)}${o.bars.chain.maximum ? ` / ${n0(o.bars.chain.maximum)}` : ''}`);
+  if (o.bank) {
+    const done = !(o.bank.timeLeft > 0);
+    row(done ? 'st-ok' : '', tr('Banka', 'Bank'), `${cmoney(o.bank.amount)} · ${done ? tr('çekilebilir', 'ready') : human(o.bank.timeLeft)}`,
+      done ? tr('Yatırım bitti, çekilebilir', 'The investment is done, ready to withdraw') : `${human(o.bank.timeLeft)} ${tr('kaldı', 'left')}`);
+  }
+  $('#mini-row').innerHTML = rows.join('');
 
   // battle stats
   const bt = o.battle, t = bt.totals;
@@ -523,9 +515,8 @@ function tick() {
   const secOfDay = ((nowTct() / 1000) % 86400 + 86400) % 86400;
   const resetSec = 18 * 3600; // 18:00 TCT
   const left = secOfDay < resetSec ? (resetSec - secOfDay) : (86400 - secOfDay + resetSec);
-  $('[data-timer="day"]').textContent = clock(left);
-  $('[data-sub="day"]').textContent = `18:00 TCT · ${tr('yerel', 'local')} ${new Date(Date.now() + left * 1000).toLocaleTimeString(timeLocale(), { hour: '2-digit', minute: '2-digit' })}`;
-  setRing('#t-day', left / 86400, false);
+  paintTimer('day', { value: clock(left), sub: `18:00 TCT · ${tr('yerel', 'local')} ${new Date(Date.now() + left * 1000).toLocaleTimeString(timeLocale(), { hour: '2-digit', minute: '2-digit' })}`, frac: left / 86400, ready: false });
+  paintLive(now);
 
   // stock order delivery countdowns
   $$('[data-eta]').forEach((el) => {
@@ -543,47 +534,43 @@ function tick() {
   const o = state.overview;
   if (o) {
     const el = (now - state.overviewAt) / 1000;
-    // drug
+    // drug: drains against the longest cooldown seen (renderOverview keeps it in tt.drugMax)
     const d = Math.max(0, o.drug.cooldown - el);
-    const dv = $('[data-timer="drug"]');
     const max = Number(localStorage.getItem('tt.drugMax')) || 8 * 3600;
     if (d > 0) {
-      dv.textContent = clock(d); dv.classList.remove('ready');
       const end = new Date(Date.now() + d * 1000).toLocaleTimeString(timeLocale(), { hour: '2-digit', minute: '2-digit' });
-      $('[data-sub="drug"]').textContent = `${o.drug.xanaxActive ? tr('Xanax aktif', 'Xanax active') : (o.drug.icon ? decode(o.drug.icon).split(' - ')[1] || tr('Drug aktif', 'Drug active') : tr('Drug aktif', 'Drug active'))} · ${tr('biter', 'ends')} ${end}`;
-      setRing('#t-drug', d / max, false);
+      const what = o.drug.xanaxActive ? tr('Xanax aktif', 'Xanax active') : (o.drug.icon ? decode(o.drug.icon).split(' - ')[1] || tr('Drug aktif', 'Drug active') : tr('Drug aktif', 'Drug active'));
+      paintTimer('drug', { value: clock(d), sub: `${what} · ${tr('biter', 'ends')} ${end}`, frac: d / max, ready: false });
     } else {
-      dv.textContent = tr('HAZIR', 'READY'); dv.classList.add('ready');
-      $('[data-sub="drug"]').textContent = tr('Xanax alabilirsin', 'Ready to take Xanax');
-      setRing('#t-drug', 1, true);
+      paintTimer('drug', { value: tr('HAZIR', 'READY'), sub: tr('Xanax alabilirsin', 'Ready to take Xanax'), frac: 1, ready: true });
     }
-    // education
+    // education: drains against the course length
     const e = Math.max(0, o.education.timeLeft - el);
-    const ev = $('[data-timer="edu"]');
     if (o.education.currentId && e > 0) {
-      ev.textContent = clock(e); ev.classList.remove('ready');
-      $('[data-sub="edu"]').textContent = `${o.education.current}${o.education.code ? ' · ' + o.education.code : ''}`;
-      setRing('#t-edu', o.education.duration ? e / o.education.duration : 0.5, false);
+      paintTimer('edu', { value: clock(e), sub: `${o.education.current}${o.education.code ? ' · ' + o.education.code : ''}`, frac: o.education.duration ? e / o.education.duration : 0.5, ready: false });
     } else {
-      ev.textContent = tr('BOŞTA', 'IDLE'); ev.classList.add('ready');
-      $('[data-sub="edu"]').textContent = `${tr('Yeni kurs başlat', 'Start a new course')} · ${o.education.completed}${o.education.totalCourses ? '/' + o.education.totalCourses : ''} ${tr('tamamlandı', 'completed')}`;
-      setRing('#t-edu', 1, true);
+      paintTimer('edu', { value: tr('BOŞTA', 'IDLE'), sub: `${tr('Yeni kurs başlat', 'Start a new course')} · ${o.education.completed}${o.education.totalCourses ? '/' + o.education.totalCourses : ''} ${tr('tamamlandı', 'completed')}`, frac: 1, ready: true });
     }
-    // cooldown chips
+    // Status cooldown rows: the countdown, then Ready in green once it is over
     for (const k of ['booster', 'medical']) {
       const elc = $(`[data-cd="${k}"]`);
-      if (elc && o.cooldowns[k]) { const r = o.cooldowns[k] - el; elc.textContent = r > 0 ? clock(r) : tr('yok', 'none'); }
+      if (elc && o.cooldowns[k]) {
+        const r = o.cooldowns[k] - el;
+        elc.textContent = r > 0 ? clock(r) : tr('Hazır', 'Ready');
+        elc.closest('.st-row')?.classList.toggle('st-warn', r > 0);
+        elc.closest('.st-row')?.classList.toggle('st-ok', r <= 0);
+      }
     }
   }
   tickUntil();
 }
 
 /* =========================================================
-   COMPANY (stock / report / employees / income)
+   COMPANY (stock / report / employees; income is the Finance page's Company tab, finance.js)
    ========================================================= */
 /* Şirket sekmeleri yalnızca şirket direktörleri için.
    Profildeki iş pozisyonu Director değilse ya da şirket API'si yetki hatası verirse gizlenir. */
-const COMPANY_VIEWS = ['stock', 'report', 'employees', 'income'];
+const COMPANY_VIEWS = ['stock', 'report', 'employees'];
 const NOT_DIRECTOR_CODES = [6, 7, 16]; // Incorrect ID · ID-entity relation · access level
 state.companyMode = (() => { try { return localStorage.getItem('tt.cache.companyMode') !== 'off'; } catch { return true; } })();
 
@@ -610,6 +597,7 @@ function applyCompanyMode(on) {
     try { localStorage.removeItem('tt.cache.company'); } catch {}
     if (COMPANY_VIEWS.includes(state.view)) { showView('overview'); try { history.replaceState(null, '', '#overview'); } catch {} }
   }
+  window.syncFinance?.(); // the Finance page's Company tab follows company mode
 }
 function syncCompanyMode() {
   const j = state.overview?.player?.job;
@@ -660,14 +648,12 @@ function renderCompany() {
   renderStock(c);
   renderReport(c);
   renderEmployees(c);
-  renderIncome(c);
+  window.renderFinanceCompany?.(); // Finance page, Company tab (finance.js)
   $('#cover-days').value = String(c.coverDays);
   const bad = c.products.filter((p) => p.status === 'critical' || p.status === 'low').length;
   $('#badge-stock').hidden = !bad; $('#badge-stock').textContent = bad;
-  const addCrit = c.employees.filter((e) => e.addiction <= -8).length;
-  const addWarn = c.employees.filter((e) => e.addiction <= -5).length;
-  const badgeVal = addCrit || addWarn;
-  $('#badge-emp').hidden = !badgeVal; $('#badge-emp').textContent = badgeVal;
+  const rehabCount = c.employees.filter(needsRehab).length;
+  $('#badge-emp').hidden = !rehabCount; $('#badge-emp').textContent = rehabCount;
   tick();
   animateNumbers();
 }
@@ -678,8 +664,7 @@ function kpi(label, value, hint = '', cls = '') {
 
 function renderOverviewCompany(c) {
   const alertsP = c.products.filter((p) => p.status === 'critical' || p.status === 'low');
-  const critAddicts = c.employees.filter((e) => e.addiction <= -8);
-  const warnAddicts = c.employees.filter((e) => e.addiction <= -5);
+  const critAddicts = c.employees.filter(needsRehab);
   $('#ov-company').innerHTML = `
     <article class="glass card">
       <div class="card-head"><h3>${esc(c.company.name)}</h3><span class="chip tq">${'★'.repeat(c.company.rating || 0)}</span></div>
@@ -702,12 +687,14 @@ function renderOverviewCompany(c) {
       }).join('')}</div>
     </article>
     <article class="glass card">
-      <div class="card-head"><h3>Addiction & Rehab</h3><span class="chip ${critAddicts.length ? 'danger' : warnAddicts.length ? 'orange' : 'green'}">${critAddicts.length ? critAddicts.length + tr(' kişi ≤ -8 (Rehab)', ' at ≤ -8 (Rehab)') : warnAddicts.length ? warnAddicts.length + tr(' kişi ≤ -5', ' at ≤ -5') : tr('Temiz', 'Clean')}</span></div>
-      <div class="ov-list">${c.employees.slice(0, 6).map((e) => `<div><span>${esc(e.name)} <span class="sub-text">${esc(e.position)}</span></span><span style="display:inline-flex;align-items:center;gap:6px">${addictionChip(e.addiction)}${e.addiction < 0 ? `<button class="btn sm ghost" data-copy-rehab="${e.id}" title="${tr('Rehab mesajını kopyala (EN)', 'Copy Rehab message (EN)')}">📋</button>` : ''}</span></div>`).join('')}</div>
+      <div class="card-head"><h3>Addiction & Rehab</h3><span class="chip ${critAddicts.length ? 'danger' : 'green'}">${critAddicts.length ? critAddicts.length + tr(' kişi ≤ -8 (Rehab)', ' at ≤ -8 (Rehab)') : tr('Rehab gerekmiyor', 'No rehab needed')}</span></div>
+      <div class="ov-list">${c.employees.slice(0, 6).map((e) => `<div><span>${esc(e.name)} <span class="sub-text">${esc(e.position)}</span></span><span style="display:inline-flex;align-items:center;gap:6px">${addictionChip(e.addiction)}${needsRehab(e) ? `<button class="btn sm ghost" data-copy-rehab="${e.id}" title="${tr('Rehab mesajını kopyala (EN)', 'Copy rehab message (EN)')}" aria-label="${tr('Rehab mesajını kopyala', 'Copy rehab message')}">📋</button>` : ''}</span></div>`).join('')}</div>
     </article>`;
 }
 
 /* ---------- Stock ---------- */
+// Stock Status: four KPI tiles, one delivery line with the "Set order time" menu, then one products card (storage bar
+// and a table with one row per product; a container query in styles.css turns the rows into small cards when narrow).
 function renderStock(c) {
   const s = c.storage;
   const onOrderProds = c.products.filter((p) => p.on_order > 0 && p.orderDelivery)
@@ -719,39 +706,64 @@ function renderStock(c) {
       : `${tr('tahmini', 'estimate')} · ${od.deliveryHours}${tr('sa kargo', 'h transit')}`);
   const hasEstimates = onOrderProds.some((p) => p.orderDelivery.source !== 'torn');
   const canSync = !!window.electronAPI?.tabCreate;
-  const seenAt = c.deliveriesSeenAt ? new Date(c.deliveriesSeenAt).toLocaleTimeString(timeLocale(), { hour: '2-digit', minute: '2-digit' }) : null;
+  const hhmm = (ms) => new Date(ms).toLocaleTimeString(timeLocale(), { hour: '2-digit', minute: '2-digit' });
+  const left = (ms) => clock((ms - Date.now()) / 1000);
+  const seenAt = c.deliveriesSeenAt ? hhmm(c.deliveriesSeenAt) : null;
+  const estimateNote = tr('Süreler tahmini. Kesin süre için Torn\'da şirket stok sayfasını aç; LRX "Delivered in" sayaçlarını otomatik okur.', 'Times are estimates. For exact times, open the company stock page in Torn; LRX reads the "Delivered in" timers automatically.');
+  const tornNote = tr(`Süreler Torn'un kendi sayacından${seenAt ? ` (okundu ${seenAt})` : ''}`, `Times from Torn's own timers${seenAt ? ` (read ${seenAt})` : ''}`);
+  // "~18:42 · estimate" or "21:26 · Torn timer ✓": the arrival clock time and where it comes from (details in the tooltip)
+  const etaWhen = (od) => `<span class="mono">${od.source === 'torn' ? '' : '~'}${hhmm(od.etaMs)}</span> · ${od.source === 'torn'
+    ? `<span class="stock-src ok" title="${esc(tornNote)}">${etaHint(od)}</span>`
+    : `<span class="stock-src" title="${esc(`${etaHint(od)}\n${estimateNote}`)}">${tr('tahmini', 'estimate')}</span>`}`;
   $('#stock-kpis').innerHTML = [
     kpi(tr('Stoktaki ürün', 'In stock'), n0(c.totals.inStock), `${c.products.length} ${tr('çeşit', c.products.length === 1 ? 'product' : 'products')}`),
-    kpi(tr('Siparişte (Yolda)', 'On order (in transit)'), n0(c.totals.onOrder), firstEta ? `${tr('Teslim', 'ETA')}: ${firstEta.source === 'torn' ? '' : '~'}${new Date(firstEta.etaMs).toLocaleTimeString(timeLocale(), { hour: '2-digit', minute: '2-digit' })}` : tr('aktif sipariş yok', 'no active orders')),
-    kpi(tr('İlk teslimat', 'First delivery'), firstEta ? `<span data-eta="${firstEta.etaMs}">${clock((firstEta.etaMs - Date.now()) / 1000)}</span>` : '—', firstEta ? etaHint(firstEta) : tr('Sipariş yok', 'No orders'), 'tq'),
+    kpi(tr('Siparişte', 'On order'), n0(c.totals.onOrder), firstEta ? `${tr('sonraki', 'next')}: <span class="mono" data-eta="${firstEta.etaMs}">${left(firstEta.etaMs)}</span>` : tr('aktif sipariş yok', 'no active orders')),
     kpi(tr('Depo doluluğu', 'Storage used'), s.space ? pct(s.used / s.space) : '—', s.space ? `${n0(s.free)} ${tr('boş alan', 'free space')}` : ''),
     kpi(tr('Şirket fonu', 'Company funds'), cmoney(c.company.funds), `${tr('Reklam', 'Ads')} ${cmoney(c.company.ads)}/${tr('gün', 'day')}`),
   ].join('');
 
-  // Delivery tracking card
+  // Delivery line. The "Set order time" menu keeps its open state (and keyboard focus) across re-renders such as the
+  // periodic company refresh; the Escape / outside-click handlers that close it sit next to the stock click delegation.
+  const oldMenu = $('#delivery-card details.stock-sync');
+  const menuOpen = !!oldMenu?.open, menuFocused = !!oldMenu?.contains(document.activeElement);
+  // Products arriving with the next delivery (same ETA within a minute), not every product on order
+  const n = firstEta ? onOrderProds.filter((p) => Math.abs(p.orderDelivery.etaMs - firstEta.etaMs) <= 60_000).length : 0;
+  const resetAt = (label) => (Number.isFinite(c.nextResetMs) ? `${label} 18:00 TCT (<span class="mono" data-eta="${c.nextResetMs}">${left(c.nextResetMs)}</span>)` : '');
+  // The reset countdown is left out when the next delivery is the 18:00 TCT reset itself (it would show the same time twice)
+  const reset = firstEta && Math.abs(firstEta.etaMs - c.nextResetMs) <= 60_000 ? '' : resetAt(tr('gün sonu', 'reset'));
+  const syncTitle = firstEta ? (hasEstimates ? estimateNote : tornNote) : '';
+  const option = (attr, label, primary = false, title = '') => `<button class="btn sm${primary ? ' primary' : ''}" ${attr}${title ? ` title="${title}"` : ''}>${label}</button>`;
+  const cycleMs = Number(firstEta?.cycleTotalMs) || 6 * 3600_000;
+  const etaPct = firstEta ? Math.max(5, Math.min(100, (1 - Math.max(0, firstEta.etaMs - Date.now()) / cycleMs) * 100)) || 5 : 0;
   $('#delivery-card').innerHTML = `
-    <div class="card-head wrap">
-      <div>
-        <h3>🚚 ${tr('Sipariş Zamanı', 'Order Timing')}</h3>
-        <span class="muted">${onOrderProds.length ? tr(`${onOrderProds.length} üründe toplam ${n0(c.totals.onOrder)} adet sipariş yolda · Şirket gün sonu: 18:00 TCT (<span class="mono" data-eta="${c.nextResetMs}">—</span> kaldı)`, `${n0(c.totals.onOrder)} units on order across ${onOrderProds.length} ${onOrderProds.length === 1 ? 'product' : 'products'} · Company reset: 18:00 TCT (<span class="mono" data-eta="${c.nextResetMs}">—</span> left)`) : tr('Şu an yolda olan sipariş bulunmuyor.', 'No stock orders currently in transit.')}</span>
-        ${onOrderProds.length ? `<div class="sub-text" style="margin-top:4px">${hasEstimates
-          ? `⚠ ${tr('Süreler tahmini. Kesin süre için Torn\'da şirket stok sayfasını aç; LRX "Delivered in" sayaçlarını otomatik okur.', 'Times are estimates. For exact times, open the company stock page in Torn; LRX reads the "Delivered in" timers automatically.')}`
-          : `✓ ${tr(`Süreler Torn'un kendi sayacından${seenAt ? ` (okundu ${seenAt})` : ''}`, `Times from Torn's own timers${seenAt ? ` (read ${seenAt})` : ''}`)}`}</div>` : ''}
+    <div class="stock-line">
+      <div class="stock-next">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>
+        ${firstEta ? `<span class="stock-next-k">${tr('Sonraki teslimat', 'Next delivery')}</span>
+        <strong class="stock-next-eta mono" data-eta="${firstEta.etaMs}">${left(firstEta.etaMs)}</strong>
+        <span class="stock-meta">· ${n} ${tr('ürün', n === 1 ? 'product' : 'products')} · ${etaWhen(firstEta)}${reset ? ` · ${reset}` : ''}</span>`
+    : `<span class="stock-empty">${tr('Şu an yolda olan sipariş bulunmuyor.', 'No stock orders currently in transit.')}</span>${Number.isFinite(c.nextResetMs) ? `<span class="stock-meta">${resetAt(tr('Gün sonu', 'Reset'))}</span>` : ''}`}
       </div>
-      <div class="delivery-controls">
-        ${canSync ? `<button class="btn sm ${hasEstimates ? 'primary' : ''}" data-stock-torn-sync>🔄 ${tr('Torn\'dan kesin süreyi al', 'Get exact times from Torn')}</button>` : ''}
-        <span class="sub-text">${tr('Elle senkronize et:', 'Manual sync:')}</span>
-        <button class="btn sm ${!canSync && c.deliveryMode !== '18tct' ? 'primary' : ''}" data-order-sync="0">${tr(`Şimdi verdim (${estH}sa)`, `Just ordered (${estH}h)`)}</button>
-        <button class="btn sm" data-order-sync="1">${tr('1sa önce', '1h ago')}</button>
-        <button class="btn sm" data-order-sync="2">${tr('2sa önce', '2h ago')}</button>
-        <button class="btn sm" data-order-sync="3">${tr('3sa önce', '3h ago')}</button>
-        <button class="btn sm" data-order-sync="4">${tr('4sa önce', '4h ago')}</button>
-        <button class="btn sm ${c.deliveryMode === '18tct' ? 'primary' : ''}" data-order-mode="18tct" title="${tr('18:00 TCT günlük şirket yenilenmesine göre sayaç', 'Timer anchored to 18:00 TCT daily company reset')}">18:00 TCT</button>
+      <div class="stock-actions">
+        ${canSync ? `<button class="btn sm${hasEstimates ? ' primary' : ''}" data-stock-torn-sync${syncTitle ? ` title="${esc(syncTitle)}"` : ''}>🔄 ${tr('Torn\'dan kesin süreyi al', 'Get exact times from Torn')}</button>` : ''}
+        <details class="stock-sync"${menuOpen ? ' open' : ''}>
+          <summary class="btn sm">${tr('Sipariş zamanını ayarla', 'Set order time')}<span class="stock-caret" aria-hidden="true">▾</span></summary>
+          <div class="stock-sync-panel">
+            <div class="stock-sync-head">${tr('Siparişi ne zaman verdin?', 'When did you place the order?')}</div>
+            <div class="stock-sync-opts">
+              ${option('data-order-sync="0"', tr(`Şimdi verdim (${estH}sa)`, `Just ordered (${estH}h)`), !canSync && c.deliveryMode !== '18tct')}
+              ${[1, 2, 3, 4].map((h) => option(`data-order-sync="${h}"`, tr(`${h}sa önce`, `${h}h ago`))).join('')}
+              ${option('data-order-mode="18tct"', '18:00 TCT', c.deliveryMode === '18tct', tr('18:00 TCT günlük şirket yenilenmesine göre sayaç', 'Timer anchored to 18:00 TCT daily company reset'))}
+            </div>
+          </div>
+        </details>
       </div>
-    </div>`;
+    </div>
+    ${firstEta ? `<div class="bar stock-eta-bar"><i data-eta-bar="${firstEta.etaMs}" data-eta-total="${firstEta.cycleTotalMs}" style="width:${etaPct}%;background:var(--tq)"></i></div>` : ''}`;
+  if (menuFocused) $('#delivery-card details.stock-sync > summary')?.focus({ preventScroll: true });
 
   const total = s.space || c.totals.inStock + c.totals.onOrder || 1;
-  $('#storage-label').textContent = s.space ? `${n0(s.used)} / ${n0(s.space)}` : n0(s.used);
+  $('#storage-label').innerHTML = `<span class="stock-k">${tr('Depo', 'Storage')}</span> <span class="mono">${s.space ? `${n0(s.used)} / ${n0(s.space)}` : n0(s.used)}</span>`;
   $('#storage-bar').innerHTML = c.products.map((p, i) => {
     const col = PALETTE[i % PALETTE.length];
     return `<i style="width:${(p.in_stock / total) * 100}%;background:${col}" title="${esc(p.name)} ${tr('stok', 'stock')}: ${n0(p.in_stock)}"></i>` +
@@ -759,30 +771,46 @@ function renderStock(c) {
   }).join('');
   $('#storage-legend').innerHTML = c.products.map((p, i) => `<span><b style="background:${PALETTE[i % PALETTE.length]}"></b>${esc(p.name)}</span>`).join('') + `<span class="muted">· ${tr('taralı = siparişte', 'striped = on order')}</span>`;
 
-  $('#product-cards').innerHTML = c.products.map((p, i) => {
+  // Products table: one row per product. Every cell carries its column name (data-label) for the narrow card layout.
+  const cols = [
+    ['st-product', tr('Ürün', 'Product')],
+    ['st-status', tr('Durum', 'Status')],
+    ['st-r st-instock', tr('Stokta', 'In stock')],
+    ['st-r st-sales', tr('Satış / gün', 'Sales / day')],
+    ['st-lasts', tr('Yeter süre → sipariş ile', 'Lasts → with order')],
+    ['st-r st-onorder', tr('Siparişte', 'On order')],
+    ['st-arrives', tr('Varış', 'Arrives')],
+    ['st-r st-suggest', tr('Önerilen', 'Suggested')],
+  ];
+  const cover = Number(c.coverDays) > 0 ? Number(c.coverDays) : 0;
+  const daysOr = (d) => (d == null ? '∞' : `${daysTxt(d)}${tr('g', 'd')}`);
+  const none = (title = '') => `<span class="st-none"${title ? ` title="${title}"` : ''}>—</span>`;
+  // How long the stock lasts: solid = now, striped = the days the order adds, the tick = the target (cover days).
+  // Scaled to the longer of "with the order" and the target; unknown days (no sales) draw nothing, never NaN.
+  const coverBar = (p) => {
+    const now = Number.isFinite(p.daysLeft) ? Math.max(0, p.daysLeft) : 0;
+    const withOrder = Number.isFinite(p.daysLeftWithOrder) ? Math.max(now, p.daysLeftWithOrder) : now;
+    const scale = Math.max(withOrder, cover) || 1;
+    const w = (d) => Math.round((Math.min(d, scale) / scale) * 1000) / 10;
+    const target = tr(`Hedef: ${cover} gün`, `Target: ${cover} ${cover === 1 ? 'day' : 'days'}`);
+    return `<div class="st-cover ${esc(p.status)}"${cover ? ` title="${target}"` : ''}><i style="width:${w(now)}%"></i><i style="width:${Math.max(0, w(withOrder) - w(now))}%"></i>${cover ? `<b style="left:${w(cover)}%" title="${target}"></b>` : ''}</div>`;
+  };
+  const rows = c.products.map((p, i) => {
     const [lbl, cls] = statusLabel(p.status);
-    const col = PALETTE[i % PALETTE.length];
-    const cap = Math.max(p.in_stock + p.on_order, p.target, 1);
     const od = p.orderDelivery;
-    return `<article class="glass product">
-      <div class="product-top"><div><h4><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${col};margin-right:7px;vertical-align:middle"></span>${esc(p.name)}</h4><small>${tr('Fiyat', 'Price')} ${money(p.price)} · RRP ${money(p.rrp)} · ${tr('Maliyet', 'Cost')} ${money(p.cost)}</small></div><span class="chip ${cls}">${lbl}</span></div>
-      <div class="stock-gauge"><i style="width:${(p.in_stock / cap) * 100}%;background:${col}"></i><i style="width:${(p.on_order / cap) * 100}%;background:${col}44"></i></div>
-      <div class="pgrid">
-        <div><small>${tr('Stokta', 'In Stock')}</small><strong>${n0(p.in_stock)}</strong></div>
-        <div><small>${tr('Siparişte', 'On Order')}</small><strong>${n0(p.on_order)}</strong></div>
-        <div><small>${tr('Ort. satış / gün', 'Avg. Sales / Day')}</small><strong>${n0(p.avgDaily)}</strong></div>
-        <div><small>${tr('Son gün satış', 'Last Day Sales')}</small><strong>${n0(p.sold_amount)}</strong></div>
-        <div><small>${tr('Stok süresi', 'Stock Duration')}</small><strong>${daysTxt(p.daysLeft)}${tr('g', 'd')} <span class="muted">(${hoursTxt(p.hoursLeft)})</span></strong></div>
-        <div><small>${tr('+ Sipariş ile', '+ With Order')}</small><strong>${daysTxt(p.daysLeftWithOrder)}${tr('g', 'd')} <span class="muted">(${hoursTxt(p.hoursLeftWithOrder)})</span></strong></div>
-      </div>
-      <div class="product-delivery">
-        ${od ? `<div class="pd-row"><span>🚚 ${tr('Teslimata kalan', 'Delivery ETA')} <span class="chip tq mono">+${n0(p.on_order)}</span></span><strong class="mono tq-text" data-eta="${od.etaMs}">${clock((od.etaMs - Date.now()) / 1000)}</strong></div>
-          <div class="bar" style="height:4px;margin-top:6px"><i data-eta-bar="${od.etaMs}" data-eta-total="${od.cycleTotalMs}" style="width:50%;background:var(--tq)"></i></div>
-          <div class="pd-row" style="margin-top:7px"><span class="sub-text">${tr('Varış', 'Arrives')} <b class="mono">${od.source === 'torn' ? '' : '~'}${new Date(od.etaMs).toLocaleTimeString(timeLocale(), { hour: '2-digit', minute: '2-digit' })}</b> · ${etaHint(od)}</span><span class="chip ${od.safeUntilDelivery ? 'green' : 'danger'}">${od.safeUntilDelivery ? tr('Yeterli ✓', 'Safe ✓') : tr('Önce biter ⚠', 'Runs out ⚠')}</span></div>` : `<div class="pd-row"><span class="muted">${tr('Yolda sipariş yok', 'No order in transit')}</span><span class="muted">—</span></div>`}
-      </div>
-      <div class="product-foot"><span class="muted">${tr('Önerilen sipariş', 'Suggested order')}</span>${p.need ? `<strong class="tq-text mono">${n0(p.need)} ${tr('adet', 'units')} · ${cmoney(p.orderCost)}</strong>` : `<span class="chip green">${tr('Gerek yok', 'None needed')}</span>`}</div>
-    </article>`;
+    const cells = [
+      `<div class="st-pcell"><span class="st-dot" style="background:${PALETTE[i % PALETTE.length]}"></span><div><strong>${esc(p.name)}</strong><span class="sub-text"><span>${tr('Fiyat', 'Price')} ${money(p.price)}</span> · <span>RRP ${money(p.rrp)}</span> · <span>${tr('Maliyet', 'Cost')} ${money(p.cost)}</span></span></div></div>`,
+      `<span class="chip ${cls}">${lbl}</span>`,
+      `<span class="st-v">${n0(p.in_stock)}</span>`,
+      `<span class="st-v">${n0(p.avgDaily)}</span><span class="sub-text">${tr('son gün', 'last day')} ${n0(p.sold_amount)}</span>`,
+      `<span class="st-v">${daysOr(p.daysLeft)} → ${daysOr(p.daysLeftWithOrder)}</span><span class="sub-text">${hoursTxt(p.hoursLeft)} → ${hoursTxt(p.hoursLeftWithOrder)}</span>${coverBar(p)}`,
+      p.on_order > 0 ? `<span class="st-v">+${n0(p.on_order)}</span>` : none(),
+      od ? `<div class="st-arr"><span class="st-v" data-eta="${od.etaMs}">${left(od.etaMs)}</span><span class="st-safe ${od.safeUntilDelivery ? 'ok' : 'bad'}">${od.safeUntilDelivery ? tr('Yeterli ✓', 'Safe ✓') : tr('Önce biter ⚠', 'Runs out ⚠')}</span></div><span class="sub-text">${etaWhen(od)}</span>` : none(),
+      p.need ? `<span class="st-v tq-text">${n0(p.need)}</span><span class="sub-text">${cmoney(p.orderCost)}</span>` : none(tr('Gerek yok', 'None needed')),
+    ];
+    return `<tr data-product="${esc(p.name)}">${cells.map((html, k) => `<td class="${cols[k][0]}" data-label="${cols[k][1]}">${html}</td>`).join('')}</tr>`;
   }).join('');
+  $('#product-table').innerHTML = `<thead><tr>${cols.map(([cls, label]) => `<th class="${cls}">${label}</th>`).join('')}</tr></thead><tbody>${rows}</tbody>`;
 }
 
 /* ---------- Report ---------- */
@@ -818,11 +846,6 @@ function renderReport(c) {
     }).join('')}
     </tbody><tfoot><tr><td>${tr('Toplam', 'Total')}</td><td class="num">${n0(t.sold)}</td><td></td><td></td><td class="num">${money(t.revenue)}</td><td class="num">${money(t.cogs)}</td>
       <td class="num pos">${money(t.profit)}</td><td class="num">${pct(t.revenue ? t.profit / t.revenue : 0)}</td><td class="num">${n0(t.inStock)}</td><td class="num">${n0(t.onOrder)}</td><td></td><td></td><td class="num tq-text">${n0(t.need)}</td><td></td></tr></tfoot>`;
-
-  $('#order-total').textContent = t.need ? `${n0(t.need)} ${tr('adet', 'units')} · ${money(t.orderCost)}` : tr('Sipariş gerekmiyor', 'No order needed');
-  $('#order-list').innerHTML = c.products.map((p) => `<div class="order-item ${p.need ? 'need' : ''}">
-      <div><strong>${esc(p.name)}</strong><div class="sub-text">${n0(p.in_stock + p.on_order)} ${tr('mevcut', 'available')} (${hoursTxt(p.hoursLeftWithOrder)}) · ${tr('hedef', 'target')} ${n0(p.target)}</div></div>
-      <div class="qty">${p.need ? n0(p.need) : '0'}<small>${p.need ? money(p.orderCost) : tr('yeterli', 'sufficient')}</small></div></div>`).join('');
 }
 
 function reportText(c) {
@@ -854,11 +877,10 @@ $('#cover-days').addEventListener('change', async (e) => {
 });
 
 /* ---------- Employees & Rehab Messages ---------- */
+// Only -8 or worse stands out (red "Rehab" chip); anything else is a plain number.
 function addictionChip(v) {
-  if (v >= 0) return `<span class="chip green">${tr('Temiz', 'Clean')}</span>`;
-  if (v > -5) return `<span class="chip warn">${v}</span>`;
-  if (v > -8) return `<span class="chip orange">${v} · ${tr('Uyarı', 'Warning')}</span>`;
-  return `<span class="chip danger">${v} · ${tr('Rehab Şart', 'Rehab Now')}</span>`;
+  if (v <= REHAB_AT) return `<span class="chip danger">${v} · Rehab</span>`;
+  return `<span class="emp-add${v < 0 ? '' : ' zero'}">${v}</span>`;
 }
 function sparkline(arr) {
   if (!arr || arr.length < 2) return `<span class="sub-text">${tr('veri birikiyor', 'collecting data')}</span>`;
@@ -867,158 +889,72 @@ function sparkline(arr) {
   const pts = vals.map((v, i) => `${(i * step).toFixed(1)},${(H - 3 - ((v - min) / (max - min || 1)) * (H - 6)).toFixed(1)}`);
   return `<svg class="spark" viewBox="0 0 ${W} ${H}"><path d="M${pts.join(' L')}"/></svg>`;
 }
+// Employees: four KPI tiles; the Rehab card lists only employees at -8 or worse with one English message preview and
+// a Copy button per employee (copy only, Torn rules); the staff table labels every cell (data-label) so a container
+// query in styles.css can turn rows into small cards when the card is narrow.
+const COPY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 9h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>';
 function renderEmployees(c) {
   const e = c.employees;
   const eff = e.map((x) => x.effectiveness.total || 0);
-  const critList = e.filter((x) => x.addiction <= -8);
-  const warnList = e.filter((x) => x.addiction <= -5);
-  const anyAddict = e.filter((x) => x.addiction < 0);
+  const rehab = e.filter(needsRehab).sort((a, b) => a.addiction - b.addiction);
 
   $('#emp-kpis').innerHTML = [
     kpi(tr('Çalışan', 'Employees'), `${c.company.hired}/${c.company.capacity}`),
     kpi(tr('Günlük maaş', 'Daily wages'), money(c.income.wages)),
     kpi(tr('Ort. effectiveness', 'Avg. effectiveness'), n0(eff.length ? eff.reduce((a, b) => a + b, 0) / eff.length : 0), '', 'tq'),
-    kpi(tr('Addiction olan', 'With addiction'), anyAddict.length, tr(`toplam ${e.reduce((a, x) => a + x.addiction, 0)} puan kayıp`, `${e.reduce((a, x) => a + x.addiction, 0)} total points lost`)),
-    kpi(tr('Rehab gereken (≤ -8)', 'Needs Rehab (≤ -8)'), critList.length, critList.length ? tr('Hemen mesaj gönder!', 'Send a message now!') : tr(`${warnList.length} kişi -5..-7 arasında`, `${warnList.length} between -5 and -7`), critList.length ? 'neg' : warnList.length ? 'tq' : 'pos'),
+    kpi(tr('Rehab gereken (≤ -8)', 'Needs rehab (≤ -8)'), rehab.length,
+      rehab.length ? tr('Mesajı aşağıdan kopyala', 'Copy the message below') : tr('-8 veya altında kimse yok', 'Nobody at -8 or worse'),
+      rehab.length ? 'neg' : 'pos'),
   ].join('');
 
-  // Filter targets for rehab message generator
-  let msgTargets = critList;
-  let autoNote = '';
-  if (state.rehabFilter === 'crit') {
-    if (!critList.length && anyAddict.length) {
-      msgTargets = anyAddict;
-      autoNote = tr(
-        `Şu an <b>-8 ve altında</b> kritik çalışan yok (en yüksek: <b>${esc(anyAddict[0].name)} ${anyAddict[0].addiction}</b>). İstersen aşağıdan mevcut addiction'lı çalışanlara erken uyarı mesajı (İngilizce) atabilir veya -8 şablonunu kullanabilirsin.`,
-        `No employees are currently at <b>-8 or worse</b> (highest: <b>${esc(anyAddict[0].name)} ${anyAddict[0].addiction}</b>). Showing employees with negative addiction below so you can send an early reminder if needed.`
-      );
-    }
-  } else if (state.rehabFilter === 'warn') {
-    msgTargets = warnList.length ? warnList : anyAddict;
-  } else {
-    msgTargets = anyAddict;
-  }
-
-  $('#rehab-card').innerHTML = `
-    <div class="card-head wrap">
-      <div>
-        <h3>💬 ${tr('Rehab Mesaj Oluşturucu (-8 ve Sonrası Kritik · EN)', 'Rehab Message Generator (-8 or worse is critical · EN)')}</h3>
-        <span class="muted">${tr('Addiction yüksek çalışanlara tek tıkla kopyalayıp Torn üzerinden gönderebileceğin hazır İngilizce mesajlar', 'Ready-made English messages for employees with high addiction: copy one or send it through Torn in one click')}</span>
-      </div>
-      <div class="rehab-tools">
-        <div class="toggle" id="rehab-filter-toggle">
-          <button data-rf="crit" class="${state.rehabFilter === 'crit' ? 'active' : ''}">${tr('Kritik', 'Critical')} (≤ -8) [${critList.length}]</button>
-          <button data-rf="warn" class="${state.rehabFilter === 'warn' ? 'active' : ''}">${tr('Uyarı', 'Warning')} (≤ -5) [${warnList.length}]</button>
-          <button data-rf="all" class="${state.rehabFilter === 'all' ? 'active' : ''}">${tr('Tümü', 'All')} (&lt; 0) [${anyAddict.length}]</button>
-        </div>
-      </div>
+  const head = `<div><h3>${tr('Rehab gerekenler', 'Rehab needed')}</h3>
+      <span class="muted">${tr("Addiction -8 veya altında · mesajı kopyala, Torn'da kendin gönder", 'Addiction at -8 or worse · copy the message and send it yourself on Torn')}</span></div>`;
+  const where = (x) => (/switzerland/i.test(x.status?.description || '')
+    ? `<span class="chip blue">✈ ${tr("İsviçre'de", 'In Switzerland')}</span>`
+    : (() => { const si = statusInfo(x.status); return `<span class="chip ${si.cls}" title="${esc(x.status?.description)}">${si.text}</span>`; })());
+  $('#rehab-card').classList.toggle('is-clear', !rehab.length);
+  $('#rehab-card').innerHTML = !rehab.length
+    ? `<div class="rehab-head">${head}<span class="rehab-clear"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>${tr('-8 veya altında çalışan yok.', 'No employee is at -8 or worse.')}</span></div>`
+    : `<div class="rehab-head">${head}<span class="chip danger">${rehab.length} ${tr('çalışan', rehab.length === 1 ? 'employee' : 'employees')}</span></div>
+    <div class="rehab-preview">
+      <span class="rehab-k">${tr('Mesaj önizlemesi (İngilizce)', 'Message preview')}</span>
+      <p class="rehab-msg-box">${esc(rehabMessage(rehab[0].name, rehab[0].addiction))}</p>
     </div>
-
-    <div class="rehab-tpl-bar">
-      <div class="rehab-presets">
-        <span class="sub-text">${tr('Şablon (EN):', 'Template (EN):')}</span>
-        <button class="btn sm ${state.rehabTplKey === 'en_polite' ? 'primary' : ''}" data-tpl="en_polite">${tr('EN · Kibar (Varsayılan)', 'EN · Polite (Default)')}</button>
-        <button class="btn sm ${state.rehabTplKey === 'en_firm' ? 'primary' : ''}" data-tpl="en_firm">${tr('EN · Acil (-8 Kritik)', 'EN · Urgent (-8 Critical)')}</button>
-        <button class="btn sm ${state.rehabTplKey === 'en_short' ? 'primary' : ''}" data-tpl="en_short">${tr('EN · Kısa & Samimi', 'EN · Short & Casual')}</button>
-      </div>
-      <div class="rehab-custom">
-        <input class="input" id="rehab-tpl-input" value="${esc(state.rehabTpl)}" placeholder="${tr('Mesaj şablonu ({name} ve {addiction} otomatik doldurulur)', 'Message template ({name} and {addiction} are filled in automatically)')}" />
-      </div>
-    </div>
-
-    ${autoNote ? `<div class="alert info" style="margin-bottom:12px"><div>${autoNote}<br><span class="sub-text">${tr('Örnek -8 mesajı:', 'Sample -8 message:')} "${esc(formatRehabMsg('Player', -8))}"</span></div></div>` : ''}
-
-    ${msgTargets.length ? `<div class="rehab-grid">${msgTargets.map((x) => {
-      const msg = formatRehabMsg(x.name, x.addiction);
-      const isCrit = x.addiction <= -8;
-      const inSwitz = /switzerland/i.test(x.status?.description || '');
-      return `<div class="rehab-item ${isCrit ? 'crit' : ''}">
-        <div class="rehab-item-head">
-          <div>
-            <a href="https://www.torn.com/profiles.php?XID=${x.id}" target="_blank" rel="noopener"><strong>${esc(x.name)}</strong></a>
-            <span class="sub-text">[${x.id}] · ${esc(x.position)}</span>
-          </div>
-          <div style="display:flex;gap:6px;align-items:center">
-            ${inSwitz ? `<span class="chip blue">✈ ${tr("İsviçre'de", 'In Switzerland')}</span>` : ''}
-            ${addictionChip(x.addiction)}
-          </div>
-        </div>
-        <div class="rehab-msg-box" data-emp-msg="${x.id}">${esc(msg)}</div>
-        <div class="rehab-actions">
-          <button class="btn sm" data-copy-rehab="${x.id}">📋 ${tr('Mesajı Kopyala', 'Copy Message')}</button>
-          <button class="btn sm primary" data-send-rehab="${x.id}" title="${tr('Torn private chat üzerinden gönder', 'Send via Torn private chat')}">💬 ${tr('Chat ile Gönder', 'Send via Chat')}</button>
-        </div>
-      </div>`;
-    }).join('')}</div>` : `<div class="empty-state">${tr('Addiction değeri negatif olan çalışan bulunmuyor.', 'No employees with negative addiction.')}</div>`}`;
+    <ul class="rehab-list">${rehab.map((x) => `
+      <li class="rehab-row" data-rehab-emp="${x.id}">
+        <div class="rehab-who"><a href="https://www.torn.com/profiles.php?XID=${x.id}" target="_blank" rel="noopener">${esc(x.name)}</a><span class="sub-text">${esc(x.position)}</span></div>
+        <span class="rehab-where">${where(x)}</span>
+        <span class="rehab-add">${addictionChip(x.addiction)}</span>
+        <button class="btn sm rehab-copy" data-copy-rehab="${x.id}" title="${esc(rehabMessage(x.name, x.addiction))}">${COPY_ICON}${tr('Mesajı kopyala', 'Copy message')}</button>
+      </li>`).join('')}
+    </ul>`;
 
   const effParts = [['working_stats', '#c9a96a'], ['settled_in', '#d4d9df'], ['merits', '#3d78c9'], ['director_education', '#607d8b'], ['management', '#26b880']];
   const effNames = { working_stats: tr('Çalışma statları', 'Working stats'), settled_in: tr('Alışma', 'Settled in'), merits: 'Merits', director_education: tr('Direktör eğitimi', 'Director education'), management: tr('Yönetim', 'Management') };
-  $('#emp-table').innerHTML = `<thead><tr><th>${tr('Çalışan', 'Employee')}</th><th>${tr('Durum', 'Status')}</th><th>${tr('Son aktivite', 'Last action')}</th><th class="num">${tr('Gün', 'Days')}</th><th class="num">${tr('Maaş', 'Wage')}</th><th class="num">MAN / INT / END</th><th>Effectiveness</th><th>Addiction</th><th>${tr('Trend (14g)', 'Trend (14d)')}</th><th class="num">${tr('İnaktif', 'Inactive')}</th><th>${tr('Rehab Mesajı', 'Rehab Message')}</th></tr></thead><tbody>${
-    e.map((x) => {
-      const si = statusInfo(x.status);
+  const cols = [
+    ['emp-name', tr('Çalışan', 'Employee'), (x) => `<a class="emp-link" href="https://www.torn.com/profiles.php?XID=${x.id}" target="_blank" rel="noopener">${esc(x.name)}</a><span class="sub-text">${esc(x.position)}</span>`],
+    ['emp-status', tr('Durum', 'Status'), (x) => { const si = statusInfo(x.status); return `<span class="chip ${si.cls}" title="${esc(x.status?.description)}">${si.text}</span>`; }],
+    ['emp-last', tr('Son aktivite', 'Last action'), (x) => lastActionChip(x.lastAction)],
+    ['emp-addiction', 'Addiction', (x) => addictionChip(x.addiction)],
+    ['emp-trend', tr('Trend (14g)', 'Trend (14d)'), (x) => sparkline(x.addictionHistory)],
+    ['emp-eff', 'Effectiveness', (x) => {
       const total = x.effectiveness.total || 0;
       const bar = effParts.map(([k, col]) => x.effectiveness[k] ? `<i style="width:${(x.effectiveness[k] / Math.max(total, 150)) * 100}%;background:${col}" title="${effNames[k] || k}: ${x.effectiveness[k]}"></i>` : '').join('');
-      return `<tr>
-        <td><div class="name-cell"><a href="https://www.torn.com/profiles.php?XID=${x.id}" target="_blank" rel="noopener">${esc(x.name)}</a></div><div class="sub-text">${esc(x.position)}</div></td>
-        <td><span class="chip ${si.cls}" title="${esc(x.status?.description)}">${si.text}</span></td>
-        <td>${lastActionChip(x.lastAction)}</td>
-        <td class="num">${x.days}</td><td class="num">${money(x.wage)}</td>
-        <td class="num muted">${compact(x.manual_labor, 1)} / ${compact(x.intelligence, 1)} / ${compact(x.endurance, 1)}</td>
-        <td><div style="display:flex;align-items:center;gap:10px"><div class="eff-bar">${bar}</div><b class="mono">${total}</b></div></td>
-        <td>${addictionChip(x.addiction)}</td>
-        <td>${sparkline(x.addictionHistory)}</td>
-        <td class="num ${x.inactivity < 0 ? 'neg' : 'muted'}">${x.inactivity || 0}</td>
-        <td>${x.addiction < 0 ? `<div style="display:flex;gap:6px"><button class="btn sm ${x.addiction <= -8 ? 'primary' : ''}" data-copy-rehab="${x.id}" title="${esc(formatRehabMsg(x.name, x.addiction))}">📋 ${tr('Kopyala', 'Copy')}</button><button class="btn sm ghost" data-send-rehab="${x.id}" title="${tr('Torn private chat üzerinden gönder', 'Send via Torn private chat')}">💬 ${tr('Gönder', 'Send')}</button></div>` : '<span class="muted">—</span>'}</td></tr>`;
-    }).join('')
+      return `<div class="emp-eff-cell"><div class="eff-bar">${bar}</div><b class="mono">${total}</b></div>`;
+    }],
+    ['emp-stats num', 'MAN / INT / END', (x) => `${compact(x.manual_labor, 1)} / ${compact(x.intelligence, 1)} / ${compact(x.endurance, 1)}`],
+    ['emp-days num', tr('Gün', 'Days'), (x) => x.days ?? 0],
+    ['emp-wage num', tr('Maaş', 'Wage'), (x) => money(x.wage)],
+    ['emp-inactive num', tr('İnaktif', 'Inactive'), (x) => `<span class="${x.inactivity < 0 ? 'neg' : 'muted'}">${x.inactivity || 0}</span>`],
+  ];
+  $('#emp-table').innerHTML = `<thead><tr>${cols.map(([cls, label]) => `<th class="${cls}">${label}</th>`).join('')}</tr></thead><tbody>${
+    e.map((x) => `<tr data-emp="${x.id}"${needsRehab(x) ? ' class="emp-crit"' : ''}>${cols.map(([cls, label, cell]) => `<td class="${cls}" data-label="${esc(label)}">${cell(x)}</td>`).join('')}</tr>`).join('')
   }</tbody>`;
 }
 
-/* ---------- Income ---------- */
-function renderIncome(c) {
-  const i = c.income;
-  const gross = i.revenue - i.cogs;
-  $('#pnl').innerHTML = `
-    <div class="pnl-row"><span>${tr('Satış geliri', 'Sales revenue')}</span><span>${money(i.revenue)}</span></div>
-    <div class="pnl-row minus"><span>${tr('Ürün maliyeti', 'Cost of goods (COGS)')}</span><span>-${money(i.cogs)}</span></div>
-    <div class="pnl-row"><span><b>${tr('Brüt kâr', 'Gross profit')}</b></span><span><b>${money(gross)}</b></span></div>
-    <div class="pnl-row minus"><span>${tr(`Maaşlar (${c.employees.length} çalışan)`, `Wages (${c.employees.length} ${c.employees.length === 1 ? 'employee' : 'employees'})`)}</span><span>-${money(i.wages)}</span></div>
-    <div class="pnl-row minus"><span>${tr('Reklam bütçesi', 'Advertising budget')}</span><span>-${money(i.ads)}</span></div>
-    <div class="pnl-row total ${i.net >= 0 ? 'pos' : 'neg'}"><span>${tr('Net kâr', 'Net profit')}</span><span>${money(i.net)}</span></div>
-    <div class="pnl-row sub"><span>${tr('Müşteri (gün / hafta)', 'Customers (day / week)')}</span><span>${n0(i.customers)} / ${n0(i.weeklyCustomers)}</span></div>
-    <div class="pnl-row sub"><span>${tr('7 günlük gelir · günlük ortalama', '7-day revenue · daily average')}</span><span>${money(i.weeklyRevenue)} · ${money(i.weeklyAvg)}</span></div>
-    <div class="pnl-row sub"><span>${tr('Aylık net projeksiyon (×30)', 'Monthly net projection (×30)')}</span><span>${money(i.net * 30)}</span></div>`;
-
-  // donut
-  const prods = c.products.filter((p) => p.sold_worth > 0);
-  const sum = prods.reduce((a, p) => a + p.sold_worth, 0) || 1;
-  let acc = 0; const R = 70, C = 2 * Math.PI * R;
-  const arcs = prods.map((p) => {
-    const frac = p.sold_worth / sum, len = frac * C;
-    const s = `<circle cx="90" cy="90" r="${R}" fill="none" stroke="${PALETTE[c.products.indexOf(p) % PALETTE.length]}" stroke-width="18" stroke-dasharray="${Math.max(0, len - 2)} ${C}" stroke-dashoffset="${-acc}" transform="rotate(-90 90 90)"/>`;
-    acc += len; return s;
-  }).join('');
-  $('#donut').innerHTML = `<svg viewBox="0 0 180 180"><circle cx="90" cy="90" r="${R}" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="18"/>${arcs}
-      <text x="90" y="84" text-anchor="middle" fill="#829096" font-size="10" font-weight="600" letter-spacing="1.5" font-family="Inter">${tr('TOPLAM GELİR', 'TOTAL REVENUE')}</text>
-      <text x="90" y="105" text-anchor="middle" fill="#eef2f3" font-size="17" font-weight="600" font-family="JetBrains Mono">${cmoney(sum)}</text></svg>
-    <div class="donut-legend">${prods.map((p) => `<div><b style="background:${PALETTE[c.products.indexOf(p) % PALETTE.length]}"></b><span>${esc(p.name)}</span><span>${pct(p.sold_worth / sum, 1)}</span></div>`).join('')}</div>`;
-
-  // chart
-  const days = c.days.slice(-30);
-  $('#hist-note').textContent = tr(`${c.days.length} gün kayıtlı`, `${c.days.length} ${c.days.length === 1 ? 'day' : 'days'} recorded`);
-  incomeChartDays = days.length >= 2 ? days : null;
-  if (incomeChartDays) renderIncomeChart();
-  else $('#income-chart').innerHTML =
-    `<div class="empty"><div><b class="tq-text">${tr('Geçmiş birikiyor', 'Building history')}</b><br>${tr('Sunucu açık kaldıkça her gün otomatik kayıt alınır.', 'Daily snapshots are recorded automatically while the app is running.')}<br><span class="muted">${tr('Şimdilik 7 günlük ortalama:', '7-day average for now:')} ${money(i.weeklyAvg)} / ${tr('gün', 'day')}</span></div></div>`;
-
-  $('#income-table').innerHTML = `<thead><tr><th>${tr('Tarih', 'Date')}</th><th class="num">${tr('Müşteri', 'Customers')}</th><th class="num">${tr('Gelir', 'Revenue')}</th><th class="num">${tr('Ürün maliyeti', 'COGS')}</th><th class="num">${tr('Maaş', 'Wages')}</th><th class="num">${tr('Reklam', 'Ads')}</th><th class="num">Net</th><th class="num">${tr('Popülerlik', 'Popularity')}</th></tr></thead><tbody>${
-    c.days.slice().reverse().map((d) => `<tr><td class="mono">${d.date}</td><td class="num">${n0(d.customers)}</td><td class="num">${money(d.revenue)}</td><td class="num muted">${d.cogsEstimated ? '~' : ''}${money(d.cogs)}</td><td class="num muted">${money(d.wages)}</td><td class="num muted">${money(d.ads)}</td><td class="num ${d.net >= 0 ? 'pos' : 'neg'}">${d.cogsEstimated ? '~' : ''}${money(d.net)}</td><td class="num">${d.popularity ?? '—'}</td></tr>`).join('')
-  }</tbody>${c.days.some((d) => d.cogsEstimated) ? `<caption class="sub-text" style="caption-side:bottom;text-align:left;padding-top:8px">~ ${tr('tahmini: stok kaydı olmayan günlerde ürün maliyeti bugünkü orandan hesaplanır', 'estimate: for days without a stock record the cost of goods is worked out from the current ratio')}</caption>` : ''}`;
-}
-
-/* ---------- Gelir Geçmişi grafiği ----------
+/* ---------- Gelir Geçmişi grafiği (Finance page, Company tab) ----------
    Gerçek piksel genişliğinde çizilir (esneme yok). Her gün: Gelir çubuğu + gider yığını
    (ürün maliyeti / maaş / reklam), net kâr çizgisi, sıfır çizgisi ve zarar bölgesi. */
-let incomeChartDays = null, incomeChartW = 0;
 const IC_COLORS = { rev: '#c9a96a', cogs: '#8f9aa6', wages: '#646e79', ads: '#3f4852', pos: '#5fd39a', neg: '#ef7d8f' };
 function niceStep(x) {
   const p = Math.pow(10, Math.floor(Math.log10(Math.max(x, 1))));
@@ -1030,18 +966,6 @@ function shortDate(iso) {
   const tr_ = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
   const en_ = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `${Number(d)} ${(state.lang === 'en' ? en_ : tr_)[Number(m) - 1] || ''}`;
-}
-function renderIncomeChart() {
-  const el = $('#income-chart');
-  if (!el || !incomeChartDays) return;
-  incomeChartW = el.clientWidth || incomeChartW || 900;
-  el.innerHTML = incomeChart(incomeChartDays, Math.max(320, Math.round(incomeChartW)));
-}
-if (window.ResizeObserver && $('#income-chart')) {
-  new ResizeObserver(() => {
-    const w = $('#income-chart').clientWidth;
-    if (w && Math.abs(w - incomeChartW) > 2) renderIncomeChart();
-  }).observe($('#income-chart'));
 }
 
 function incomeChart(days, W) {
@@ -1490,6 +1414,27 @@ $('#refresh-btn').addEventListener('click', async () => {
   if (overview.status === 'rejected') toast(tr('Yenilenemedi: ', 'Refresh failed: ') + overview.reason.message);
 });
 
+// Stock Status "Set order time" menu (details.stock-sync): Escape, a click outside it or picking an option closes it.
+// Registered once; renderStock() carries the open state across re-renders.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  $$('details.stock-sync[open]').forEach((d) => {
+    const focused = d.contains(document.activeElement);
+    d.open = false;
+    if (focused) $('summary', d)?.focus();
+  });
+});
+document.addEventListener('click', (e) => {
+  const picked = !!e.target.closest?.('[data-order-sync], [data-order-mode]');
+  $$('details.stock-sync[open]').forEach((d) => {
+    if (!picked && d.contains(e.target)) return;
+    const focused = picked && d.contains(document.activeElement);
+    d.open = false;
+    // An option picked with the keyboard: keep focus on the menu (renderStock carries it across the re-render)
+    if (focused) $('summary', d)?.focus({ preventScroll: true });
+  });
+});
+
 // Delegated interactions for Stock Delivery & Rehab Message Generator
 document.addEventListener('click', async (e) => {
   const syncBtn = e.target.closest('[data-order-sync]');
@@ -1518,37 +1463,11 @@ document.addEventListener('click', async (e) => {
     toast(tr('Teslimat sayacı 18:00 TCT günlük yenilenmesine göre ayarlandı', 'Delivery timer anchored to 18:00 TCT daily reset'));
     return;
   }
-  const rfBtn = e.target.closest('[data-rf]');
-  if (rfBtn && state.company) {
-    state.rehabFilter = rfBtn.dataset.rf;
-    localStorage.setItem('tt.rehabFilter', state.rehabFilter);
-    renderEmployees(state.company);
-    return;
-  }
-  const tplBtn = e.target.closest('[data-tpl]');
-  if (tplBtn && state.company) {
-    const k = tplBtn.dataset.tpl;
-    state.rehabTplKey = k;
-    state.rehabTpl = REHAB_TEMPLATES[k] || REHAB_TEMPLATES.en_polite;
-    localStorage.setItem('tt.rehabTplEnKey', state.rehabTplKey);
-    localStorage.setItem('tt.rehabTplEn', state.rehabTpl);
-    renderEmployees(state.company);
-    return;
-  }
   const copyBtn = e.target.closest('[data-copy-rehab]');
   if (copyBtn && state.company) {
     const id = Number(copyBtn.dataset.copyRehab);
     const emp = state.company.employees.find((x) => x.id === id);
-    if (emp) await copyText(formatRehabMsg(emp.name, emp.addiction), tr(`${decode(emp.name)} için rehab mesajı kopyalandı`, `Rehab message copied for ${decode(emp.name)}`));
-    return;
-  }
-  const sendBtn = e.target.closest('[data-send-rehab]');
-  if (sendBtn && state.company) {
-    e.preventDefault();
-    const id = Number(sendBtn.dataset.sendRehab);
-    const emp = state.company.employees.find((x) => x.id === id);
-    if (!emp) return;
-    sendRehabChat(emp, sendBtn);
+    if (emp) await copyText(rehabMessage(emp.name, emp.addiction), tr(`${decode(emp.name)} için rehab mesajı kopyalandı · Torn'da yapıştırıp gönder`, `Rehab message copied for ${decode(emp.name)} · paste it on Torn and send`));
     return;
   }
   const quickBtn = e.target.closest('[data-open-url]');
@@ -1631,6 +1550,7 @@ function openInTab(url, opts = {}) {
   if (window.electronAPI?.tabCreate) {
     if (activate) {
       state.activeWsTab = id;
+      closeNewYearWelcome();
       $('#tracker-app').classList.add('stage-hidden');
       $('#browser-stage').classList.remove('stage-hidden');
       $('#tab-btn-tracker').classList.remove('active');
@@ -1674,14 +1594,19 @@ function activateWorkspaceTab(tabId) {
     }
   }
   renderBrowserTabs();
-  if (!isTracker) updateBrowserToolbar();
+  if (!isTracker) { updateBrowserToolbar(); closeNewYearWelcome(); }
   else catchUpTracker();
   renderUpdateBtn();
+}
+// The New Year celebration belongs to the tracker: leaving it for a Torn tab closes it (it would sit over the tab bar).
+function closeNewYearWelcome() {
+  try { nyWelcome?.overlay.close(); } catch (e) { console.warn('NewYearWelcome', e); }
 }
 
 // Takip ekranına dönünce: sayaçları hemen düzelt, uzun süre gizli kaldıysa veriyi tazele
 function catchUpTracker() {
   tick();
+  checkNewYearWelcome();
   if (Date.now() - (state.overviewAt || 0) > 60_000) loadOverview(false);
 }
 document.addEventListener('visibilitychange', () => { if (trackerVisible()) catchUpTracker(); });
@@ -1829,7 +1754,7 @@ function updateBrowserToolbar() {
       ${status ? statusTimerChip(status, true) : ''}
       <button class="btn sm ghost" data-nav-active="https://www.torn.com/profiles.php?XID=${xid}">👤 ${tr('Profil', 'Profile')}</button>
       <button class="btn sm ghost" data-nav-active="https://www.torn.com/page.php?sid=attack&user2ID=${xid}">⚔ ${tr('Saldır', 'Attack')}</button>
-      ${emp && emp.addiction < 0 ? `<button class="btn sm primary" data-copy-rehab="${emp.id}">📋 ${tr('Rehab Mesajı Kopyala', 'Copy Rehab Message')}</button>` : ''}
+      ${emp && needsRehab(emp) ? `<button class="btn sm primary" data-copy-rehab="${emp.id}">📋 ${tr('Rehab mesajını kopyala', 'Copy rehab message')}</button>` : ''}
     `;
     refreshPlayerInfo(xid);
   } else {
@@ -1883,11 +1808,20 @@ $('#browser-tabs').addEventListener('wheel', (e) => {
   const strip = e.currentTarget;
   if (e.deltaY && strip.scrollWidth > strip.clientWidth) { strip.scrollLeft += e.deltaY; e.preventDefault(); }
 }, { passive: false });
-$('#browser-tabs').addEventListener('auxclick', (e) => {
-  if (e.button === 1) {
-    const tabEl = e.target.closest('[data-ws-tab]');
-    if (tabEl) { e.preventDefault(); closeBrowserTab(tabEl.dataset.wsTab); }
-  }
+// A middle click closes a tab. It goes by the tab's id from press to release, not by `auxclick`: a loading page redraws
+// the strip (title, spinner), and a redraw between press and release lost the click. The press's default is cancelled
+// so Chromium never starts auto-scroll on the strip. A release off the pressed tab closes nothing.
+let middlePressedTab = null;
+$('#browser-tabs').addEventListener('mousedown', (e) => {
+  if (e.button !== 1) return;
+  e.preventDefault();
+  middlePressedTab = e.target.closest('[data-ws-tab]')?.dataset.wsTab || null;
+});
+window.addEventListener('mouseup', (e) => {
+  if (e.button !== 1) return;
+  const id = middlePressedTab;
+  middlePressedTab = null;
+  if (id && e.target.closest?.('#browser-tabs [data-ws-tab]')?.dataset.wsTab === id) closeBrowserTab(id);
 });
 
 function navigateActiveTab(targetUrl) {
@@ -2299,19 +2233,6 @@ if (window.electronAPI?.onTabUpdated) {
   });
 }
 
-document.addEventListener('input', (e) => {
-  if (e.target.id === 'rehab-tpl-input' && state.company) {
-    state.rehabTpl = e.target.value;
-    state.rehabTplKey = 'custom';
-    localStorage.setItem('tt.rehabTplEnKey', 'custom');
-    localStorage.setItem('tt.rehabTplEn', state.rehabTpl);
-    $$('[data-emp-msg]').forEach((box) => {
-      const id = Number(box.dataset.empMsg);
-      const emp = state.company.employees.find((x) => x.id === id);
-      if (emp) box.textContent = formatRehabMsg(emp.name, emp.addiction);
-    });
-  }
-});
 
 /* =========================================================
    LRX LOGIN / SPLASH
@@ -2321,12 +2242,14 @@ const NEW_KEY_URL = 'https://www.torn.com/preferences.php#tab=api?step=addNewKey
 
 let authWaves = null;
 let authNewYear = null;
-// New Year scene beside the card (20 Dec - 6 Jan, Settings -> App -> New Year decoration). The splash is short,
-// so it shows the finished tree; the login form shows it building.
+// New Year scene beside the card and the dressed-up logo (Christmas Town, Settings -> App -> New Year decoration).
+// The splash is short, so it shows the finished tree; the login form shows it building.
 function startAuthNewYear(mode) {
   const canvas = $('#auth-newyear');
   if (!canvas || !window.LRXNewYear) return;
-  if (typeof feat === 'function' && !feat('app.newYear')) {
+  const on = typeof feat !== 'function' || feat('app.newYear');
+  try { dressAuthLogo(on && (window.LRXNewYear.forced(location.search) || window.LRXNewYear.isSeason(new Date()))); } catch (e) { console.warn('NewYearLogo', e); }
+  if (!on) {
     authNewYear?.stop();
     canvas.width = canvas.width; // clears a scene drawn before the setting was turned off
     return;
@@ -2338,6 +2261,69 @@ function startAuthNewYear(mode) {
     force: window.LRXNewYear.forced(location.search),
   });
   authNewYear.start(mode === 'splash' ? 'finished' : 'build');
+}
+// A Santa hat, an ice frame and lights around the sign-in logo (new-year-logo.js). The SVG is built once, on the
+// first dressed start, and then only shown or hidden with #auth-screen.ny-dressed.
+function dressAuthLogo(on) {
+  const stage = $('#auth-logo-stage');
+  if (on && stage && window.LRXNewYearLogo && !stage.querySelector('.auth-logo-xmas')) stage.insertAdjacentHTML('beforeend', window.LRXNewYearLogo.markup());
+  $('#auth-screen')?.classList.toggle('ny-dressed', Boolean(on && stage?.querySelector('.auth-logo-xmas')));
+}
+let appSnow = null, appSnowTimer = null;
+// Light New Year snow in the page background, behind the cards (Christmas Town, Settings -> App -> Snow in the app).
+// It draws only while the tracker is the visible tab and the sign-in screen is closed; Animations off stops it.
+// Called at start-up and from FEATURE_HOOKS (features.js), which also runs when Animations is switched, and once a
+// minute, so the snow starts and ends with Christmas Town in an app that stays open.
+function syncAppSnow() {
+  const canvas = $('#app-snow');
+  if (!canvas || !window.LRXNewYear) return;
+  appSnowTimer ??= setInterval(syncAppSnow, 60_000);
+  if (typeof feat === 'function' && !feat('app.newYearSnow')) { appSnow?.stop(); return; }
+  appSnow ||= window.LRXNewYear.snowfall(canvas, {
+    reduced: prefersReducedMotion,
+    force: () => window.LRXNewYear.forced(location.search),
+    visible: () => trackerVisible() && !document.body.classList.contains('auth-open'),
+    color: () => (document.documentElement.dataset.theme === 'light' ? '#7f93a8' : '#f4f7fb'),
+  });
+  appSnow.start();
+}
+let nyWelcome = null;
+// New Year celebration (1 January, Settings -> App -> New Year celebration). Started once the sign-in screen has
+// closed, so it never covers sign-in; after that checkNewYearWelcome() runs every 30 s, when the tracker comes
+// back on screen and when settings change, so an app left open over midnight shows it soon after. No countdown.
+// ?newyear=1 is the preview.
+function startNewYearWelcome() {
+  // Never lets a failure escape: it runs inside hideAuth, whose promise the sign-in button waits for.
+  try { buildNewYearWelcome(); } catch (e) { console.warn('NewYearWelcome', e); }
+  checkNewYearWelcome();
+}
+function buildNewYearWelcome() {
+  const root = $('#ny-welcome');
+  if (!nyWelcome && root && window.LRXNewYearWelcome && window.LRXNewYear) {
+    const W = window.LRXNewYearWelcome;
+    const now = () => new Date();
+    const overlay = W.mount(root, {
+      reduced: prefersReducedMotion,
+      lang: () => state.lang,
+      name: () => (state.overview?.player?.name ? decode(state.overview.player.name) : ''),
+      now,
+      greeting: window.LRXNewYear.greeting,
+    });
+    const schedule = W.scheduler({
+      now,
+      preview: () => window.LRXNewYear.forced(location.search),
+      enabled: () => typeof feat === 'function' && feat('app.newYearWelcome'),
+      visible: () => trackerVisible() && !document.body.classList.contains('auth-open'),
+      storage: { get: () => localStorage.getItem('tt.newYearWelcome'), set: (day) => localStorage.setItem('tt.newYearWelcome', day) },
+      onShow: () => overlay.show(),
+      onStop: () => overlay.close(),
+    });
+    nyWelcome = { overlay, schedule };
+    setInterval(checkNewYearWelcome, 30_000);
+  }
+}
+function checkNewYearWelcome() {
+  try { nyWelcome?.schedule.check(); } catch (e) { console.warn('NewYearWelcome', e); }
 }
 function showAuth(mode = 'login') {
   const scr = $('#auth-screen');
@@ -2360,7 +2346,7 @@ function hideAuth(delay = 0) {
     scr.classList.add('leaving');
     document.body.classList.remove('auth-open');
     document.body.classList.add('app-enter');
-    setTimeout(() => { scr.hidden = true; scr.classList.remove('leaving'); authWaves?.stop(); authNewYear?.stop(); resolve(); }, prefersReducedMotion() ? 0 : 650);
+    setTimeout(() => { scr.hidden = true; scr.classList.remove('leaving'); authWaves?.stop(); authNewYear?.stop(); startNewYearWelcome(); resolve(); }, prefersReducedMotion() ? 0 : 650);
     setTimeout(() => document.body.classList.remove('app-enter'), 1600);
   }, delay));
 }
@@ -2532,7 +2518,7 @@ function startApp(b, fresh = false) {
   }
 
   const initial = (location.hash || '').slice(1);
-  if (VIEW_META[initial]) showView(initial);
+  if (VIEW_META[initial] || window.LRXFinance?.alias(initial) === 'finance') showView(initial); // #networth / #income → Finance
   applyCompanyMode(state.companyMode);
   tick();
   setInterval(tick, 1000);
@@ -2588,5 +2574,6 @@ function startApp(b, fresh = false) {
     hideAuth(1400);
   } else {
     startApp(b);
+    startNewYearWelcome();
   }
 })();

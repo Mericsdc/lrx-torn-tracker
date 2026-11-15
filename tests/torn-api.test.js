@@ -43,6 +43,8 @@ global.fetch = async (input, init = {}) => {
   if (url.pathname === '/key/') return reply(JSON.stringify(keyInfo));
   if (torn === 'sparse') return reply(JSON.stringify({ player_id: 5, name: 'Sparse', icons: null, cooldowns: null, personalstats: null, status: null }));
   const user = { player_id: 5, name: 'Player', level: 10, timestamp: tornTime ?? Math.floor(Date.now() / 1000), cooldowns: { drug: 0 }, icons: {}, personalstats: { xantaken }, status: { state: 'Okay' } };
+  Object.assign(user, { rank: 'Average Hustler', age: 1234, property: 'Private Island', awards: 120, married: { spouse_id: 7, spouse_name: 'Partner', duration: 300 },
+    job: { job: 'Employee', position: 'Cleaner', company_id: 9, company_name: 'Shine Co', company_type: 3 }, faction: { faction_id: 5, faction_name: 'Example', faction_tag: 'EX', position: 'Member', days_in_faction: 40 } });
   for (const stat of ['strength', 'defense', 'speed', 'dexterity']) { user[stat] = 100; user[stat + '_modifier'] = 0; user[stat + '_info'] = []; }
   return reply(JSON.stringify(user));
 };
@@ -116,6 +118,16 @@ test('a cached overview says when Torn sent it, so countdowns do not run late by
   const cached = (await request('/api/overview')).data;
   assert.equal(cached.fetchedAt, first.fetchedAt, 'the cached reply keeps its own time');
   assert.equal(cached.serverTime, first.serverTime);
+});
+
+test('the overview player carries the profile details the medium profile card shows, from the same reply', async () => {
+  torn = 'ok';
+  const calls = tornCalls;
+  const { player } = (await request('/api/overview?force=1')).data;
+  assert.deepEqual({ rank: player.rank, age: player.age, property: player.property, awards: player.awards, married: player.married },
+    { rank: 'Average Hustler', age: 1234, property: 'Private Island', awards: 120, married: { spouse_id: 7, spouse_name: 'Partner', duration: 300 } });
+  assert.equal(player.job.company_name, 'Shine Co'); assert.equal(player.faction.position, 'Member');
+  assert.ok(tornCalls - calls <= 2, 'no extra Torn request for the details: ' + (tornCalls - calls));
 });
 
 test('Xanax Today is exact only when the day before was seen just before 18:00 TCT, otherwise a marked bound', async () => {

@@ -188,7 +188,7 @@
     } catch (e) { console.warn('waves', e); }
   }
 
-  /* ---------- Hero: New Year scene (20 Dec - 6 Jan, or ?newyear=1 for a preview) ---------- */
+  /* ---------- Hero: New Year scene (Christmas Town, 19 Dec 16:00 - 31 Dec 16:00 TCT, or ?newyear=1 for a preview) ---------- */
   const newYearCanvas = $('#hero-newyear');
   if (window.LRXNewYear && newYearCanvas) {
     try {

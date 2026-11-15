@@ -19,5 +19,12 @@
     "license": "MIT",
     "source": "https://www.torn.com/builds/react-umd/react-dom.19.2.0.93c06d8e.production.js",
     "sha256": "8a481ec1e26aed5c1d911fde81f6288f281fa0cd86dc843db11498f85b78fa17"
+  },
+  {
+    "file": "openmarket.user.js",
+    "version": "1.11.9",
+    "license": "GPL-3.0",
+    "source": "https://greasyfork.org/en/scripts/589775-openmarket/code",
+    "sha256": "1a78f99cb7a6de3df6188a479081a864c75aaab91eebbaaade0e48fa99ccfa4a"
   }
 ]

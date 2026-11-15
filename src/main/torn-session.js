@@ -23,10 +23,14 @@ async function restoreCookies(ses, names, saved) {
   for (const c of saved) { try { await ses.cookies.set(cookieDetails(c)); } catch {} }
   try { await ses.cookies.flushStore(); } catch {}
 }
+// An import replaces every torn.com cookie except Cloudflare's, which belong to this browser. A cookie left from the
+// previous login next to the imported ones (e.g. the session-only rfc_id, which a closed Chrome profile never holds)
+// makes Torn answer "Wrong rfcv token" on every page until the app restarts.
+const CLOUDFLARE = /^(cf_|__cf)/i;
 async function replaceTornCookies(ses, incoming) {
-  const valid = incoming.filter((c) => TORN.test(c.domain || 'www.torn.com') && !/^(cf_|__cf)/i.test(c.name));
-  const names = new Set([...AUTH_NAMES, ...valid.map((c) => c.name)]);
-  const before = (await ses.cookies.get({})).filter((c) => names.has(c.name) && TORN.test(c.domain));
+  const valid = incoming.filter((c) => TORN.test(c.domain || 'www.torn.com') && !CLOUDFLARE.test(c.name));
+  const before = (await ses.cookies.get({})).filter((c) => TORN.test(c.domain) && !CLOUDFLARE.test(c.name));
+  const names = new Set([...AUTH_NAMES, ...before.map((c) => c.name), ...valid.map((c) => c.name)]);
   let count = 0;
   try {
     await removeCookies(ses, before);

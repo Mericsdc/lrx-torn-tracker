@@ -13,12 +13,14 @@ describe('website copy', () => {
 // A canvas stand-in for Node: every 2D call is a no-op, and drawing calls are counted.
 function stubCanvas(width = 800, height = 600) {
   let draws = 0;
+  const colors = new Set();
   const gradient = { addColorStop() {} };
   const ctx = new Proxy({}, {
     get(target, key) {
       if (key in target) return target[key];
       return (...args) => {
         if (key === 'fillText' || key === 'fillRect') draws++;
+        if (key === 'fillText') colors.add(String(target.fillStyle).toLowerCase());
         return key.startsWith?.('create') ? gradient : undefined;
       };
     },
@@ -34,21 +36,26 @@ function stubCanvas(width = 800, height = 600) {
     getContext: () => ctx,
     getBoundingClientRect: () => ({ left: 0, top: 0, right: width, bottom: height, width, height }),
   };
-  return { canvas, draws: () => draws, sizeSets: () => sizeSets };
+  return { canvas, draws: () => draws, sizeSets: () => sizeSets, colors: () => colors };
 }
+const CARROT = '#e8892b';
+const cardAt = (left, width, top = 120, height = 640) => ({ getBoundingClientRect: () => ({ left, top, width, height, right: left + width, bottom: top + height }) });
 
 const IN_SEASON = () => new Date(2026, 11, 24, 20, 0);
 
 describe('season', () => {
-  it('starts on 20 December at local midnight', () => {
-    expect(newYear.isSeason(new Date(2026, 11, 19, 23, 59))).toBe(false);
-    expect(newYear.isSeason(new Date(2026, 11, 20, 0, 0))).toBe(true);
-    expect(newYear.isSeason(new Date(2026, 11, 31, 12, 0))).toBe(true);
+  // Christmas Town in Torn: 19 December 16:00 to 31 December 16:00 Torn time (TCT, which is UTC).
+  const utc = (...a) => new Date(Date.UTC(...a));
+  it('starts with Christmas Town on 19 December at 16:00 TCT', () => {
+    expect(newYear.isSeason(utc(2026, 11, 19, 15, 59))).toBe(false);
+    expect(newYear.isSeason(utc(2026, 11, 19, 16, 0))).toBe(true);
+    expect(newYear.isSeason(utc(2026, 11, 24, 12, 0))).toBe(true);
   });
 
-  it('ends after 6 January', () => {
-    expect(newYear.isSeason(new Date(2027, 0, 6, 23, 59))).toBe(true);
-    expect(newYear.isSeason(new Date(2027, 0, 7, 0, 0))).toBe(false);
+  it('ends with Christmas Town on 31 December at 16:00 TCT', () => {
+    expect(newYear.isSeason(utc(2026, 11, 31, 15, 59))).toBe(true);
+    expect(newYear.isSeason(utc(2026, 11, 31, 16, 0))).toBe(false);
+    expect(newYear.isSeason(utc(2027, 0, 3, 12, 0))).toBe(false);
     expect(newYear.isSeason(new Date(2026, 6, 1))).toBe(false);
   });
 });
@@ -74,6 +81,7 @@ describe('preview override', () => {
     expect(newYear.forced('?lang=tr&newyear=1')).toBe(true);
     expect(newYear.forced('')).toBe(false);
     expect(newYear.forced('?newyear=0')).toBe(false);
+    expect(newYear.forced('?newyear=midnight')).toBe(false); // the countdown preview is gone
   });
 });
 
@@ -99,6 +107,113 @@ describe('layout beside the card', () => {
   it('leaves the tree out when there is less than 190 px beside the card', () => {
     expect(newYear.layout(1000, 700, { left: 180, top: 100, width: 640, height: 500 }).tree).toBeNull();
     expect(newYear.layout(390, 844, { left: 16, top: 80, width: 358, height: 600 }).tree).toBeNull();
+  });
+});
+
+describe('snowman beside the card', () => {
+  it('centres the snowman in the free space right of the card, on the tree\'s ground line', () => {
+    const { tree, snowman } = newYear.layout(1440, 900, { left: 540, top: 120, width: 360, height: 640 });
+    expect(snowman).not.toBeNull();
+    expect(snowman.cx - snowman.width / 2).toBeGreaterThanOrEqual(900 + 16);
+    expect(snowman.cx + snowman.width / 2).toBeLessThanOrEqual(1440);
+    expect(snowman.height).toBeGreaterThan(0.48 * 900 * 0.9);
+    expect(snowman.height).toBeLessThan(0.48 * 900 * 1.1);
+    expect(snowman.baseY).toBe(tree.baseY);
+  });
+
+  it('shrinks the snowman when the free space is narrow', () => {
+    const { snowman } = newYear.layout(1000, 1000, { left: 300, top: 100, width: 400, height: 700 });
+    expect(snowman).not.toBeNull();
+    expect(snowman.cx - snowman.width / 2).toBeGreaterThanOrEqual(700 + 16);
+    expect(snowman.cx + snowman.width / 2).toBeLessThanOrEqual(1000);
+    expect(snowman.height).toBeLessThan(0.48 * 1000);
+  });
+
+  it('leaves the snowman out when there is less than 190 px right of the card', () => {
+    expect(newYear.layout(1000, 700, { left: 180, top: 100, width: 640, height: 500 }).snowman).toBeNull();
+    expect(newYear.layout(390, 844, { left: 16, top: 80, width: 358, height: 600 }).snowman).toBeNull();
+  });
+
+  it('draws the snowman, carrot nose included, in the finished frame when there is room', () => {
+    const wide = stubCanvas(1440, 900);
+    newYear.create(wide.canvas, { now: IN_SEASON, reduced: () => true, raf: vi.fn(), caf: vi.fn(), card: () => cardAt(540, 360) }).start();
+    expect(wide.colors().has(CARROT)).toBe(true);
+    const narrow = stubCanvas(1000, 700);
+    newYear.create(narrow.canvas, { now: IN_SEASON, reduced: () => true, raf: vi.fn(), caf: vi.fn(), card: () => cardAt(180, 640) }).start();
+    expect(narrow.colors().has(CARROT)).toBe(false);
+  });
+});
+
+describe('snow in the app', () => {
+  const frames = () => { const q = []; return { raf: vi.fn((fn) => { q.push(fn); return q.length; }), run(ts) { const fn = q.shift(); if (fn) fn(ts); }, queued: () => q.length }; };
+
+  it('does nothing outside the season unless forced', () => {
+    const { canvas, draws } = stubCanvas();
+    const f = frames();
+    newYear.snowfall(canvas, { now: () => new Date(2026, 6, 1), reduced: () => false, visible: () => true, raf: f.raf, caf: vi.fn() }).start();
+    expect(f.raf).not.toHaveBeenCalled();
+    newYear.snowfall(canvas, { now: () => new Date(2026, 6, 1), force: true, reduced: () => false, visible: () => true, raf: f.raf, caf: vi.fn() }).start();
+    expect(f.raf).toHaveBeenCalledTimes(1);
+    f.run(0); f.run(50);
+    expect(draws()).toBeGreaterThan(0);
+  });
+
+  it('reads a force function again on every start, so a preview turned on later is seen', () => {
+    const { canvas } = stubCanvas();
+    const f = frames();
+    let on = false;
+    const snow = newYear.snowfall(canvas, { now: () => new Date(2026, 6, 1), force: () => on, reduced: () => false, visible: () => true, raf: f.raf, caf: vi.fn() });
+    snow.start();
+    expect(f.raf).not.toHaveBeenCalled();
+    on = true;
+    snow.start();
+    expect(f.raf).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops and clears a running snow on the next start once Christmas Town has ended', () => {
+    const { canvas } = stubCanvas();
+    const f = frames();
+    const caf = vi.fn();
+    let now = new Date(Date.UTC(2026, 11, 31, 15, 59));
+    const snow = newYear.snowfall(canvas, { now: () => now, reduced: () => false, visible: () => true, raf: f.raf, caf });
+    snow.start();
+    expect(f.raf).toHaveBeenCalledTimes(1);
+    now = new Date(Date.UTC(2026, 11, 31, 16, 0));
+    snow.start();
+    expect(caf).toHaveBeenCalledWith(1);
+    f.run(50);
+    expect(f.raf).toHaveBeenCalledTimes(1);
+  });
+
+  it('draws and schedules nothing when motion is reduced', () => {
+    const { canvas, draws } = stubCanvas();
+    const f = frames();
+    newYear.snowfall(canvas, { now: IN_SEASON, reduced: () => true, visible: () => true, raf: f.raf, caf: vi.fn() }).start();
+    expect(f.raf).not.toHaveBeenCalled();
+    expect(draws()).toBe(0);
+  });
+
+  it('draws no flakes while the tracker is not the visible tab', () => {
+    const { canvas, draws } = stubCanvas();
+    const f = frames();
+    newYear.snowfall(canvas, { now: IN_SEASON, reduced: () => false, visible: () => false, raf: f.raf, caf: vi.fn() }).start();
+    f.run(0); f.run(50); f.run(100);
+    expect(draws()).toBe(0);
+    expect(f.queued()).toBe(1);
+  });
+
+  it('stops, and a frame already queued schedules nothing more', () => {
+    const { canvas } = stubCanvas();
+    const f = frames();
+    const caf = vi.fn();
+    const snow = newYear.snowfall(canvas, { now: IN_SEASON, reduced: () => false, visible: () => true, raf: f.raf, caf });
+    snow.start();
+    snow.start();
+    expect(f.raf).toHaveBeenCalledTimes(1);
+    snow.stop();
+    expect(caf).toHaveBeenCalledWith(1);
+    f.run(50);
+    expect(f.raf).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -177,3 +177,31 @@ Basic customisation is free. Premium unlocks the extra widgets and more layout c
 
 - The app ships in a release the owner chooses: v1.6.14 must go out before 20 December. If this is not ready by then, 1.6.14 ships without it.
 - The Premium service is redeployed with the new catalogue entry, only when the owner asks.
+
+## Addendum 1 (2026-11-14): a shorter profile card, Edit in the header
+
+The owner found the profile card too tall and the Edit row above the grid too wasteful.
+
+- **Profile card sizes.** The profile has S, M and L (Premium members change them in edit mode, like every other widget's sizes); it is always 1 column and its size sets its height.
+  - **S** (the default; old saved `P` entries become S): 2 rows, so in the default layout it ends with the Bars card.
+  - **M**: the whole photo, as wide as the card and at its own shape (nothing cut off, no empty sides). At 4 columns the card fills its 3 rows, so it ends with Battle Stats beside it and nothing is left empty below it: the room under the photo holds profile details from the same overview reply (rank, job, faction and position, spouse, property, age, awards; lines Torn did not send are left out). The details only take the room the photo leaves and show whole lines only; on a wide card the last lines are left out. At 2 columns it is 3 rows like the other sizes, without the details.
+  - **L**: 3 rows, the earlier tall card.
+  - At 2 columns every size is 3 rows, which fills the space beside the three timers and leaves no hole before Bars. At 1 column the card is as tall as its content (the photo beside the name).
+  - The small player card that sat at the bottom of the sidebar (`#me-chip`) is gone: the profile card shows the same and more.
+- **Edit and the layout picker.** They sit in the page header beside Refresh (`#ow-head`), and only on the Overview. Outside edit mode there is no toolbar row above the grid.
+- **Edit mode.** The edit tools (name, Duplicate, Delete, Reset to default, Add widget, Done) get their own row above the grid (`#ow-bar`) only while editing.
+
+## Addendum 2 (2026-11-14): the live timer strip
+
+**Intent.** The owner wants the three timer cards (Xanax/drug cooldown, education, day reset) to feel live, combined into one card, with a nicer look. The countdowns already tick every second from the local clock and the overview already refreshes every 30 s while the tracker is visible; what is missing is a look that says so.
+
+**Approaches.** (A) one combined strip with a live header and a draining bar per timer; (B) the three cards kept, with live rings; (C) a 24-hour timeline. The owner picked A. B keeps the cards apart (not combined); C cannot fit multi-day education on a 24-hour line and makes exact times hard to read.
+
+**Design.**
+- **A new free widget, `timers` ("Live timers" / "Canlı sayaçlar")**, sizes L (3 columns, the default) and W (4 columns). It holds three segments side by side, each with its icon and label, the countdown, the line under it (ends at, course, local time) and a thin bar that drains every second: drug against the usual maximum (as the ring does), education against the course length, day reset against 24 hours. A finished timer reads READY / IDLE like today and its bar is full in the accent colour.
+- **The live header.** A pulsing dot with LIVE / CANLI on the left; on the right "updated 12 s ago". The label is honest: when the last overview is older than 90 s (three refreshes missed) the dot turns amber, the label reads DELAYED / GECİKMELİ and the right side says how old the data is.
+- **Same data, no new request.** Everything comes from the overview the app already fetches and the local clock. The pulse and the bar movement follow the existing Animations switch and the system's reduced-motion setting.
+- **Default layout:** the strip replaces the three timer cards (`profile, timers, bars, chips, battle, company`). The three separate cards stay in the Add widget list. The classic screen (layout switch off) is unchanged.
+- **Saved layouts move to the strip once (owner's call to confirm):** a saved set from before this change (v 1) that has all three timer cards gets them replaced by one strip (size L) where the first of them was; the set is saved as v 2 and never changed again, so putting the three cards back later sticks.
+- **Narrow widths.** At 2 columns the strip is 1 column and 3 rows with its segments stacked, so it sits beside the profile exactly where the three cards were. At 1 column it is full width; its segments stack whenever the strip is too narrow for three.
+- **On/off.** Like every widget, Edit removes it; the classic switch brings back the fixed screen.

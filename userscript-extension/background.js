@@ -1,4 +1,4 @@
-const HOSTS = { 'ff-scouter': 'ffscouter.com', 'tornw3b-bazaars': 'weav3r.dev' };
+const HOSTS = { 'ff-scouter': 'ffscouter.com', 'tornw3b-bazaars': 'weav3r.dev', 'lrx-bazaar-price': 'weav3r.dev' };
 const pending = new Map();
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message?.channel !== 'lrx-userscript-request' || !HOSTS[message.script]) return;
@@ -23,6 +23,8 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       const headers = Object.fromEntries(Object.entries(message.headers || {}).filter(([name]) => !/^(cookie|origin|host|referer|sec-|proxy-)/i.test(name)));
       const method = String(message.method || 'GET').toUpperCase();
       if (!['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'PATCH'].includes(method)) throw new Error('Invalid request method');
+      // The bazaar helper only ever reads one item's public listings
+      if (message.script === 'lrx-bazaar-price' && (method !== 'GET' || !/^\/api\/marketplace\/\d{1,6}$/.test(url.pathname) || url.search)) throw new Error('Userscript request is not allowed');
       // Redirects are intentionally not followed to a different service.
       const response = await fetch(url.href, { method, headers, body: ['GET', 'HEAD'].includes(method) ? undefined : message.data, credentials: 'omit', redirect: 'error', signal: controller.signal });
       const text = await response.text();

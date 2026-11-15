@@ -2,11 +2,12 @@
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.LRXOverviewLayout = factory();
 })(typeof globalThis === 'object' ? globalThis : this, function () {
-  // Overview widget rules. A set is { v: 1, active, layouts: [{ name, widgets: [{ id, size }] }] }; '' is the default
+  // Overview widget rules. A set is { v: 2, active, layouts: [{ name, widgets: [{ id, size }] }] }; '' is the default
   // layout's name. Access is 'active' | 'lapsed' | 'unknown' | 'off'. Every edit returns a new, normalized set.
   const row = (id, tier, sizes, size) => Object.freeze({ id, tier, sizes: Object.freeze(sizes.split('')), size });
   const WIDGETS = Object.freeze([ // catalogue order
-    row('profile', 'free', 'P', 'P'), row('drug', 'free', 'S', 'S'), row('edu', 'free', 'S', 'S'), row('day', 'free', 'S', 'S'),
+    row('profile', 'free', 'SML', 'S'), row('drug', 'free', 'S', 'S'), row('edu', 'free', 'S', 'S'), row('day', 'free', 'S', 'S'),
+    row('timers', 'free', 'LW', 'L'), // the live strip: the three timers above in one card
     row('bars', 'free', 'ML', 'M'), row('chips', 'free', 'SML', 'S'), row('battle', 'free', 'ML', 'L'), row('company', 'free', 'W', 'W'),
     row('gym', 'premium', 'SML', 'M'), row('networth', 'premium', 'SM', 'S'), row('travel', 'premium', 'SML', 'M'),
     row('job', 'premium', 'SM', 'S'), row('crimes', 'premium', 'SML', 'M'), row('jail', 'premium', 'SM', 'S'),
@@ -14,15 +15,17 @@
     row('events', 'premium', 'SM', 'S'), row('orders', 'premium', 'ML', 'M'),
   ]);
   const byId = Object.freeze(Object.fromEntries(WIDGETS.map((w) => [w.id, w])));
-  const SPAN = Object.freeze({ S: 1, M: 2, L: 3, W: 4, P: 1 }); // columns; P (the profile) is also 3 rows tall
+  // Columns per size. The profile is the exception: always 1 column, its size sets its height (overview.css).
+  const SPAN = Object.freeze({ S: 1, M: 2, L: 3, W: 4 });
   const MAX_LAYOUTS = 5, MAX_NAME = 24;
-  const DEFAULT_IDS = ['profile', 'drug', 'edu', 'day', 'bars', 'chips', 'battle', 'company'];
+  const DEFAULT_IDS = ['profile', 'timers', 'bars', 'chips', 'battle', 'company'];
+  const TIMER_CARDS = ['drug', 'edu', 'day'];
   // How a Premium widget shows per access; an unrecognised access is treated as still checking, never as unlocked.
   const LOCKS = Object.freeze({ active: null, lapsed: 'premium', unknown: 'checking', off: 'unavailable' });
 
   const widget = (id) => (typeof id === 'string' && Object.hasOwn(byId, id) ? byId[id] : null);
   const defaultWidgets = () => DEFAULT_IDS.map((id) => ({ id, size: byId[id].size }));
-  const defaultSet = () => ({ v: 1, active: 0, layouts: [{ name: '', widgets: defaultWidgets() }] });
+  const defaultSet = () => ({ v: 2, active: 0, layouts: [{ name: '', widgets: defaultWidgets() }] });
   // The trailing trimEnd keeps the cap from leaving a space at the end, so cleaning twice changes nothing.
   const cleanName = (name) => (typeof name === 'string' ? name.replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, MAX_NAME).trimEnd() : '');
   function cleanWidgets(list) {
@@ -41,14 +44,27 @@
     const clean = cleanWidgets(list);
     return clean.length || !list.length ? clean : defaultWidgets();
   }
+  // Sets saved before the live strip (v 1, or no v) move to it once: a layout with all three timer cards gets one strip
+  // where the first of them was. A v 2 set is never moved again, so cards the player puts back stay.
+  function toStrip(widgets) {
+    const at = widgets.findIndex((w) => TIMER_CARDS.includes(w.id));
+    if (at < 0 || !TIMER_CARDS.every((id) => position(widgets, id) >= 0) || position(widgets, 'timers') >= 0) return widgets;
+    const rest = widgets.filter((w) => !TIMER_CARDS.includes(w.id));
+    rest.splice(at, 0, { id: 'timers', size: byId.timers.size });
+    return rest;
+  }
   // A saved set, possibly old, corrupt or hand-edited. Never throws and never gives a blank set for unreadable input;
   // an empty widget list stays empty because the player removed everything on purpose.
   function normalize(raw) {
     try {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !Array.isArray(raw.layouts) || !raw.layouts.length) return defaultSet();
-      const layouts = raw.layouts.slice(0, MAX_LAYOUTS).map((l) => ({ name: cleanName(l?.name), widgets: layoutWidgets(l?.widgets) }));
+      const old = raw.v !== 2;
+      const layouts = raw.layouts.slice(0, MAX_LAYOUTS).map((l) => {
+        const widgets = layoutWidgets(l?.widgets);
+        return { name: cleanName(l?.name), widgets: old ? toStrip(widgets) : widgets };
+      });
       const active = Number.isInteger(raw.active) && raw.active >= 0 && raw.active < layouts.length ? raw.active : 0;
-      return { v: 1, active, layouts };
+      return { v: 2, active, layouts };
     } catch {
       return defaultSet();
     }

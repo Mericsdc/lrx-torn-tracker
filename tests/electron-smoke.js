@@ -5,7 +5,7 @@ const assert = require('assert/strict');
 const { _electron } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'lrx-electron-'));
 const dataDir = path.join(temp, 'data'); fs.mkdirSync(dataDir);
-fs.writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({ features: { 'app.torntools': false, 'app.updates': false, 'page.travel': false, 'app.splash': false, 'app.animations': false } }));
+fs.writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({ features: { 'app.torntools': false, 'app.updates': false, 'page.travel': false, 'app.splash': false, 'app.animations': false, 'app.newYearWelcome': false } }));
 let app;
 (async () => {
   app = await _electron.launch({ executablePath: path.resolve(__dirname, '../../../TornTracker.exe'), args: ['--user-data-dir=' + path.join(temp, 'profile')], env: { ...process.env, TT_DATA_DIR: dataDir, TT_LOG_FILE: path.join(temp, 'startup.log'), TORN_API_KEY: '', TORN_PREMIUM_SERVICE_URL: '' }, timeout: 20000 });
@@ -111,6 +111,12 @@ let app;
         const n = Number(url.searchParams.get('n')) || 0;
         return new Response(`<!doctype html><html><body>loop ${n}<script>setInterval(() => { location.href = '/loop.php?n=${n + 1}'; }, 700);</script></body></html>`, { headers: { 'Content-Type': 'text/html' } });
       }
+      if (url.hostname === 'www.torn.com' && url.pathname === '/profiles.php') {
+        return new Response('<!doctype html><html><head></head><body><div class="profile-left-wrapper"><ul class="info-table">'
+          + '<li><div class="user-information-section"><span class="bold">Job</span></div><div class="user-info-value"><span>Director at <a href="/joblist.php#/p=corpinfo&ID=77">Shine Co</a></span></div></li>'
+          + '<li><div class="user-information-section"><span class="bold">Life</span></div><div class="user-info-value"><span>100 / 100</span></div></li>'
+          + '</ul></div></body></html>', { headers: { 'Content-Type': 'text/html' } });
+      }
       if (url.hostname === 'www.torn.com') return new Response('<!doctype html><html><head></head><body><div id="sidebarroot"><a id="test-link" href="/gym.php?rfcv=old">Gym</a></div><div id="profileroot"></div></body></html>', { headers: { 'Content-Type': 'text/html' } });
       return new Response(JSON.stringify({ fixture: true }), { headers: { 'Content-Type': 'application/json' } });
     });
@@ -123,6 +129,9 @@ let app;
       // Saving a key in Settings asks Torn who owns it: answer for the fixture key, never the real API.
       if (url.hostname === 'api.torn.com' && url.pathname === '/key/') return new Response(JSON.stringify({ access_level: 3, access_type: 'Limited Access' }));
       if (url.hostname === 'api.torn.com' && url.pathname === '/user/' && url.searchParams.get('selections') === 'basic') return new Response(JSON.stringify({ player_id: 4242, name: 'Fixture player', level: 1 }));
+      // The profile helper's two public lookups (counted: a second visit must come from the cache)
+      if (url.hostname === 'api.torn.com' && url.pathname === '/v2/user/4242/hof') { global.__qaProfileCalls = (global.__qaProfileCalls || 0) + 1; return new Response(JSON.stringify({ hof: { working_stats: { value: 123456, rank: 999 } } })); }
+      if (url.hostname === 'api.torn.com' && url.pathname === '/company/77') { global.__qaProfileCalls = (global.__qaProfileCalls || 0) + 1; return new Response(JSON.stringify({ company: { ID: 77, name: 'Shine Co', rating: 7 } })); }
       if (['ffscouter.com', 'api.torn.com'].includes(url.hostname)) return new Response(JSON.stringify({ fixture: true, is_registered: true, usingSavedKey: url.searchParams.get('key') === global.__expectedFFKey }));
       return original(input, options);
     };
@@ -151,9 +160,9 @@ let app;
   const bazaar = await app.evaluate(async ({ BrowserWindow }) => {
     const wc = BrowserWindow.getAllWindows()[0].contentView.children[0].webContents;
     if (wc.isLoading()) await new Promise((r) => wc.once('did-stop-loading', r));
-    return wc.executeJavaScript(`new Promise((resolve) => { let tries=0; const check=()=>{const value=document.documentElement.getAttribute('data-lrx-script-tornw3b-bazaars');if(value||tries++>50)resolve(value);else setTimeout(check,50)};check();})`);
+    return wc.executeJavaScript(`new Promise((resolve) => { let tries=0; const check=()=>{const de=document.documentElement;const value=de.getAttribute('data-lrx-script-tornw3b-bazaars')+'/'+de.getAttribute('data-lrx-script-openmarket');if(!value.includes('null')||tries++>50)resolve(value);else setTimeout(check,50)};check();})`);
   });
-  assert.equal(bazaar, 'loaded');
+  assert.equal(bazaar, 'loaded/loaded', 'TornW3B and OpenMarket run on the Item Market');
   // LRX page helpers are injected for the page they match and only there: the sell guard and the purchase costs sent
   // with it exist on the market page, and nothing of them is left in the next page the tab shows.
   const helperState = () => app.evaluate(async ({ BrowserWindow }) => {
@@ -165,6 +174,22 @@ let app;
   assert.deepEqual(await helperState(), { guard: true, costs: 'object', lang: 'en' });
   await page.evaluate(() => window.electronAPI.tabNavigate('script-test', 'https://www.torn.com/index.php'));
   assert.deepEqual(await helperState(), { guard: false, costs: 'undefined', lang: undefined });
+  // Profile helper: runs only in the viewed tab of the focused window. The page gives the player and company IDs,
+  // the tracker makes the two Torn lookups with its saved key and the row shows the numbers; a second visit to the
+  // same profile is answered from memory.
+  await page.evaluate(() => window.electronAPI.tabActivate('script-test'));
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].focus());
+  const profileRow = () => app.evaluate(async ({ BrowserWindow }) => {
+    const wc = BrowserWindow.getAllWindows()[0].contentView.children[0].webContents;
+    if (wc.isLoading()) await new Promise((r) => wc.once('did-stop-loading', r));
+    return wc.executeJavaScript(`new Promise((resolve) => { let tries = 0; const check = () => { const row = document.querySelector('.lrx-pw-row'); if (row || tries++ > 100) resolve(row ? { text: row.textContent, before: row.nextElementSibling?.textContent, key: document.documentElement.outerHTML.includes('AbCdEfGh12345678') } : null); else setTimeout(check, 100); }; check(); })`);
+  });
+  const expectedRow = { text: 'Working Stats123,4567/10 ★', before: 'Life100 / 100', key: false };
+  await page.evaluate(() => window.electronAPI.tabNavigate('script-test', 'https://www.torn.com/profiles.php?XID=4242'));
+  assert.deepEqual(await profileRow(), expectedRow);
+  await page.evaluate(() => window.electronAPI.tabNavigate('script-test', 'https://www.torn.com/profiles.php?XID=4242&qa=2'));
+  assert.deepEqual(await profileRow(), expectedRow);
+  assert.equal(await app.evaluate(() => global.__qaProfileCalls), 2, 'two Torn lookups for the first visit, none for the second');
   // A tab that keeps navigating by itself is stopped after 8 navigations nobody asked for, with one notice;
   // a click in the page lets it continue.
   await page.evaluate(() => {
@@ -203,7 +228,7 @@ let app;
   const startupLog = fs.readFileSync(path.join(temp, 'startup.log'), 'utf8');
   assert.ok(startupLog.includes('app page renderer gone'));
   assert.ok(!startupLog.includes('UNHANDLED'));
-  console.log(JSON.stringify({ result: 'PASS', checked: ['packaged executable startup', 'native clipboard paste', 'manual key entry', '480x400 minimum', '640x700 window', 'native view bounds', 'modal visibility during resize', 'tab view follows app zoom', 'Reload acts on the viewed tab', 'tabs survive an app page reload', 'session guard document-start', 'FF Scouter initialization', 'isolated React dependency', 'GM network bridge', 'TornW3B market injection', 'page helpers run only on their own page', 'self-navigating tab stopped until the user clicks', 'app page recovers from a renderer crash'] }));
+  console.log(JSON.stringify({ result: 'PASS', checked: ['packaged executable startup', 'native clipboard paste', 'manual key entry', '480x400 minimum', '640x700 window', 'native view bounds', 'modal visibility during resize', 'tab view follows app zoom', 'Reload acts on the viewed tab', 'tabs survive an app page reload', 'session guard document-start', 'FF Scouter initialization', 'isolated React dependency', 'GM network bridge', 'TornW3B market injection', 'page helpers run only on their own page', 'profile helper looks up once, then from memory', 'self-navigating tab stopped until the user clicks', 'app page recovers from a renderer crash'] }));
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => {
   await app?.close();
   const resolved = path.resolve(temp);

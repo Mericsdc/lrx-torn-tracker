@@ -1,9 +1,12 @@
 /* =========================================================
-   LRX New Year: a self-building ASCII tree, snow and stars
-   beside the sign-in card. Shown only from 20 December to
-   6 January (local time). Shared by the app's sign-in screen
-   and lrxe8.com/torn-tracker, where it is LRXe8-tt-newyear.js
-   (a test keeps the two copies identical).
+   LRX New Year: a self-building ASCII tree (left of the
+   sign-in card), an ASCII snowman (right of it), snow and
+   stars. Shown only while Torn's Christmas Town is open:
+   19 December 16:00 to 31 December 16:00 Torn time (TCT,
+   which is UTC). Shared by the app's sign-in screen and
+   lrxe8.com/torn-tracker, where it is LRXe8-tt-newyear.js
+   (a test keeps the two copies identical). snowfall() is the
+   light snow behind the app's cards.
    ========================================================= */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -20,10 +23,16 @@
   // Build timeline in ms: the cone, garlands, ornaments, gifts, the star, then the greeting.
   const T_CONE = 3000, T_GARLAND = 3800, T_ORNAMENT = 4400, T_GIFT = 5000, T_STAR = 5000, T_TEXT = 5200, T_TEXT_END = 6400, T_DONE = 6600;
   const FRAME_MS = 33;
+  // The snowman: size, colours and its build timeline (it builds while the tree does).
+  const SNOWMAN_H = 0.48, SNOWMAN_ASPECT = 0.62;
+  const SNOW_SHADES = ['#6f7c8b', '#93a1b0', '#b9c4cf', '#dbe2e9', '#f4f7fb'];
+  const CARROT = '#e8892b', COAL = '#15171b', HAT = '#3b414d', HAT_EDGE = '#6b7383', STICK = '#9a6b45';
+  const S_BODY = 2800, S_HAT = 3400, S_FACE = 4000, S_SCARF = 4600, S_ARMS = 5200;
 
+  // Christmas Town's dates: 19 December 16:00 up to (not including) 31 December 16:00, Torn time (UTC).
   function isSeason(date) {
-    const m = date.getMonth(), d = date.getDate();
-    return (m === 11 && d >= 20) || (m === 0 && d <= 6);
+    const t = date.getTime(), y = date.getUTCFullYear();
+    return t >= Date.UTC(y, 11, 19, 16) && t < Date.UTC(y, 11, 31, 16);
   }
 
   // The coming year: next year from July on (December, or a forced preview), this year in January.
@@ -32,18 +41,28 @@
     return (lang === 'tr' ? 'MUTLU YILLAR ' : 'HAPPY NEW YEAR ') + year;
   }
 
+  // ?newyear=1 forces the scene on outside the season, for previews and checks.
   function forced(search) {
     try { return new URLSearchParams(search || '').get('newyear') === '1'; } catch { return false; }
   }
 
-  // Where the tree goes: centred in the free space left of the card, never closer than GAP to it.
+  // Where the tree and the snowman go: each centred in the free space on its side of the card (tree left,
+  // snowman right), never closer than GAP to it, on one ground line. A side narrower than MIN_FREE stays empty.
   function layout(w, h, card) {
+    const out = { tree: null, snowman: null };
+    if (!(h > 0)) return out;
+    const fit = (free, share, aspect) => {
+      let height = h * share, width = height * aspect;
+      const maxWidth = free - 24;
+      if (width > maxWidth) { width = maxWidth; height = width / aspect; }
+      return { width, height };
+    };
     const free = (card ? card.left : w * 0.5) - GAP;
-    if (!(free >= MIN_FREE) || !(h > 0)) return { tree: null };
-    let height = h * TREE_H, width = height * ASPECT;
-    const maxWidth = free - 24;
-    if (width > maxWidth) { width = maxWidth; height = width / ASPECT; }
-    return { tree: { cx: free / 2, baseY: h * BASE_Y, width, height } };
+    if (free >= MIN_FREE) out.tree = { cx: free / 2, baseY: h * BASE_Y, ...fit(free, TREE_H, ASPECT) };
+    const start = (card ? card.left + card.width : w * 0.5) + GAP;
+    const right = w - start;
+    if (right >= MIN_FREE) out.snowman = { cx: start + right / 2, baseY: h * BASE_Y, ...fit(right, SNOWMAN_H, SNOWMAN_ASPECT) };
+    return out;
   }
 
   function rng(seed) {
@@ -105,6 +124,51 @@
     return { ch, cw, rows, maxHw, top, cx: tree.cx, baseY: tree.baseY, cells, spans, ornaments, trunkHw, gifts };
   }
 
+  // The snowman in grid cells. Rows (k) count up from the ground line, columns (c) from the centre line.
+  // Three shaded snowballs, then a top hat, coal eyes and buttons, a carrot nose pointing at the card,
+  // a red scarf with a hanging end, and two stick arms (the right one waves).
+  function buildSnowman(man) {
+    const hs = man.height;
+    const ch = clamp(hs / 34, 8, 15);
+    const cw = ch * 0.62;
+    const rb = 0.195 * hs, rm = 0.145 * hs, rh = 0.105 * hs;
+    // Ball centres, px above the ground. They overlap only a little, so the three balls read as separate.
+    const yb = rb, ym = yb + (rb + rm) * 0.92, yh = ym + (rm + rh) * 0.92;
+    const row = (px) => Math.round(px / ch), col = (px) => Math.max(1, Math.round(px / cw));
+    const balls = [{ y: yb, r: rb }, { y: ym, r: rm }, { y: yh, r: rh }];
+    const byCell = new Map();
+    const bodyTop = Math.ceil((yh + rh) / ch);
+    for (let k = 1; k <= bodyTop; k++) {
+      balls.forEach((b, i) => {
+        const dy = (k * ch - b.y) / b.r;
+        if (Math.abs(dy) >= 1) return;
+        const span = Math.floor((b.r * Math.sqrt(1 - dy * dy)) / cw);
+        for (let c = -span; c <= span; c++) {
+          const nx = (c * cw) / b.r;
+          const nz = Math.sqrt(Math.max(0, 1 - nx * nx - dy * dy));
+          const lum = clamp(0.3 + 0.5 * nz - 0.18 * nx + 0.12 * dy + (hash(c + 13 * i, k) - 0.5) * 0.14, 0, 0.999);
+          byCell.set(k + ',' + c, { k, c, lum });
+        }
+      });
+    }
+    const body = [...byCell.values()];
+    const spans = new Map();
+    for (const { k, c } of body) { const s = spans.get(k) || [c, c]; spans.set(k, [Math.min(s[0], c), Math.max(s[1], c)]); }
+    const brim = row(yh + rh * 0.88), hatW = col(rh * 0.72), hatRows = Math.max(2, row(0.11 * hs));
+    const neck = row(ym + rm * 0.9), shoulder = row(ym + rm * 0.35);
+    return {
+      ch, cw, cx: man.cx, baseY: man.baseY, body, spans, bodyTop,
+      drift: col(rb * 1.35),
+      hat: { brim, brimW: col(rh * 1.2), w: hatW, rows: hatRows },
+      eyes: { k: row(yh + rh * 0.3), dc: col(rh * 0.38) },
+      nose: { k: row(yh - rh * 0.05), len: Math.max(2, col(rh * 0.55)) },
+      mouth: { k: row(yh - rh * 0.45) },
+      buttons: [row(ym + rm * 0.4), row(ym), row(ym - rm * 0.4), row(yb + rb * 0.25)],
+      scarf: { k: neck, w: col(rh * 0.95), tail: col(rh * 0.5) },
+      arms: { k: shoulder, from: col(rm * 0.88), len: Math.max(3, col(0.13 * hs)) },
+    };
+  }
+
   function create(canvas, opts = {}) {
     const ctx = canvas.getContext('2d');
     const now = opts.now || (() => new Date());
@@ -114,7 +178,7 @@
     const langOf = opts.lang || (() => 'en');
     const cardOf = opts.card || (() => null);
     let mode = opts.mode === 'finished' ? 'finished' : 'build';
-    let W = 0, H = 0, dpr = 1, geo = null, flakes = [], stars = [];
+    let W = 0, H = 0, dpr = 1, geo = null, man = null, flakes = [], stars = [];
     let running = false, frameId = null, lastTs = null, elapsed = mode === 'finished' ? T_DONE : 0, still = false, observer = null, sized = false;
 
     // Reads the scene and card sizes. Assigning canvas.width clears the bitmap even to the same value, so the
@@ -135,8 +199,9 @@
         const r = el.getBoundingClientRect();
         if (r.width > 0) card = { left: r.left - rect.left, top: r.top - rect.top, width: r.width, height: r.height };
       }
-      const { tree } = layout(W, H, card);
+      const { tree, snowman } = layout(W, H, card);
       geo = tree ? buildTree(tree) : null;
+      man = snowman ? buildSnowman(snowman) : null;
     }
 
     // Snow and stars for the current scene size (seeded, so the same size always gives the same sky).
@@ -308,12 +373,112 @@
       }
     }
 
+    // The snowman: snowballs build bottom to top, the hat drops on, then the face, the scarf and the arms.
+    // Afterwards the right arm waves, the eyes blink now and then and the scarf end flutters.
+    function drawSnowman(t, ts) {
+      const m = man;
+      const x = (c) => m.cx + c * m.cw;
+      const y = (k) => m.baseY - k * m.ch;
+      const shown = ease(t / S_BODY) * (m.bodyTop + 1);
+      if (!(shown > 0)) return;
+      const midY = y(m.bodyTop / 2), haloR = m.bodyTop * m.ch * 0.62;
+      ctx.save();
+      ctx.translate(m.cx, midY); ctx.scale(0.8, 1);
+      const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, haloR);
+      halo.addColorStop(0, 'rgba(0,0,0,0.65)');
+      halo.addColorStop(0.7, 'rgba(0,0,0,0.4)');
+      halo.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = halo;
+      ctx.fillRect(-haloR, -haloR, haloR * 2, haloR * 2);
+      ctx.restore();
+
+      // Opaque backing under the built rows, the drift and the hat, so the town's dots never mix in.
+      ctx.fillStyle = BACKING;
+      const back = (k, c0, c1, dy = 0) => ctx.fillRect(x(c0 - 0.5), y(k) - m.ch / 2 - dy, (c1 - c0 + 1) * m.cw, m.ch + 0.5);
+      for (const [k, [c0, c1]] of m.spans) if (k < shown) back(k, c0, c1);
+      back(0, -m.drift, m.drift);
+      const h = m.hat, hat = [];
+      if (t >= S_BODY) {
+        for (let c = -h.brimW; c <= h.brimW; c++) hat.push([h.brim, c, HAT_EDGE, '=']);
+        for (let c = -h.w; c <= h.w; c++) hat.push([h.brim + 1, c, RED, c === 0 ? '*' : '=']);
+        // A solid crown, lit from the left like the snowballs (a framed '#' grid read as a window).
+        for (let r = 2; r <= h.rows + 2; r++) for (let c = -h.w; c <= h.w; c++) hat.push([h.brim + r, c, c < -h.w / 3 ? HAT_EDGE : HAT, 'M']);
+      }
+      const drop = Math.max(0, (1 - ease((t - S_BODY) / (S_HAT - S_BODY))) * 4 * m.ch); // px the hat still has to fall
+      if (hat.length) {
+        back(h.brim, -h.brimW, h.brimW, drop);
+        for (let r = 1; r <= h.rows + 2; r++) back(h.brim + r, -h.w, h.w, drop);
+      }
+
+      // Everything drawn over the snowballs; those cells skip their snow character.
+      const over = new Map();
+      const add = (k, c, color, chr) => over.set(k + ',' + c, [k, c, color, chr]);
+      if (!drop) for (const [k, c, color, chr] of hat) add(k, c, color, chr);
+      if (t >= S_HAT) {
+        const blink = ts > 0 && ts % 4200 < 160;
+        for (const s of [-1, 1]) add(m.eyes.k, s * m.eyes.dc, COAL, blink ? '-' : '●');
+      }
+      if (t >= S_HAT + 200) for (let i = 0; i <= m.nose.len; i++) add(m.nose.k, -i, CARROT, i === m.nose.len ? '<' : '=');
+      if (t >= S_HAT + 400) for (let c = -2; c <= 2; c++) add(m.mouth.k + (Math.abs(c) === 2 ? 1 : 0), c, COAL, '•');
+      if (t >= S_HAT + 500) for (const k of m.buttons) add(k, 0, COAL, '●');
+      if (t >= S_FACE) {
+        const w = Math.round(ease((t - S_FACE) / (S_SCARF - S_FACE)) * m.scarf.w);
+        for (let c = -w; c <= w; c++) add(m.scarf.k, c, c & 1 ? '#f07a8b' : RED, c & 1 ? '=' : '#');
+        if (t >= S_SCARF) {
+          const flutter = ts > 0 && Math.sin(ts * 0.005) > 0.35 ? 1 : 0;
+          for (let i = 1; i <= 3; i++) add(m.scarf.k - i, m.scarf.tail + (i === 3 ? flutter : 0), i === 3 ? '#f07a8b' : RED, i === 3 ? '"' : '|');
+        }
+      }
+      if (t >= S_SCARF) {
+        const grown = Math.round(ease((t - S_SCARF) / (S_ARMS - S_SCARF)) * m.arms.len);
+        const arm = (side, slope) => {
+          let k = m.arms.k, c = side * m.arms.from;
+          const chr = slope < 0.36 ? '-' : side > 0 ? '/' : '\\';
+          for (let i = 1; i <= grown; i++) {
+            c = side * (m.arms.from + i);
+            k = m.arms.k + Math.round((i * slope * m.cw) / m.ch);
+            back(k, c, c);
+            add(k, c, STICK, chr);
+          }
+          if (grown === m.arms.len) {
+            back(k + 1, c + side, c + side); back(k, c + side, c + side);
+            add(k + 1, c + side, STICK, side > 0 ? '/' : '\\');
+            add(k, c + side, STICK, '-');
+          }
+        };
+        const wave = t >= S_ARMS && ts > 0 ? 0.5 + 0.5 * Math.sin(ts * 0.004) : 0.5;
+        arm(-1, 0.62);
+        arm(1, 0.3 + 0.9 * wave);
+      }
+
+      ctx.font = '600 ' + (m.ch * 1.02).toFixed(1) + 'px ui-monospace, "JetBrains Mono", Consolas, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const buckets = new Map();
+      const put = (color, chr, px, py) => { let b = buckets.get(color); if (!b) buckets.set(color, (b = [])); b.push(chr, px, py); };
+      for (let c = -m.drift; c <= m.drift; c++) put(SNOW_SHADES[hash(c, 3) < 0.5 ? 2 : 3], Math.abs(c) === m.drift ? '.' : c & 1 ? '~' : '_', x(c), y(0));
+      for (const cell of m.body) {
+        if (cell.k >= shown || over.has(cell.k + ',' + cell.c)) continue;
+        if (shown - cell.k < 1.5 && t < S_BODY) { put('#ffffff', RAMP[6 + (cell.c & 3)], x(cell.c), y(cell.k)); continue; }
+        put(SNOW_SHADES[Math.floor(cell.lum * SNOW_SHADES.length)], RAMP[Math.floor(cell.lum * RAMP.length)], x(cell.c), y(cell.k));
+      }
+      for (const [k, c, color, chr] of over.values()) put(color, chr, x(c), y(k));
+      if (drop) for (const [k, c, color, chr] of hat) put(color, chr, x(c), y(k) - drop);
+      // Coal (eyes, mouth, buttons) would vanish on the dark backing, so each piece gets a thin snow-white rim.
+      ctx.lineWidth = Math.max(1.5, m.ch * 0.18); ctx.lineJoin = 'round'; ctx.strokeStyle = SNOW_SHADES[4];
+      for (const [k, c, color, chr] of over.values()) if (color === COAL) ctx.strokeText(chr, x(c), y(k));
+      for (const [color, list] of buckets) {
+        ctx.fillStyle = color;
+        for (let i = 0; i < list.length; i += 3) ctx.fillText(list[i], list[i + 1], list[i + 2]);
+      }
+    }
+
     function draw(t, ts, dt) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
       if (!(W > 0 && H > 0)) return;
       drawStars(ts);
       if (geo) drawTree(t, ts);
+      if (man) drawSnowman(t, ts);
       drawSnow(dt);
     }
 
@@ -371,5 +536,91 @@
     };
   }
 
-  return Object.freeze({ isSeason, greeting, forced, layout, create });
+  // Light snow for the app's own background, behind its cards: no tree, no stars, about 30 fps.
+  // It draws only while visible() says the page is on screen and never when motion is reduced.
+  function snowfall(canvas, opts = {}) {
+    const ctx = canvas.getContext('2d');
+    const now = opts.now || (() => new Date());
+    const raf = opts.raf || ((fn) => requestAnimationFrame(fn));
+    const caf = opts.caf || ((id) => cancelAnimationFrame(id));
+    const reduced = opts.reduced || (() => false);
+    const visible = opts.visible || (() => true);
+    const colorOf = opts.color || (() => SNOW);
+    let W = 0, H = 0, flakes = [], running = false, frameId = null, lastTs = null, blank = true, observer = null;
+
+    function measure() {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width === W && rect.height === H && flakes.length) return;
+      W = rect.width; H = rect.height;
+      canvas.width = Math.max(1, Math.round(W));
+      canvas.height = Math.max(1, Math.round(H));
+      const rand = rng(Math.round(W) * 17 + Math.round(H));
+      flakes = Array.from({ length: Math.min(160, Math.round((W * H) / 16000)) }, () => ({
+        x: rand() * W, y: rand() * H, v: 10 + rand() * 22, sway: rand() * Math.PI * 2,
+        ch: rand() < 0.65 ? '·' : rand() < 0.5 ? '*' : '+', a: 0.2 + rand() * 0.35, size: 8 + rand() * 5,
+      }));
+      blank = true;
+    }
+
+    function clear() {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      blank = true;
+    }
+
+    function draw(dt) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      blank = false;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = colorOf();
+      for (const f of flakes) {
+        f.y += (f.v * dt) / 1000;
+        f.sway += dt / 1000;
+        if (f.y > H + 8) f.y = -8;
+        ctx.globalAlpha = f.a;
+        ctx.font = f.size.toFixed(0) + 'px ui-monospace, Consolas, monospace';
+        ctx.fillText(f.ch, f.x + Math.sin(f.sway) * 6, f.y);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function frame(ts) {
+      if (!running) return;
+      frameId = raf(frame);
+      if (!visible()) { if (!blank) clear(); lastTs = null; return; }
+      if (lastTs === null) lastTs = ts - FRAME_MS;
+      const dt = ts - lastTs;
+      if (dt < FRAME_MS) return;
+      lastTs = ts;
+      draw(Math.min(100, dt));
+    }
+
+    function stop() {
+      running = false;
+      if (frameId !== null) caf(frameId);
+      frameId = null;
+      clear();
+    }
+
+    return {
+      // Starts the snow in the season (or when forced); outside it, or with motion reduced, it stops and clears
+      // instead, so calling start() now and then ends the snow when Christmas Town closes in a running app.
+      // force may be a function, read on every start, so a preview switched on after creation is seen.
+      start() {
+        const force = typeof opts.force === 'function' ? opts.force() : Boolean(opts.force);
+        if (!force && !isSeason(now())) { if (running || !blank) stop(); return; }
+        if (reduced()) { if (running || !blank) stop(); return; }
+        if (running) return;
+        if (!observer && typeof ResizeObserver === 'function') { observer = new ResizeObserver(() => { if (running) measure(); }); observer.observe(canvas); }
+        measure();
+        running = true; lastTs = null;
+        frameId = raf(frame);
+      },
+      stop,
+      resize() { if (running) measure(); },
+    };
+  }
+
+  return Object.freeze({ isSeason, greeting, forced, layout, create, snowfall });
 });

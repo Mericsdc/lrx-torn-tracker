@@ -10,6 +10,14 @@ Bazaars in Item Market Powered by TornW3B 4.1.8
 Author: Weav3r. License: MIT.
 https://greasyfork.org/en/scripts/527616-bazaars-in-item-market-powered-by-tornw3b/code
 
+OpenMarket 1.11.9
+Authors: snickelfritz / cowboyup (maintained version of the original OpenMarket).
+License: GPL version 3. See GPL-3.0.txt and the original .user.js header.
+https://greasyfork.org/en/scripts/589775-openmarket/code
+Modified when it is loaded (adaptOpenMarket in ../src/main/userscripts.js): its sort-menu entries,
+filter sliders, Display Case, Inventory and Faction Armory handlers are switched off, and bonus
+titles are read from an inert parsed document instead of innerHTML. The bundled file is unchanged.
+
 React / React DOM 19.2.0 (dependency declared by FF Scouter)
 Copyright (c) Meta Platforms, Inc. and affiliates. License: MIT.
 The exact Torn-hosted dependency is recorded in sources.json.
@@ -31,12 +39,21 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
-The local adapter is supplied as source in ../userscripts.js,
+The local adapter is supplied as source in ../src/main/userscripts.js,
 ../userscript-extension/ and ../torn-helpers/session-guard.js.
-FF Scouter's generated extension wrapper is distributed under GPL-3.0.
+The generated extension wrappers of FF Scouter and OpenMarket are distributed under GPL-3.0.
 SHA-256 hashes and pinned upstream source versions are in sources.json.
 These scripts have their own display settings. FF Scouter automatically uses
 the tracker's saved FFScouter key, falling back to its Torn API key. Requests
 use an authenticated local proxy; the saved key is not copied into the page.
 TornW3B synchronizes viewed auction listings to weav3r.dev, as described by
-the upstream script. Each integration can be disabled in Settings / Torn helpers.
+the upstream script. OpenMarket sends nothing anywhere: it reads the Item Market
+listings the page already loads and labels the visible items.
+Each integration can be disabled in Settings / Torn helpers.
+
+Credits for ideas (no code copied; the tracker's helpers are written from scratch):
+the bazaar undercut helper (../torn-helpers/bazaar-undercut.js) follows the idea of
+"Auto Bazaar Pricing" by swervelord [3637232]. Its prices come from weav3r.dev.
+The profile helper (../torn-helpers/profile-work-stats.js) follows the idea of
+"Torn Profile Company Star Rating + Working Stats" by swervelord. Its numbers come
+from the Torn API, looked up by the tracker with its own saved key.

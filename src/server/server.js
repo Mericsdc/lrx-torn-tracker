@@ -19,6 +19,7 @@ const CONFIG_FILE = path.join(DATA, 'config.json');
 const HISTORY_FILE = path.join(DATA, 'history.json');
 const { buildBattleStats } = require('./battle-stats');
 const overviewLayout = require('../../public/overview-layout');
+const levelling = require('../../public/levelling');
 
 if (!fs.existsSync(DATA)) fs.mkdirSync(DATA, { recursive: true });
 const warGroups = require('./war-groups').createWarGroups(DATA);
@@ -251,6 +252,8 @@ async function getOverview(force = false) {
       id: u.player_id, name: u.name, level: u.level, rank: u.rank,
       image: u.profile_image, status: u.status, lastAction: u.last_action,
       job: u.job, faction: u.faction,
+      // the medium profile card's details; part of the same profile reply
+      age: u.age, property: u.property, awards: u.awards, married: u.married,
     },
     bars: { energy: u.energy, nerve: u.nerve, happy: u.happy, life: u.life, chain: u.chain },
     cooldowns: u.cooldowns || {},
@@ -902,6 +905,8 @@ async function getTargets(factionId) {
 /* ------------------------------------------------------------------ */
 // oran.pw/baldrstargets'ın kullandığı açık topluluk listesi. Hedeflerin durumu kullanıcının kendi key'iyle,
 // yalnızca sayfa açıkken ve dakikada en fazla ~30 istekle (hastanedekiler çıkış saatine kadar hiç) kontrol edilir.
+// Sıra public/levelling.js'te: sayfanın en üstündeki hedefler ve az önce saldırılan hedef daha sık kontrol edilir;
+// istek hızı aynı kalır, yalnızca sıra değişir.
 const LEVEL_LISTS_URL = 'https://raw.githubusercontent.com/Baldr-Geek/Baldrs-List/refs/heads/main/data.json';
 const LEVEL_STOP_CODES = new Set(['NO_KEY', 2, 8, 9, 10, 13, 14, 16, 18]); // key/erişim sorunu: taramayı durdur
 const plainNum = (v) => Number(String(v ?? '').replace(/[^\d.]/g, '')) || 0;
@@ -922,12 +927,8 @@ function getLevelLists() {
   });
 }
 
-const levelScan = { list: null, wantedAt: 0, running: false, error: null, stoppedAt: 0, status: new Map() }; // id -> { state, until, description, level, at }
-function levelStale(s, now) {
-  if (!s) return true;
-  if ((s.state === 'Hospital' || s.state === 'Jail') && s.until) return s.until * 1000 <= now;
-  return now - s.at > (s.state === 'Okay' ? 3 : 6) * 60_000;
-}
+// status: id -> { state, until, description, level, at }; hot: id -> ms until which an attacked target is checked often
+const levelScan = { list: null, wantedAt: 0, running: false, error: null, stoppedAt: 0, status: new Map(), hot: new Map() };
 async function runLevelScan() {
   if (levelScan.running) return;
   levelScan.running = true;
@@ -935,10 +936,12 @@ async function runLevelScan() {
     while (Date.now() - levelScan.wantedAt < 20_000) { // sayfa kapanınca (istek gelmeyince) durur
       const rows = (await getLevelLists())[levelScan.list] || [];
       const now = Date.now();
-      const next = [...rows].sort((a, b) => b.lvl - a.lvl).find((r) => levelStale(levelScan.status.get(r.id), now));
-      if (!next) { await sleep(3000); continue; }
+      for (const [id, until] of levelScan.hot) if (until <= now) levelScan.hot.delete(id);
+      const nextId = levelling.nextToCheck(rows, (id) => levelScan.status.get(id), { mine: levelling.mineFrom(history.lastOverview?.battle), nowMs: now, hot: levelScan.hot });
+      if (nextId == null) { await sleep(3000); continue; }
+      const next = { id: nextId };
       try {
-        const u = await torn(`user/${next.id}?selections=basic`, 60_000);
+        const u = await torn(`user/${next.id}?selections=basic`, levelling.FRESH_TTL_MS);
         levelScan.status.set(next.id, { state: u.status?.state || '?', until: Number(u.status?.until) || 0, description: u.status?.description || '', level: Number(u.level) || 0, at: Date.now() });
         levelScan.error = null;
         levelScan.stoppedAt = 0;
@@ -1031,7 +1034,7 @@ const AWARD_RULES = [
   [`^Attain ${AWN} intelligence`, (m, g) => g('jobs.stats.intelligence')],
   [`^Attain ${AWN} manual labor`, (m, g) => g('jobs.stats.manual')],
   [`^Achieve ${AWN} in any working stat`, (m, g) => Math.max(g('jobs.stats.endurance'), g('jobs.stats.intelligence'), g('jobs.stats.manual'))],
-  [`^Complete ${AWN} education courses`, (m, g, x) => x.eduDone],
+  [`^Complete ${AWN} education courses`, (m, g, x) => x.eduDone, 'education'],
   [`^Attain ${AWN} total stats`, (m, g) => g('battle_stats.total')],
   [`^Gain ${AWN} (defense|dexterity|speed|strength)`, (m, g) => g(`battle_stats.${m[2]}`)],
   [`^Fill ${AWN} empty blood bags`, (m, g) => g('hospital.blood_withdrawn')],
@@ -1050,7 +1053,7 @@ const AWARD_RULES = [
   [`^Bust ${AWN} people`, (m, g) => g('jail.busts.success')],
   [`^Go to jail ${AWN} times`, (m, g) => g('jail.times_jailed')],
   [`^Make ${AWN} bails`, (m, g) => g('jail.bails.amount')],
-  [`^Reach level ${AWN}$`, (m, g, x) => x.level],
+  [`^Reach level ${AWN}$`, (m, g, x) => x.level, 'level'],
   [`^Achieve ${AWN} total awards`, (m, g) => g('other.awards')],
   [`^Code ${AWN} viruses`, (m, g) => g('items.viruses_coded')],
   [`^Earn ${AWN} racing points`, (m, g) => g('racing.points')],
@@ -1070,37 +1073,42 @@ const AWARD_RULES = [
   [`^Import ${AWN} items from abroad`, (m, g) => g('travel.items_bought')],
   [`^Spend ${AWN} days in the air`, (m, g) => Math.floor(g('travel.time_spent') / 86400)],
   [`^Travel (?:abroad )?${AWN} times`, (m, g) => g('travel.total')],
-  [`^Travel to (?:the )?(.+) ${AWN} times`, (m, g) => g(`travel.${snake(m[1])}`), 2],
+  [`^Travel to (?:the )?(.+) ${AWN} times`, (m, g) => g(`travel.${snake(m[1])}`)],
   [`^Achieve ${AWN} finishing hits with (.+)$`, (m, g) => g(`finishing_hits.${FINISH[m[2].toLowerCase()] || snake(m[2])}`)],
   [`^Achieve ${AWN} finishing hits in every category`, (m, g) => Math.min(...Object.values(FINISH).map((k) => g(`finishing_hits.${k}`)))],
   [`^Use ${AWN} (Hollow Point|Incendiary|Piercing|Tracer) rounds`, (m, g) => g(`attacking.ammunition.${snake(m[2])}`)],
   [`^Use ${AWN} rounds of special ammunition`, (m, g) => g('attacking.ammunition.special')],
   [`^Have a recorded networth value of \\$${AWN}`, (m, g) => g('networth.total')],
-].map(([re, cur]) => ({ re: new RegExp(re, 'i'), cur }));
+].map(([re, cur, stat]) => ({ re: new RegExp(re, 'i'), cur, stat })); // stat: id for rules that read the profile, not personal stats
 
 const AWARD_RANKS = ['Beginner', 'Inexperienced', 'Rookie', 'Novice', 'Below Average', 'Average', 'Reasonable', 'Above Average', 'Competent', 'Highly Competent', 'Veteran', 'Distinguished', 'Highly Distinguished', 'Professional', 'Star', 'Master', 'Outstanding', 'Celebrity', 'Supreme', 'Idolized', 'Champion', 'Heroic', 'Legendary', 'Elite', 'Invincible'];
+// { goal, cur, stat, what }: stat names what the progress is read from (a personal stat path, `a|b` when the rule reads
+// several, or level / age / married / faction / rank / education); what is the rule's text capture (Theft, SMGs, Japan).
+// The Merit Tracker page (public/merit-guide.js) turns these into how-to lines.
 function awardProgress(desc, g, extra) {
   const d = String(desc);
   let m = d.match(/^Reach level ([A-Za-z -]+)$/i);
-  if (m && wordsToNum(m[1])) return { goal: wordsToNum(m[1]), cur: extra.level };
+  if (m && wordsToNum(m[1])) return { goal: wordsToNum(m[1]), cur: extra.level, stat: 'level', what: null };
   m = d.match(/^Live in Torn for ([a-z ]+) years?$/i);
-  if (m && wordsToNum(m[1])) return { goal: wordsToNum(m[1]) * 365, cur: extra.ageDays, unit: 'days' };
+  if (m && wordsToNum(m[1])) return { goal: wordsToNum(m[1]) * 365, cur: extra.ageDays, unit: 'days', stat: 'age', what: null };
   m = d.match(/^Stay married (?:to a single person )?for ([\d,]+) days/i);
-  if (m) return { goal: Number(m[1].replace(/,/g, '')), cur: extra.marriedDays };
+  if (m) return { goal: Number(m[1].replace(/,/g, '')), cur: extra.marriedDays, stat: 'married', what: null };
   m = d.match(/^Serve ([\d,]+) days in a single faction/i);
-  if (m) return { goal: Number(m[1].replace(/,/g, '')), cur: extra.factionDays };
+  if (m) return { goal: Number(m[1].replace(/,/g, '')), cur: extra.factionDays, stat: 'faction', what: null };
   m = d.match(/^Reach the rank of (.+)$/i);
   if (m) {
     const goal = AWARD_RANKS.findIndex((r) => r.toLowerCase() === m[1].trim().toLowerCase());
     const cur = AWARD_RANKS.reduce((best, r, i) => (extra.rank.toLowerCase().startsWith(r.toLowerCase()) ? i : best), -1);
-    if (goal >= 0 && cur >= 0) return { goal: goal + 1, cur: cur + 1, unit: 'rank' };
+    if (goal >= 0 && cur >= 0) return { goal: goal + 1, cur: cur + 1, unit: 'rank', stat: 'rank', what: m[1].trim() };
   }
   for (const r of AWARD_RULES) {
     m = d.match(r.re);
     if (!m) continue;
     const goal = Number(String(m.slice(1).find((x) => x && /^[\d,]+$/.test(x)) || '').replace(/,/g, ''));
-    const cur = Number(r.cur(m, g, extra));
-    if (goal > 0 && Number.isFinite(cur)) return { goal, cur };
+    const used = [];
+    const cur = Number(r.cur(m, (p) => { if (!used.includes(p)) used.push(p); return g(p); }, extra));
+    const what = m.slice(1).find((x) => x && !/^[\d,]+$/.test(x)) ?? null;
+    if (goal > 0 && Number.isFinite(cur)) return { goal, cur, stat: r.stat || used.join('|') || null, what };
   }
   return null;
 }
@@ -1131,6 +1139,7 @@ async function getAwards() {
       id: a.id, kind, name: a.name, description: a.description, type: a.type?.title || '', rarity: a.rarity || '',
       circulation: Number(a.circulation) || 0, owned,
       goal: p?.goal ?? null, cur: p ? Math.min(p.cur, p.goal) : null, pct: p ? Math.min(1, p.cur / p.goal) : null,
+      stat: p?.stat ?? null, what: p?.what ?? null,
     });
   };
   for (const a of th.honors || []) add(a, 'honor', ownH.has(a.id));
@@ -1953,6 +1962,16 @@ async function handleApi(req, res, url) {
     if (p === '/api/job') return send(res, 200, await getJobInfo());
     if (p === '/api/travel') return send(res, 200, await getTravelProfit());
     if (p === '/api/levelling') return send(res, 200, await getLevelling(url.searchParams.get('list') || ''));
+    // "I pressed Attack on this target": the scan checks it again every few seconds for a while, so a target that went
+    // to hospital leaves the page soon. Only a target of the list being scanned; it adds no Torn request.
+    if (p === '/api/levelling/attacked') {
+      if (req.method !== 'POST') return send(res, 405, { error: 'POST only' });
+      const { id } = await readBody(req);
+      const rows = levelScan.list ? (await getLevelLists())[levelScan.list] || [] : [];
+      if (!Number.isInteger(id) || id <= 0 || !rows.some((r) => r.id === id)) return send(res, 400, { error: T('Bu hedef listede yok.', 'This target is not in the list.') });
+      levelScan.hot.set(id, Date.now() + levelling.HOT_FOR_MS);
+      return send(res, 200, { ok: true });
+    }
     if (p === '/api/shoplifting') return send(res, 200, await getShoplifting());
     if (p === '/api/awards') return send(res, 200, await getAwards());
     if (p === '/api/merit-allocation') return send(res, 200, await getMeritAllocation());
@@ -2257,6 +2276,48 @@ async function warMemberStatuses(pageFactionIds = []) {
   return out;
 }
 
+/* Profile helper (torn-helpers/profile-work-stats.js): the player's working stats from the Hall of Fame and the star
+   rating of the company their profile links to. The owner chose automatic lookups: two public Torn API requests per
+   profile, made here with the saved key (it never reaches the page) and inside the shared 80/min throttle. Only the
+   two numbers are kept, in memory: 12 h per player, 24 h per company; a failed lookup is retried after 5 min.
+   Idea: swervelord's "Torn Profile Company Star Rating + Working Stats" userscript (no code copied). */
+const PROFILE_PLAYER_TTL = 12 * 3600_000, PROFILE_COMPANY_TTL = 24 * 3600_000, PROFILE_RETRY_MS = 5 * 60_000, PROFILE_CACHE_MAX = 2000;
+const profileCache = new Map(); // 'u:<id>' | 'c:<id>' -> { gen, t, value } or { gen, promise }
+function profileLookup(key, ttl, pathq, pick) {
+  const hit = profileCache.get(key);
+  if (hit && hit.gen === keyGen) {
+    if (hit.promise) return hit.promise;
+    if (Date.now() - hit.t < (hit.value === null ? PROFILE_RETRY_MS : ttl)) return Promise.resolve(hit.value);
+  }
+  const gen = keyGen;
+  const promise = tornRaw(pathq).then(pick).catch(() => null).then((value) => {
+    profileCache.delete(key);
+    if (gen === keyGen) {
+      profileCache.set(key, { gen, t: Date.now(), value });
+      while (profileCache.size > PROFILE_CACHE_MAX) profileCache.delete(profileCache.keys().next().value);
+    }
+    return value;
+  });
+  profileCache.set(key, { gen, promise });
+  return promise;
+}
+async function profileWorkStats(playerId, companyId) {
+  const pid = /^\d{1,10}$/.test(String(playerId ?? '')) ? String(Number(playerId)) : null;
+  const cid = /^\d{1,10}$/.test(String(companyId ?? '')) ? String(Number(companyId)) : null;
+  if (!config.apiKey || !pid || pid === '0') return { workingStats: null, rating: null };
+  const [workingStats, rating] = await Promise.all([
+    profileLookup('u:' + pid, PROFILE_PLAYER_TTL, `v2/user/${pid}/hof`, (j) => {
+      const v = Number(j?.hof?.working_stats?.value);
+      return Number.isFinite(v) && v >= 0 ? v : null;
+    }),
+    cid && cid !== '0' ? profileLookup('c:' + cid, PROFILE_COMPANY_TTL, `company/${cid}?selections=profile`, (j) => {
+      const r = Number(j?.company?.rating);
+      return Number.isInteger(r) && r >= 0 && r <= 10 ? r : null;
+    }) : null,
+  ]);
+  return { workingStats, rating };
+}
+
 if (require.main === module) {
   startServer(PORT);
 }
@@ -2271,4 +2332,4 @@ process.on('exit', flushData);
 // API key sahibinin oyuncu numarası (Torn sekmesindeki `uid` çerezini doğrulamak için)
 const myPlayerId = () => { const id = Number(history.lastOverview?.player?.id); return Number.isInteger(id) && id > 0 ? String(id) : null; };
 
-module.exports = { startServer, server, stockProductNames, ingestStockDeliveries, warMemberStatuses, warGroupLabels: warGroups.labels, flushData, myPlayerId, getCrimeValue, crimeValueForPage, purchaseCostsForPage, seasonalActive, seasonalList, halloweenForPage, ffScriptBridge: () => ({ url: `http://127.0.0.1:${server.address().port}/api/ff-script-request`, token: ffScriptProxy.token }) };
+module.exports = { startServer, server, stockProductNames, ingestStockDeliveries, warMemberStatuses, profileWorkStats, warGroupLabels: warGroups.labels, flushData, myPlayerId, getCrimeValue, crimeValueForPage, purchaseCostsForPage, seasonalActive, seasonalList, halloweenForPage, ffScriptBridge: () => ({ url: `http://127.0.0.1:${server.address().port}/api/ff-script-request`, token: ffScriptProxy.token }) };

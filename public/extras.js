@@ -11,7 +11,7 @@ Object.assign(I18N, {
 });
 Object.assign(VIEW_META, {
   crimes: { tr: ['Suç Merkezi', 'Shoplifting güvenliği ve nerve başına kazanç'], en: ['Crime Hub', 'Shoplifting security and money per nerve'] },
-  awards: { tr: ['Merit Takibi', 'Eksik honor ve medal\'lar, en yakın olandan başlayarak'], en: ['Merit Tracker', 'Missing honors and medals, closest first'] },
+  awards: { tr: ['Merit Takibi', 'Önce kolay kazanımlar; her ödülün nasıl alınacağıyla'], en: ['Merit Tracker', 'Easy wins first, with how to get each award'] },
 });
 
 /* ---------- Suç Merkezi ---------- */
@@ -201,7 +201,11 @@ setInterval(() => {
 }, 60_000);
 
 /* ---------- Merit Takibi ---------- */
-const awardState = { data: null, err: null, kind: 'all', type: '', q: '', progressOnly: false, limit: 120 };
+// Groups, how-to lines, tiers and the Easy wins picks come from public/merit-guide.js (LRXMerit).
+// show: 'all' | a group; tiers: also list the higher tiers of a series (level 50, 55 … while 45 is next).
+const awardState = { data: null, err: null, show: 'all', kind: 'all', type: '', q: '', tiers: false, limit: 120 };
+const awardFmt = { num: n0, money: cmoney };
+const meritText = (pair) => tr(pair[0], pair[1]);
 
 async function loadAwards(force) {
   const el = $('#awards-body');
@@ -211,72 +215,117 @@ async function loadAwards(force) {
   renderAwards();
 }
 
-function awardRows() {
-  const d = awardState.data; if (!d) return [];
-  const q = awardState.q.trim().toLowerCase();
-  return d.awards
-    .filter((a) => !a.owned)
-    .filter((a) => awardState.kind === 'all' || a.kind === awardState.kind)
-    .filter((a) => !awardState.type || a.type === awardState.type)
-    .filter((a) => !awardState.progressOnly || a.pct != null)
-    .filter((a) => !q || `${a.name} ${a.description}`.toLowerCase().includes(q))
-    .sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1) || b.circulation - a.circulation);
+// Where the work is done: a button that opens the Torn page, or a plain label when the app has no URL for it
+function awardPlace(p) {
+  if (!p) return '';
+  const label = esc(meritText(p.label));
+  return p.url ? `<button class="btn sm ghost aw-place" data-open-url="${esc(p.url)}" data-tab-label="${label}">${label} ↗</button>`
+    : `<span class="chip dim aw-place">${label}</span>`;
+}
+// The how-line. Torn writes only English: in English Torn's text shows under the line (unless the line is Torn's text);
+// in Turkish it moves to the line's tooltip, so no English sentence is on screen.
+function awardHow(a) {
+  const how = meritText(a.g.how), orig = String(a.description || '').trim().replace(/\s+/g, ' ');
+  const tip = state.lang !== 'en' && orig ? ` title="${esc('Torn: ' + orig)}"` : '';
+  return { line: `<span class="aw-how"${tip}>${esc(how)}</span>`, desc: state.lang === 'en' && orig && !how.includes(orig.replace(/\.$/, '')) ? orig : '' };
+}
+const awardBar = (a) => `<div class="storage-bar"><i style="width:${(a.pct * 100).toFixed(1)}%;background:${a.pct >= 0.9 ? 'var(--ok)' : 'var(--tq)'}"></i></div>`;
+const awardPct = (a) => `${(a.pct * 100).toFixed(a.pct >= 0.995 && a.pct < 1 ? 1 : 0)}%`;
+
+function awardEasyCard(d) {
+  const e = LRXMerit.easyWins(d.awards, awardFmt);
+  const badge = {
+    count: (r) => `<b>${awardPct(r)}</b>`,
+    time: (r) => esc(meritText(r.g.side)),
+    once: (r) => esc(tr(`${compact(r.circulation, 0)} oyuncuda`, `${compact(r.circulation, 0)} have it`)),
+  };
+  const col = (key, title) => `<section class="aw-easy-col" data-easy="${key}"><h4>${title}</h4>
+    ${e[key].map((r) => `<div class="aw-easy-item" data-award-id="${esc(r.id)}">
+      <div class="aw-easy-top"><b class="aw-name">${esc(r.name)}</b><span class="aw-easy-badge">${badge[key](r)}</span></div>
+      <div>${awardHow(r).line}</div>
+      ${key === 'count' ? awardBar(r) : ''}
+    </div>`).join('') || `<div class="muted aw-easy-empty">${esc(meritText(LRXMerit.EASY_EMPTY[key]))}</div>`}</section>`;
+  return `<article class="glass card" id="aw-easy">
+    <div class="card-head wrap"><h3>⚡ ${tr('Kolay kazanımlar', 'Easy wins')}</h3><span class="muted">${tr('En kısa sürede bitirebileceklerin', 'What you can finish soonest')}</span></div>
+    <div class="aw-easy-grid">
+      ${col('count', tr('Bitmek üzere', 'Closest to done'))}
+      ${col('time', tr('Kendiliğinden gelecek', 'Comes by itself soon'))}
+      ${col('once', tr('Tek seferlik, çoğu oyuncuda var', 'One-time, most players have it'))}
+    </div>
+  </article>`;
+}
+
+function awardRow(a) {
+  const how = awardHow(a);
+  const rarity = LRXMerit.rarityLabel(a.rarity);
+  const right = a.pct != null
+    ? `${awardBar(a)}<span class="mono">${n0(a.cur)} / ${n0(a.goal)} · <b>${awardPct(a)}</b></span>${a.g.side ? `<span class="aw-side">${esc(meritText(a.g.side))}</span>` : ''}`
+    : `<span class="muted">${a.g.side ? esc(meritText(a.g.side)) : ''}${rarity ? ` · ${esc(meritText(rarity))}` : ''}</span>`;
+  return `<div class="aw-row" data-award-id="${esc(a.id)}">
+    <div class="aw-main">
+      <div><b class="aw-name">${esc(a.name)}</b> <span class="chip ${a.kind === 'honor' ? 'blue' : 'orange'}">${a.kind === 'honor' ? 'Honor' : tr('Madalya', 'Medal')}</span>
+        <span class="chip dim aw-group">${esc(meritText(LRXMerit.GROUP_LABEL[a.g.group]))}</span> <span class="muted aw-type">${esc(meritText(LRXMerit.typeLabel(a.type)))}</span></div>
+      <div class="aw-howline">${how.line}${awardPlace(a.g.place)}</div>
+      ${how.desc ? `<div class="aw-desc">${esc(how.desc)}</div>` : ''}
+    </div>
+    <div class="aw-prog">${right}</div>
+  </div>`;
 }
 
 function renderAwards() {
   const el = $('#awards-body');
   const d = awardState.data;
   if (!d) { el.innerHTML = awardState.err ? errorBox(awardState.err) : loadingBox(); return; }
-  const types = [...new Set(d.awards.filter((a) => !a.owned).map((a) => a.type))].filter(Boolean).sort();
-  const rows = awardRows();
+  const types = [...new Set(d.awards.filter((a) => !a.owned).map((a) => a.type))].filter(Boolean)
+    .map((t) => [t, meritText(LRXMerit.typeLabel(t))]).sort((x, y) => x[1].localeCompare(y[1], state.lang === 'en' ? 'en' : 'tr'));
+  const v = LRXMerit.view(d.awards, awardState, awardFmt);
+  const rows = v.rows;
   const [hOwn, hAll] = d.totals.honors, [mOwn, mAll] = d.totals.medals;
   const prev = document.activeElement?.id === 'aw-q';
+  const opt = (value, label, on) => `<option value="${esc(value)}" ${on ? 'selected' : ''}>${esc(label)}</option>`;
   el.innerHTML = `
     <div class="grid kpis">
-      ${kpi('Honors', `${n0(hOwn)} <small class="muted">/ ${n0(hAll)}</small>`)}
-      ${kpi('Medals', `${n0(mOwn)} <small class="muted">/ ${n0(mAll)}</small>`)}
+      ${kpi(tr("Honor'lar", 'Honors'), `${n0(hOwn)} <small class="muted">/ ${n0(hAll)}</small>`)}
+      ${kpi(tr('Madalyalar', 'Medals'), `${n0(mOwn)} <small class="muted">/ ${n0(mAll)}</small>`)}
       ${kpi(tr('Toplam ödül', 'Total awards'), n0(d.totals.awards))}
-      ${kpi(tr('İlerlemesi ölçülen', 'With progress'), n0(d.awards.filter((a) => !a.owned && a.pct != null).length), tr('eksik ödüllerden', 'of the missing awards'))}
+      ${kpi(tr('Bitmek üzere', 'Almost done'), n0(LRXMerit.almostDone(d.awards)), tr('%75 ve üstü, sayaçlı işler', 'counted actions at 75%+'))}
     </div>
+    ${awardEasyCard(d)}
     <article class="glass card">
       <div class="card-head wrap">
         <div class="aw-controls">
-          <select id="aw-kind"><option value="all">${tr('Hepsi', 'All')}</option><option value="honor" ${awardState.kind === 'honor' ? 'selected' : ''}>Honors</option><option value="medal" ${awardState.kind === 'medal' ? 'selected' : ''}>Medals</option></select>
-          <select id="aw-type"><option value="">${tr('Tüm türler', 'All types')}</option>${types.map((t) => `<option ${t === awardState.type ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+          <select id="aw-show" title="${tr('Göster', 'Show')}">${['all', ...LRXMerit.GROUPS].map((g) => opt(g, meritText(LRXMerit.GROUP_LABEL[g]), g === awardState.show)).join('')}</select>
+          <select id="aw-kind">${opt('all', tr('Honor + Madalya', 'Honors + Medals'), awardState.kind === 'all')}${opt('honor', tr("Honor'lar", 'Honors'), awardState.kind === 'honor')}${opt('medal', tr('Madalyalar', 'Medals'), awardState.kind === 'medal')}</select>
+          <select id="aw-type">${opt('', tr('Tüm türler', 'All types'), !awardState.type)}${types.map(([t, label]) => opt(t, label, t === awardState.type)).join('')}</select>
           <input id="aw-q" type="search" placeholder="${tr('Ara…', 'Search…')}" value="${esc(awardState.q)}">
-          <label class="check"><input type="checkbox" id="aw-prog" ${awardState.progressOnly ? 'checked' : ''}> ${tr('Sadece ilerlemesi olanlar', 'Only with progress')}</label>
+          <label class="check" title="${tr('Aynı serinin sonraki kademeleri (ör. seviye 50, 55… sırada 45 varken)', 'Later tiers of the same series (e.g. level 50, 55… while 45 is next)')}"><input type="checkbox" id="aw-tiers" ${awardState.tiers ? 'checked' : ''}> ${tr('Üst kademeleri de göster', 'Show higher tiers')}</label>
         </div>
-        <span class="muted">${n0(rows.length)} ${tr('eksik ödül', 'missing awards')}</span>
+        <span class="muted" id="aw-count">${n0(rows.length)} ${tr('eksik ödül', rows.length === 1 ? 'missing award' : 'missing awards')}${v.hidden ? ` · ${n0(v.hidden)} ${tr('üst kademe gizli', v.hidden === 1 ? 'higher tier hidden' : 'higher tiers hidden')}` : ''}</span>
       </div>
-      <div class="aw-list">${rows.slice(0, awardState.limit).map((a) => `
-        <div class="aw-row">
-          <div class="aw-main">
-            <div><b>${esc(a.name)}</b> <span class="chip ${a.kind === 'honor' ? 'blue' : 'orange'}">${a.kind === 'honor' ? 'Honor' : 'Medal'}</span> <span class="muted aw-type">${esc(a.type)}</span></div>
-            <div class="aw-desc">${esc(a.description)}</div>
-          </div>
-          <div class="aw-prog">${a.pct != null
-            ? `<div class="storage-bar"><i style="width:${(a.pct * 100).toFixed(1)}%;background:${a.pct >= 0.9 ? 'var(--ok)' : 'var(--tq)'}"></i></div>
-               <span class="mono">${n0(a.cur)} / ${n0(a.goal)} · <b>${(a.pct * 100).toFixed(a.pct >= 0.995 ? 1 : 0)}%</b></span>`
-            : `<span class="muted">${a.circulation ? tr(`${n0(a.circulation)} oyuncuda var`, `${n0(a.circulation)} ${a.circulation === 1 ? 'player has' : 'players have'} it`) : ''}${a.rarity ? ` · ${esc(a.rarity)}` : ''}</span>`}</div>
-        </div>`).join('') || `<div class="muted">${tr('Eşleşen eksik ödül yok.', 'No matching missing awards.')}</div>`}</div>
+      <div class="aw-list">${rows.slice(0, awardState.limit).map(awardRow).join('')
+        || `<div class="aw-empty"><span>${esc(meritText(v.empty))}</span>${v.narrowed ? ` <button class="btn sm ghost" id="aw-clear">${tr('Filtreleri temizle', 'Clear filters')}</button>` : ''}</div>`}</div>
       ${rows.length > awardState.limit ? `<button class="btn sm ghost aw-more" id="aw-more">${tr('Daha fazla göster', 'Show more')} (${n0(rows.length - awardState.limit)})</button>` : ''}
       <p class="muted sl-note">${tr(
-        'İlerleme, Torn API\'deki kişisel istatistiklerinden hesaplanır; bazı ödüllerin (tek seferlik olaylar, yarışmalar) ölçülebilir bir istatistiği yoktur. Sıralama: hedefe en yakın olanlar önce, sonra en çok oyuncuda olanlar (en kolaylar).',
-        'Progress comes from your personal stats in the Torn API; some awards (one-off events, competitions) have no measurable stat. Order: closest to the goal first, then the ones most players have (the easiest).')}</p>
+        'Her satır ne kaldığını ve Torn\'da nerede yapılacağını söyler. Sayaçlı işler hedefe yakınlığa göre, tek seferlikler kaç oyuncuda olduğuna göre (kolaylığın işareti) sıralanır. Aynı serinin üst kademeleri sen açana kadar gizlidir. İlerleme Torn API\'deki kişisel istatistiklerinden gelir; LRX yalnızca gösterir, her şeyi Torn\'da sen yaparsın.',
+        'Each row says what is left and where in Torn you do it. Counted actions are sorted by how close they are, one-time awards by how many players have them (a sign they are easy). Higher tiers of the same series stay hidden until you switch them on. Progress comes from your personal stats in the Torn API; LRX only shows it, you do everything in Torn.')}</p>
     </article>`;
   if (prev) { const q = $('#aw-q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
 }
 
 $('#awards-body')?.addEventListener('change', (e) => {
   const id = e.target.id;
-  if (id === 'aw-kind') awardState.kind = e.target.value;
+  if (id === 'aw-show') awardState.show = e.target.value;
+  else if (id === 'aw-kind') awardState.kind = e.target.value;
   else if (id === 'aw-type') awardState.type = e.target.value;
-  else if (id === 'aw-prog') awardState.progressOnly = e.target.checked;
+  else if (id === 'aw-tiers') awardState.tiers = e.target.checked;
   else return;
   awardState.limit = 120; renderAwards();
 });
 $('#awards-body')?.addEventListener('input', (e) => { if (e.target.id === 'aw-q') { awardState.q = e.target.value; awardState.limit = 120; renderAwards(); } });
-$('#awards-body')?.addEventListener('click', (e) => { if (e.target.id === 'aw-more') { awardState.limit += 120; renderAwards(); } });
+$('#awards-body')?.addEventListener('click', (e) => {
+  if (e.target.id === 'aw-more') { awardState.limit += 120; renderAwards(); }
+  else if (e.target.id === 'aw-clear') { Object.assign(awardState, { kind: 'all', type: '', q: '', limit: 120 }); renderAwards(); }
+});
 
 /* ---------- Kancalar ---------- */
 Object.assign(EXTRA_LOADERS, { crimes: loadCrimes, awards: loadAwards });

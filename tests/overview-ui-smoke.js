@@ -16,8 +16,9 @@ const { server, service } = createHttpServer(config, { fetchImpl: async () => { 
 const children = []; let browser;
 const output = process.env.QA_OUTPUT || path.join(temp, 'screenshots'); fs.mkdirSync(output, { recursive: true });
 const MEMBER = 4037017, OTHER = 3000001, LAPSE = 3000002; // 4037017 is a permanent member and cannot lapse
-const DEFAULT_IDS = ['profile', 'drug', 'edu', 'day', 'bars', 'chips', 'battle']; // company is in the layout but hidden: not a director
+const DEFAULT_IDS = ['profile', 'timers', 'bars', 'chips', 'battle']; // company is in the layout but hidden: not a director
 const PHOTO = 'https://profileimages.torn.com/ok.png';
+const PORTRAIT = 'https://profileimages.torn.com/portrait.png'; // a portrait photo, served as an SVG in the profile size check
 const NOW = Math.floor(Date.now() / 1000), MARK = '<b>x</b>'; // Torn text with markup: shown as text, never parsed
 // Every endpoint a Premium widget reads, answered with synthetic data. A function answers the route itself.
 const widgetData = {
@@ -37,9 +38,11 @@ const widgetData = {
   '/api/crime-value': { fetchedAt: Date.now(), burglary: [], crimes: [{ crime: 'Burglary', best: 'Warehouse', value: 3600, options: [] }, { crime: 'Shoplifting', best: "Sally's Sweet Shop", value: 900, options: [] }] },
   '/api/jail': { source: 'stats', total: { success: 120, fails: 10 }, last24: 3, last72: 9, score: 512, decay: [], lastBust: Date.now() - 3600000 },
   '/api/awards': { totals: { honors: [1, 10], medals: [1, 10], awards: 2 }, awards: [
-    { name: 'Bar Breaker', kind: 'honor', type: 'Crimes', description: '', owned: false, pct: 0.92, cur: 920, goal: 1000, circulation: 100 },
+    { name: 'Bar Breaker', kind: 'honor', type: 'Crimes', description: 'Commit 1,000 Theft offenses', owned: false, pct: 0.92, cur: 920, goal: 1000, circulation: 100, stat: 'crimes.offenses.theft', what: 'Theft' },
     { name: 'Owned', kind: 'medal', type: 'Level', description: '', owned: true, pct: 1, cur: 1, goal: 1, circulation: 9 },
-    { name: 'Halfway', kind: 'medal', type: 'Level', description: '', owned: false, pct: 0.5, cur: 50, goal: 100, circulation: 50 }] },
+    // A long grind with a higher % than Bar Breaker: the tile shows easy wins, so it must not lead
+    { name: 'Halfway', kind: 'medal', type: 'Level', description: 'Reach level 100', owned: false, pct: 0.95, cur: 95, goal: 100, circulation: 50, stat: 'level' },
+    { name: 'Protege', kind: 'honor', type: 'missions', description: 'Complete the mission Introduction: Duke', owned: false, pct: null, cur: null, goal: null, circulation: 275340 }] },
   '/api/faction': { at: Date.now(), access: { inFaction: true, allowed: true, role: 'leader' }, oc: { crimes: [], notInOc: [], totals: { members: 2, inOc: 2 } },
     myOc: { inOc: true, crime: { id: 77, name: 'Mob Mentality', difficulty: 3, status: 'Planning', readyAt: NOW + 7200, filled: 3, total: 4 }, slot: { role: 'Looter', cpr: 70, item: { name: 'Crowbar', ok: true } } } },
   '/api/wars': { faction: { id: 5, name: 'Example' }, wars: [{ type: 'Ranked War', id: '1', factionId: 99, name: MARK, score: 1200, myScore: 1500 }] },
@@ -60,7 +63,7 @@ const overviewFixture = () => ({
 });
 async function desktop(tornId) {
   const data = path.join(temp, String(tornId)); fs.mkdirSync(data);
-  fs.writeFileSync(path.join(data, 'config.json'), JSON.stringify({ features: { 'app.splash': false, 'app.animations': false, 'app.updates': false } }));
+  fs.writeFileSync(path.join(data, 'config.json'), JSON.stringify({ features: { 'app.splash': false, 'app.animations': false, 'app.updates': false, 'app.newYearWelcome': false } }));
   // The server's player (historyOwner) is this id, as after a sign-in.
   fs.writeFileSync(path.join(data, 'history.json'), JSON.stringify({ ownerId: tornId, days: [], addiction: {}, user: {}, stockOrders: {} }));
   const child = fork(path.join(__dirname, 'preview-server.js'), { env: { ...process.env, TORN_DATA_DIR: data, TORN_API_KEY: '', TORN_PREMIUM_SERVICE_URL: 'http://127.0.0.1:' + server.address().port,
@@ -125,6 +128,20 @@ async function expectFetches(page, paths, want, what) {
 // test just made on the service (the Premium page asks too), so that one settles first. A refused answer is not thrown.
 const freshStatus = (page) => page.evaluate(async () => { await PremiumAccess.status().catch(() => {}); return PremiumAccess.status(true).then(() => true, () => false); });
 const shownOf = (page) => page.evaluate(() => LRXOverview.shown().widgets.map((w) => `${w.id}:${w.size}:${w.locked}`));
+// The live timer strip as laid out: its box beside the profile's, each segment (countdown, bar) and the live header.
+const stripOf = (page) => page.evaluate(() => {
+  const card = document.querySelector('#ow-grid > [data-widget="timers"]'), css = getComputedStyle(card), r = card.getBoundingClientRect();
+  const p = document.querySelector('#ow-grid > [data-widget="profile"]').getBoundingClientRect(), live = card.querySelector('#ls-live');
+  const segs = [...card.querySelectorAll('.ls-seg')].map((seg) => {
+    const b = seg.getBoundingClientRect(), v = seg.querySelector('.ls-value'), text = document.createRange();
+    text.selectNodeContents(v);
+    return { key: seg.dataset.ls, top: Math.round(b.top), left: Math.round(b.left), value: v.textContent, lines: text.getClientRects().length, clipped: v.scrollWidth > v.clientWidth, bar: parseFloat(seg.querySelector('.ls-bar > i').style.width), done: seg.classList.contains('done') };
+  });
+  return { top: Math.round(r.top), left: Math.round(r.left), bottom: Math.round(r.bottom), rows: css.gridRowStart, cols: css.gridColumnStart,
+    profile: { top: Math.round(p.top), right: Math.round(p.right), bottom: Math.round(p.bottom) }, segs,
+    live: ['is-live', 'is-stale'].filter((c) => live.classList.contains(c)).join(), label: live.querySelector('[data-ls-label]').textContent, fresh: card.querySelector('#ls-fresh').textContent,
+    dot: getComputedStyle(live.querySelector('.ls-dot')).animationName, bars: getComputedStyle(card.querySelector('.ls-bar > i')).transitionDuration };
+});
 // Language clicks and the Settings view reload the app config without awaiting it (app.js). A reply that lands after a
 // later setFeature() puts the old switch value back, so a switch is set only once every such reload has been applied.
 const trackConfigLoads = (page) => page.evaluate(() => {
@@ -146,10 +163,17 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
 (async () => {
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   browser = await chromium.launch({ executablePath: process.env.CHROME_EXE || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', headless: true });
-  overviewPlayer = { id: MEMBER, name: '<b>Bold</b>', level: 15, image: PHOTO, status: { state: 'Okay', description: 'Okay', color: 'green' }, faction: { faction_id: 5, faction_tag: 'TAG', faction_name: 'Example' }, job: { position: 'Employee', company_id: 0, job: 'None' } };
+  overviewPlayer = { id: MEMBER, name: '<b>Bold</b>', level: 15, image: PHOTO, status: { state: 'Okay', description: 'Okay', color: 'green' }, faction: { faction_id: 5, faction_tag: 'TAG', faction_name: 'Example', position: 'Member' }, job: { position: 'Employee', company_id: 0, job: 'None' },
+    rank: 'Average Hustler', age: 1234, property: '<u>Private Island</u>', awards: 120, married: { spouse_id: 7, spouse_name: 'Partner', duration: 300 } };
   const { page, errors, context } = await desktop(MEMBER);
   const posts = []; page.on('request', (r) => { if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/overview-layouts') posts.push(r.postDataJSON()); });
   const firstReply = layoutReply(page);
+  // before the first overview arrives the live header claims nothing: no LIVE, no DELAYED, a dash
+  await page.locator('#auth-key').waitFor({ state: 'visible' });
+  assert.equal(await page.evaluate(() => state.overview), null, 'no overview yet');
+  await page.evaluate(() => tick()); // what the app's one-second interval runs (this fixture skips startApp)
+  assert.deepEqual(await page.evaluate(() => { const live = document.querySelector('#ls-live'); return [live.classList.contains('is-live'), live.classList.contains('is-stale'), live.querySelector('[data-ls-label]').textContent, document.querySelector('#ls-fresh').textContent]; }),
+    [false, false, '—', ''], 'before the first overview the strip claims no live data');
   await open(page);
 
   // default layout
@@ -162,16 +186,168 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   assert.ok((await profile.textContent()).includes('<b>Bold</b>'), 'the name is shown as text');
   assert.equal(await page.locator('#ow-grid > [data-widget="profile"] b').count(), 0, 'Torn data never becomes markup');
   assert.match(await profile.getAttribute('data-open-url'), /XID=4037017$/);
-  assert.equal(await page.locator('#ow-grid > [data-widget="profile"]').evaluate((el) => getComputedStyle(el).gridRowStart), 'span 3', 'the profile is tall');
+  assert.equal(await page.locator('.sidebar :is(#me-chip, .sidebar-foot)').count(), 0, 'the profile card replaces the player card that sat at the bottom of the sidebar');
+  assert.equal(await page.locator('#ow-grid > [data-widget="profile"]').evaluate((el) => getComputedStyle(el).gridRowStart), 'span 2', 'the profile is two rows tall');
+  const bottomOf = (sel) => page.locator(sel).evaluate((el) => Math.round(el.getBoundingClientRect().bottom));
+  assert.ok(Math.abs(await bottomOf('#ow-grid > [data-widget="profile"]') - await bottomOf('#ow-grid > [data-widget="bars"]')) <= 2, 'the profile card ends with the Bars card');
+  // Edit sits in the page header beside Refresh; no row of its own above the grid outside edit mode
+  assert.equal(await page.locator('#ow-edit').evaluate((el) => !!el.closest('.topbar .top-actions')), true, 'Edit is in the page header');
+  assert.equal(await page.locator('#ow-edit').isVisible(), true);
+  assert.equal(await page.locator('#ow-bar').isVisible(), false, 'no edit toolbar row outside edit mode');
+  await page.evaluate(() => showView('premium'));
+  assert.equal(await page.locator('#ow-edit').isVisible(), false, 'Edit is only shown on the Overview');
+  await page.evaluate(() => showView('overview'));
+  assert.equal(await page.locator('#ow-edit').isVisible(), true, 'Edit is back on the Overview');
+  // member: the profile has S, M and L, always one column. S ends with Bars; M shows the whole photo at its own shape
+  // and is as tall as it needs; L is three rows and ends with Battle Stats. Tried without saving.
+  await page.waitForFunction(() => LRXOverview.access() === 'active');
+  const sizeProfile = (size) => page.evaluate((s) => LRXOverview.commit(LRXOverviewLayout.resize(LRXOverview.current(), LRXOverview.shown().index, 'profile', s, LRXOverview.access()), { save: false }), size);
+  const profileBox = () => page.evaluate(() => {
+    const card = document.querySelector('#ow-grid > [data-widget="profile"]'), r = card.querySelector('.pm-profile-frame').getBoundingClientRect(), css = getComputedStyle(card);
+    return { size: card.dataset.size, rows: css.gridRowStart, cols: css.gridColumnStart, bottom: Math.round(card.getBoundingClientRect().bottom), fw: Math.round(r.width), fh: Math.round(r.height), fit: getComputedStyle(card.querySelector('.pm-profile-photo')).objectFit };
+  });
+  const sBox = await profileBox();
+  assert.deepEqual([sBox.size, sBox.rows, sBox.cols, sBox.fit], ['S', 'span 2', 'span 1', 'cover'], 'S: one column, two rows');
+  const detailsShown = () => page.locator('#ow-grid > [data-widget="profile"] .pm-profile-more').isVisible();
+  assert.equal(await detailsShown(), false, 'S: no detail lines');
+  // M with a portrait photo (the owner's case): all of it, as wide as the card, at its own shape; the card is as tall
+  // as the photo needs, from the top of its three rows
+  await page.route(PORTRAIT, (route) => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="410" viewBox="0 0 300 410"><rect width="300" height="410" fill="#2b3350"/><circle cx="150" cy="150" r="80" fill="#8a93b8"/><rect y="380" width="300" height="30" fill="#c44"/></svg>' }));
+  const setPhoto = (src) => page.evaluate(async (s) => {
+    const img = document.querySelector('#ow-grid > [data-widget="profile"] .pm-profile-photo');
+    if (img.getAttribute('src') !== s) img.src = s;
+    await img.decode().catch(() => {});
+    return img.naturalWidth + 'x' + img.naturalHeight;
+  }, src);
+  const photoFit = () => page.evaluate(() => {
+    const card = document.querySelector('#ow-grid > [data-widget="profile"]'), frame = card.querySelector('.pm-profile-frame'), img = card.querySelector('.pm-profile-photo');
+    const f = frame.getBoundingClientRect(), p = img.getBoundingClientRect(), css = getComputedStyle(card);
+    return { size: card.dataset.size, rows: css.gridRowStart, cols: css.gridColumnStart, inner: frame.clientWidth, pw: Math.round(p.width), ph: Math.round(p.height), ratio: p.width / p.height, natural: img.naturalWidth / img.naturalHeight, photoBottom: Math.round(p.bottom), frameBottom: Math.round(f.bottom), bottom: Math.round(card.getBoundingClientRect().bottom) };
+  });
+  const checkM = async (where) => {
+    await sizeProfile('M');
+    assert.equal(await setPhoto(PORTRAIT), '300x410', 'the portrait test photo is loaded ' + where);
+    const m = await photoFit();
+    assert.deepEqual([m.size, m.rows, m.cols], ['M', 'span 3', 'span 1'], 'M: one column, three rows ' + where);
+    assert.ok(Math.abs(m.pw - m.inner) <= 2, 'M: the photo is as wide as the frame, no empty sides ' + where + ': ' + JSON.stringify(m));
+    assert.ok(Math.abs(m.ratio / m.natural - 1) <= 0.02, 'M: the photo keeps its own shape ' + where + ': ' + JSON.stringify(m));
+    assert.ok(m.photoBottom <= m.frameBottom + 1, 'M: the photo is not cut off at the bottom ' + where + ': ' + JSON.stringify(m));
+    assert.ok(m.bottom > sBox.bottom, 'M with a portrait photo is taller than S ' + where + ': ' + JSON.stringify(m));
+    // nothing is left empty: the card reaches the bottom of Battle Stats beside it, and the room under the photo holds
+    // the profile details down to the card's bottom, whole lines only
+    assert.ok(Math.abs(m.bottom - await bottomOf('#ow-grid > [data-widget="battle"]')) <= 2, 'M: the card ends with Battle Stats, nothing empty below it ' + where + ': ' + JSON.stringify(m));
+    const more = await page.evaluate(() => {
+      const card = document.querySelector('#ow-grid > [data-widget="profile"] .pm-profile'), panel = card.querySelector('.pm-profile-more');
+      if (!panel || !panel.offsetParent) return null;
+      const c = card.getBoundingClientRect(), css = getComputedStyle(card), p = panel.getBoundingClientRect();
+      const rows = [...panel.children].map((row) => row.getBoundingClientRect()).filter((r) => r.left < p.right - 1 && r.right > p.left + 1);
+      return { gap: Math.round(c.bottom - parseFloat(css.paddingBottom) - parseFloat(css.borderBottomWidth) - p.bottom), shown: rows.length, whole: rows.every((r) => r.top >= p.top - 1 && r.bottom <= p.bottom + 1), text: panel.textContent };
+    });
+    assert.ok(more, 'M: the profile details are shown under the photo ' + where);
+    assert.ok(Math.abs(more.gap) <= 2, 'M: the details fill the card to its bottom ' + where + ': ' + JSON.stringify(more));
+    assert.ok(more.shown >= 3 && more.whole, 'M: at least three detail lines, none cut in half ' + where + ': ' + JSON.stringify(more));
+    for (const text of ['Average Hustler', 'Example', 'Member']) assert.ok(more.text.includes(text), 'M details show ' + text + ' ' + where);
+    assert.equal(await page.locator('#ow-grid > [data-widget="profile"] u').count(), 0, 'Torn text in the details is never markup');
+    return m;
+  };
+  await checkM('at 1440');
+  await shot(page, 'overview-profile-M-1440.png');
+  await setPhoto(PHOTO);
+  await sizeProfile('L');
+  const lBox = await profileBox();
+  assert.deepEqual([lBox.size, lBox.rows, lBox.cols, lBox.fit], ['L', 'span 3', 'span 1', 'cover'], 'L: one column, three rows');
+  assert.ok(Math.abs(lBox.bottom - await bottomOf('#ow-grid > [data-widget="battle"]')) <= 2, 'L ends with Battle Stats');
+  assert.equal(await detailsShown(), false, 'L: the photo fills the card, no detail lines');
+  await shot(page, 'overview-profile-L-1440.png');
+  // a wide card (the owner's window)
+  await page.setViewportSize({ width: 1700, height: 1050 });
+  await checkM('at 1700');
+  await shot(page, 'overview-profile-M-1700.png');
+  await setPhoto(PHOTO);
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await sizeProfile('S');
+  await page.locator('#ow-edit').click();
+  assert.deepEqual(await page.locator('#ow-grid > [data-widget="profile"] .ow-sizes button').allTextContents(), ['S', 'M', 'L'], 'a member gets S/M/L on the profile in edit mode');
+  assert.equal(await page.locator('#ow-grid > [data-widget="profile"] .ow-sizes [data-ow-size="S"]').getAttribute('aria-pressed'), 'true');
+  await page.locator('#ow-done').click();
   assert.equal(await page.evaluate(() => LRXOverview.owner()), MEMBER);
   assert.equal(posts.length, 0, 'loading never saves');
 
   // fixed IDs: app.js renders into these whether or not their widget is shown
-  for (const selector of ['#t-drug', '#t-edu', '#t-day', '[data-timer="drug"]', '[data-timer="edu"]', '[data-timer="day"]', '#bars', '#mini-row', '#status-chip', '#xan-chip', '#bs-totals', '#bs-table', '#ov-company']) {
+  for (const selector of ['#t-drug', '#t-edu', '#t-day', '#ls-live', '#ls-fresh', '#bars', '#mini-row', '#status-chip', '#xan-chip', '#bs-totals', '#bs-table', '#ov-company']) {
     assert.equal(await page.locator(selector).count(), 1, 'fixed ID ' + selector);
+  }
+  for (const key of ['drug', 'edu', 'day']) {
+    assert.equal(await page.locator(`#t-${key} [data-timer="${key}"]`).count(), 1, 'the ' + key + ' card has its countdown');
+    assert.equal(await page.locator(`#ow-grid > [data-widget="timers"] [data-timer="${key}"]`).count(), 1, 'the strip has the ' + key + ' countdown');
+    assert.equal(await page.locator(`[data-timer="${key}"]`).count(), 2, 'one ' + key + ' countdown in the card and one in the strip');
   }
   assert.equal(await page.locator('#ow-grid > [data-widget="bars"]').locator('#status-chip, #bars').count(), 2, 'the bars widget holds the status chip and the bars');
   assert.equal(await page.locator('#ow-grid > [data-widget="chips"] #mini-row').count(), 1, 'the status chips are their own widget');
+  // Status: one row per value, the label on the left and the value on the right, the state by colour (a running
+  // cooldown is amber, one that is over says Ready in green). At S the rows are one column and fill the card, which
+  // ends with Bars, so nothing is left empty under them.
+  const statusRows = () => page.evaluate(() => {
+    const card = document.querySelector('#mini-row').closest('.card'), list = card.querySelector('#mini-row'), c = card.getBoundingClientRect(), css = getComputedStyle(card);
+    const rows = [...list.querySelectorAll('.st-row')].map((r) => {
+      const b = r.getBoundingClientRect(), v = r.querySelector('.st-v');
+      return { k: r.querySelector('.st-k').textContent.trim(), v: v.textContent.trim(), state: [...r.classList].filter((x) => x !== 'st-row').join(' '), left: Math.round(b.left), width: Math.round(b.width), bottom: Math.round(b.bottom), fits: v.scrollWidth <= v.clientWidth + 1 };
+    });
+    return { rows, listWidth: Math.round(list.getBoundingClientRect().width), gap: rows.length ? Math.round(c.bottom - parseFloat(css.paddingBottom) - parseFloat(css.borderBottomWidth) - Math.max(...rows.map((r) => r.bottom))) : null };
+  });
+  const status = await statusRows();
+  assert.deepEqual(status.rows.map((r) => r.k), ['Xanax Today', 'Total Xanax', 'Refills', 'Booster CD', 'Medical CD', 'Bank'], 'Status: one row per value ' + JSON.stringify(status));
+  const statusOf = (k) => status.rows.find((r) => r.k === k);
+  assert.deepEqual([statusOf('Xanax Today').v, statusOf('Total Xanax').v, statusOf('Refills').v], ['1', '812', '40']);
+  assert.deepEqual([statusOf('Booster CD').v, statusOf('Booster CD').state], ['Ready', 'st-ok'], 'a cooldown that is over says Ready');
+  assert.match(statusOf('Medical CD').v, /^00:\d\d:\d\d$/); assert.equal(statusOf('Medical CD').state, 'st-warn', 'a running cooldown is amber');
+  assert.match(statusOf('Bank').v, /^\$2\.50B · 3d/);
+  assert.ok(status.rows.every((r) => r.left === status.rows[0].left && Math.abs(r.width - status.listWidth) <= 1), 'S: the rows are one column as wide as the card ' + JSON.stringify(status));
+  assert.ok(status.rows.every((r) => r.fits), 'S: every value fits on its row ' + JSON.stringify(status));
+  assert.ok(Math.abs(status.gap) <= 2, 'S: the rows fill the card to its bottom ' + JSON.stringify(status));
+  assert.ok(Math.abs(await bottomOf('#ow-grid > [data-widget="chips"]') - await bottomOf('#ow-grid > [data-widget="bars"]')) <= 2, 'Status ends with Bars');
+
+  // the live timer strip: in the first row beside the profile, three countdowns side by side under a LIVE header. They
+  // tick every second (the hidden single cards are painted too) and the header says how old the overview is.
+  const ls = await stripOf(page);
+  assert.ok(Math.abs(ls.top - ls.profile.top) <= 2 && ls.left > ls.profile.right, 'the strip is in the first row beside the profile ' + JSON.stringify(ls));
+  assert.deepEqual(ls.segs.map((x) => x.key), ['drug', 'edu', 'day']);
+  assert.equal(new Set(ls.segs.map((x) => x.top)).size, 1, 'the three segments share one row ' + JSON.stringify(ls.segs));
+  const segOf = (k) => ls.segs.find((x) => x.key === k);
+  assert.match(segOf('drug').value, /^\d\d:\d\d:\d\d$/);
+  assert.match(segOf('edu').value, /^12d \d\d:\d\d:\d\d$/);
+  assert.match(segOf('day').value, /^\d\d:\d\d:\d\d$/);
+  assert.ok(ls.segs.every((x) => x.lines === 1 && !x.clipped), 'each countdown is one whole line ' + JSON.stringify(ls.segs));
+  assert.ok(ls.segs.every((x) => x.bar > 0 && x.bar <= 100 && !x.done), 'a running timer has a part-full bar ' + JSON.stringify(ls.segs));
+  const eduCopies = await page.evaluate(() => [...document.querySelectorAll('[data-timer="edu"]')].map((el) => el.textContent));
+  assert.ok(eduCopies.length === 2 && eduCopies.every((t) => /^12d /.test(t)), 'the hidden education card is painted too ' + JSON.stringify(eduCopies));
+  assert.deepEqual([ls.live, ls.label], ['is-live', 'LIVE'], 'a fresh overview reads LIVE');
+  assert.match(ls.fresh, /^updated \d+ s ago$/);
+  // The app's one-second setInterval(tick) starts with the signed-in app (startApp), which this fixture skips: the test
+  // runs tick() itself, as that interval does.
+  await page.waitForTimeout(1100);
+  await page.evaluate(() => tick());
+  assert.notEqual((await stripOf(page)).segs[2].value, segOf('day').value, 'a second later the countdowns have moved on');
+  // three refreshes missed: the header turns amber and says how old the data is; fresh data reads LIVE again
+  const freshAt = await page.evaluate(() => { const at = state.overviewAt; state.overviewAt = Date.now() - 200_000; tick(); return at; });
+  const stale = await stripOf(page);
+  assert.deepEqual([stale.live, stale.label], ['is-stale', 'DELAYED'], 'old data reads DELAYED');
+  assert.match(stale.fresh, /^last data 3 min ago$/);
+  await page.evaluate((at) => { state.overviewAt = at; tick(); }, freshAt);
+  assert.deepEqual((await stripOf(page)).label, 'LIVE', 'fresh data reads LIVE again');
+  // the pulse and the moving bars follow the Animations switch (off in this fixture) and the system's reduced motion
+  assert.deepEqual([ls.dot, ls.bars], ['none', '0s'], 'Animations off: the dot does not pulse and the bars do not glide');
+  await setSwitch(page, 'app.animations', true);
+  const moving = await stripOf(page);
+  assert.notEqual(moving.dot, 'none', 'Animations on: the LIVE dot pulses');
+  assert.equal(moving.bars, '1s', 'Animations on: the bars glide for a second');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const reduced = await stripOf(page);
+  assert.equal(reduced.dot, 'none', 'reduced motion: no pulse');
+  assert.ok(parseFloat(reduced.bars) <= 0.0001, 'reduced motion: no glide (the app-wide .01ms) ' + reduced.bars);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await setSwitch(page, 'app.animations', false);
+  await shot(page, 'overview-live-strip-1440.png');
 
   // saved layout
   assert.equal(await saveDirect(page, MEMBER, [{ id: 'battle', size: 'M' }, { id: 'drug', size: 'S' }]), 200);
@@ -304,8 +480,12 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   await page.setViewportSize({ width: 1440, height: 1050 });
   await page.evaluate(() => setFeature('app.overviewLayout', false));
   assert.equal(await page.locator('[data-widget="bars"] #mini-row').count(), 1, 'classic: the chips are back in the bars card');
+  const classicStatus = await statusRows();
+  assert.equal(classicStatus.rows.length, 6, 'classic: the same Status rows under the bars');
+  assert.ok(classicStatus.rows.every((r) => r.fits), 'classic: every value fits on its row ' + JSON.stringify(classicStatus));
   assert.equal(await page.locator('#ow-grid > [data-widget="profile"]').isVisible(), false, 'classic: no profile card');
   assert.equal(await page.locator('#ow-grid > [data-widget="chips"]').isVisible(), false);
+  assert.equal(await page.locator('#ow-grid > [data-widget="timers"]').isVisible(), false, 'classic: the three timer cards, no live strip');
   assert.equal(await page.locator('#ow-grid').evaluate((el) => el.classList.contains('ow-classic')), true);
   const tops = await page.evaluate(() => ['#t-drug', '#t-edu', '#t-day'].map((s) => Math.round(document.querySelector(s).getBoundingClientRect().top)));
   assert.equal(new Set(tops).size, 1, 'classic: the three timers share one row ' + JSON.stringify(tops));
@@ -314,15 +494,21 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   assert.equal(await page.locator('[data-widget="chips"] #mini-row').count(), 1, 'the chips card is restored');
   await waitForIds(page, DEFAULT_IDS);
 
-  // widths; at 4 columns the multi-day education countdown stays on one line beside its ring
+  // widths; at 4 columns the multi-day education countdown stays on one line in the strip
   for (const [width, columns] of [[1440, 4], [1366, 4], [1280, 4], [1100, 2], [760, 2], [640, 2], [600, 1]]) {
     await page.setViewportSize({ width, height: 900 });
     const m = await overflow(page);
     assert.ok(m.scroll <= m.width, 'no sideways scroll at ' + width + ': ' + JSON.stringify(m));
     assert.equal(await page.locator('#ow-grid').evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length), columns, 'columns at ' + width);
+    // the profile fills the rows beside it: Bars at 4 columns, the live strip at 2 columns (no hole beside it)
+    if (columns > 1) {
+      const besideId = columns === 4 ? 'bars' : 'timers';
+      const ends = await page.evaluate((id) => ['profile', id].map((w) => Math.round(document.querySelector(`#ow-grid > [data-widget="${w}"]`).getBoundingClientRect().bottom)), besideId);
+      assert.ok(Math.abs(ends[0] - ends[1]) <= 2, `the profile ends with ${besideId} at ${width}: ${ends}`);
+    }
     if (columns === 4) {
       const edu = await page.evaluate(() => {
-        const v = document.querySelector('[data-timer="edu"]'), text = document.createRange();
+        const v = document.querySelector('#ow-grid > [data-widget="timers"] [data-timer="edu"]'), text = document.createRange();
         text.selectNodeContents(v);
         return { text: v.textContent, lines: text.getClientRects().length, clipped: v.scrollWidth > v.clientWidth, size: getComputedStyle(v).fontSize };
       });
@@ -330,8 +516,34 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
       assert.equal(edu.lines, 1, 'the education countdown is one line at ' + width + ': ' + JSON.stringify(edu));
       assert.equal(edu.clipped, false, 'the education countdown is not cut off at ' + width + ': ' + JSON.stringify(edu));
     }
+    // two columns: the strip is 1 column and 3 rows beside the profile, its segments stacked, each countdown whole
+    if (columns === 2) {
+      const narrow = await stripOf(page);
+      assert.deepEqual([narrow.cols, narrow.rows], ['span 1', 'span 3'], 'the strip is 1 column and 3 rows at ' + width);
+      assert.ok(narrow.segs.every((x, i) => x.left === narrow.segs[0].left && (i === 0 || x.top > narrow.segs[i - 1].top)), 'the segments are stacked at ' + width + ': ' + JSON.stringify(narrow.segs));
+      assert.ok(narrow.segs.every((x) => x.lines === 1 && !x.clipped), 'each countdown is one whole line at ' + width + ': ' + JSON.stringify(narrow.segs));
+    }
     await shot(page, 'overview-' + width + '.png');
   }
+
+  // two columns, the strip not right beside the profile (here without one): it spans both columns with its segments
+  // side by side, so no column is left empty beside it. Right before the profile it is 1 x 3 beside it.
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await showSet(page, oneLayout(['timers', 'L'], ['bars', 'M'], ['chips', 'S'], ['battle', 'L']));
+  await waitForIds(page, ['timers', 'bars', 'chips', 'battle']);
+  const alone = await page.evaluate(() => {
+    const grid = document.querySelector('#ow-grid').getBoundingClientRect(), card = document.querySelector('#ow-grid > [data-widget="timers"]'), css = getComputedStyle(card);
+    return { cols: css.gridColumnStart, rows: css.gridRowStart, width: Math.round(card.getBoundingClientRect().width), grid: Math.round(grid.width), tops: [...card.querySelectorAll('.ls-seg')].map((x) => Math.round(x.getBoundingClientRect().top)) };
+  });
+  assert.ok(alone.cols === 'span 2' && alone.rows !== 'span 3' && Math.abs(alone.width - alone.grid) <= 2, 'without the profile beside it the strip spans both columns ' + JSON.stringify(alone));
+  assert.equal(new Set(alone.tops).size, 1, 'its segments are side by side ' + JSON.stringify(alone));
+  await showSet(page, oneLayout(['timers', 'L'], ['profile', 'S'], ['bars', 'M'], ['battle', 'L']));
+  await waitForIds(page, ['timers', 'profile', 'bars', 'battle']);
+  const first = await stripOf(page);
+  assert.deepEqual([first.cols, first.rows], ['span 1', 'span 3'], 'right before the profile the strip is 1 x 3 ' + JSON.stringify(first));
+  assert.ok(Math.abs(first.bottom - first.profile.bottom) <= 2 && Math.abs(first.top - first.profile.top) <= 2, 'beside the profile, ending with it ' + JSON.stringify(first));
+  await page.evaluate(() => LRXOverview.commit(LRXOverviewLayout.defaultSet(), { save: false }));
+  await waitForIds(page, DEFAULT_IDS);
 
   // themes
   await page.setViewportSize({ width: 1440, height: 1050 });
@@ -353,6 +565,9 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   await page.locator('[data-lang="tr"]').click();
   await configLoaded(page);
   assert.equal((await page.locator('#ow-grid > [data-widget="chips"] h3').textContent()).trim(), 'Durum');
+  await page.evaluate(() => tick());
+  assert.equal(await page.locator('#ls-live [data-ls-label]').textContent(), 'CANLI');
+  assert.match(await page.locator('#ls-fresh').textContent(), /^\d+ sn önce güncellendi$/);
   await page.evaluate(() => LRXOverview.commit({ v: 1, active: 0, layouts: [{ name: '', widgets: [] }] }, { save: false }));
   assert.equal((await page.locator('#ow-grid .ow-empty').textContent()).trim(), "Bu düzende widget yok. Eklemek için Düzenle'ye bas.");
   await page.locator('[data-lang="en"]').click();
@@ -374,7 +589,9 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   assert.equal(await tileOf(page, 'travel').getAttribute('data-size'), 'M');
   await shot(page, 'overview-member-1440.png');
   await tileOf(page, 'networth').locator('.ow-t').click();
-  assert.equal(await page.evaluate(() => state.view), 'networth', 'a click on the tile opens its page');
+  // Networth is a tab of the Finance page now: the tile opens Finance on that tab.
+  assert.equal(await page.evaluate(() => state.view), 'finance', 'a click on the tile opens its page');
+  await page.waitForSelector('.fin-tab[data-fin-tab="wealth"][aria-selected="true"]', { timeout: 5000 });
   await page.evaluate(() => showView('overview'));
 
   // member: S/M/L chips resize and a second layout is saved and switched
@@ -415,6 +632,8 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   assert.deepEqual(posts[0].layouts.layouts.map((l) => l.widgets), [[{ id: 'networth', size: 'M' }, { id: 'travel', size: 'L' }], [{ id: 'networth', size: 'M' }, { id: 'travel', size: 'S' }]]);
   const layoutSelect = page.locator('#ow-layout');
   assert.deepEqual(await layoutSelect.locator('option').allTextContents(), ['Main', 'War']);
+  assert.equal(await layoutSelect.evaluate((el) => !!el.closest('.topbar .top-actions')), true, 'the layout picker sits beside Edit in the page header');
+  await page.locator('.topbar').screenshot({ path: path.join(output, 'overview-header-layouts.png') });
   const switched = layoutReply(page, 'POST');
   await layoutSelect.selectOption('0');
   assert.equal((await switched).status(), 200);
@@ -450,13 +669,14 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   for (const [id] of ALL) if (id !== 'orders') await tileReady(page, id);
   const expected = {
     gym: ['Speed +12,000 · Strength +10,000', 'Last 7 days'], job: ['42', '1 position fits'], crimes: ['1 shop without security', 'Burglary', "Sally's Sweet Shop"],
-    jail: ['3 / 9', '512'], awards: ['Bar Breaker', '92%', 'Halfway'], oc: ['3/4', 'Mob Mentality', 'Looter'],
+    jail: ['3 / 9', '512'], awards: ['Bar Breaker', '92%', 'Commit 80 more Theft offenses.', 'Protege', '275,340 players have it'], oc: ['3/4', 'Mob Mentality', 'Looter'],
     war: ['1,500 – 1,200', '2 suitable targets', MARK, 'Alpha'], events: ['Easter Egg Hunt', 'starts in 3d'], orders: ['Company mode only'],
   };
   for (const [id, parts] of Object.entries(expected)) {
     const text = await tileText(page, id);
     for (const part of parts) assert.ok(text.includes(part), `${id}: "${part}" in "${text}"`);
   }
+  assert.ok(!(await tileText(page, 'awards')).includes('Halfway'), 'the Merit tile shows easy wins, not a long grind with a higher %');
   assert.match(await tileText(page, 'oc'), /ready in (2h 0m|1h 5\dm)/, 'the OC countdown (the fixture is two hours ahead of the run start)');
   assert.equal(await page.locator('#ow-grid > .ow-premium :is(b,img,i)').count(), 0, 'Torn data never becomes markup');
   await page.evaluate(() => {
@@ -599,6 +819,7 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
     assert.equal(await fp.locator(`#ow-grid > [data-widget="${id}"]`).evaluate((el) => getComputedStyle(el).outlineStyle), 'dashed', 'a dashed frame on ' + id);
   }
   assert.equal(await handle('battle').getAttribute('aria-label'), 'Move: Battle stats');
+  assert.equal(await handle('timers').getAttribute('aria-label'), 'Move: Live timers');
   assert.equal(await removeBtn('battle').getAttribute('aria-label'), 'Remove');
   assert.equal(await fp.locator('#ow-grid .ow-sizes:visible').count(), 0, 'a free player has no size buttons');
   for (const sel of ['#ow-layout', '#ow-name', '#ow-duplicate', '#ow-delete', '#ow-edit']) assert.equal(await fp.locator(sel).isVisible(), false, sel + ' is not shown');
@@ -606,6 +827,7 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   await fp.locator('[data-lang="tr"]').click();
   assert.equal((await fp.locator('#ow-done').textContent()).trim(), 'Bitti', 'a language change relabels the controls');
   assert.equal(await handle('battle').getAttribute('aria-label'), 'Taşı: Savaş gücü');
+  assert.equal(await handle('timers').getAttribute('aria-label'), 'Taşı: Canlı sayaçlar');
   assert.equal(await removeBtn('battle').getAttribute('aria-label'), 'Kaldır');
   await fp.locator('[data-lang="en"]').click();
   assert.equal((await fp.locator('#ow-add').textContent()).trim(), '+ Add widget');
@@ -620,6 +842,16 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   assert.deepEqual(await fp.evaluate(() => window.qaOpened), [], 'edit mode: a drag that did not start on the handle is no click on the profile card');
   assert.deepEqual(await fp.evaluate(() => [state.view, LRXOverviewEdit.active()]), ['overview', true], 'edit mode stays on');
   await fp.evaluate(() => { window.openInTab = window.qaOpenInTab; });
+
+  // The move, drag and add tests below use the three single timer cards: a player who put them back after the strip
+  // came keeps them (a v 2 set is never moved to the strip again).
+  await fp.evaluate(() => LRXOverviewEdit.stop());
+  assert.equal(freePosts.length, 0, 'leaving edit mode with no change saves nothing');
+  const cards = ['profile:S', 'drug:S', 'edu:S', 'day:S', 'bars:M', 'chips:S', 'battle:L', 'company:W'].map((w) => ({ id: w.split(':')[0], size: w.split(':')[1] }));
+  await showSet(fp, { v: 2, active: 0, layouts: [{ name: '', widgets: cards }] });
+  await waitForIds(fp, ['profile', 'drug', 'edu', 'day', 'bars', 'chips', 'battle']);
+  await fp.evaluate(() => LRXOverviewEdit.start());
+  assert.equal(await editing(), true);
 
   // × removes chips and #mini-row stays in the DOM
   await removeBtn('chips').click();
@@ -650,7 +882,7 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   const drawer = fp.locator('#ow-drawer');
   await drawer.waitFor({ state: 'visible' });
   assert.equal(await fp.locator('#ow-add').getAttribute('aria-expanded'), 'true');
-  assert.deepEqual(await drawer.locator('[data-add]:not([disabled])').evaluateAll((els) => els.map((el) => el.dataset.add)), ['day', 'chips'], 'the free widgets not in the layout');
+  assert.deepEqual(await drawer.locator('[data-add]:not([disabled])').evaluateAll((els) => els.map((el) => el.dataset.add)), ['day', 'timers', 'chips'], 'the free widgets not in the layout');
   const locked = drawer.locator('[data-add][disabled]');
   assert.equal(await locked.count(), 11, 'every Premium widget is listed');
   assert.equal(await locked.evaluateAll((els) => els.every((el) => el.textContent.includes('🔒') && el.textContent.includes('Premium'))), true, 'Premium items carry a lock and the note');
@@ -787,13 +1019,13 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   await fp.evaluate(() => { showView('overview'); window.scrollTo({ top: 0, behavior: 'instant' }); LRXOverviewEdit.start(); });
   assert.equal(await editing(), true);
   assert.equal(await fp.locator('#ow-grid').evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length), 1);
-  const eduOne = fp.locator('#ow-grid > [data-widget="edu"]'), eduOneBox = await eduOne.boundingBox();
-  await handle('drug').dragTo(eduOne, { targetPosition: { x: eduOneBox.width * 0.2, y: eduOneBox.height * 0.8 } });
-  await waitForIds(fp, ['profile', 'edu', 'drug', 'day', 'bars', 'chips', 'battle']);
+  const barsOne = fp.locator('#ow-grid > [data-widget="bars"]'), barsOneBox = await barsOne.boundingBox();
+  await handle('timers').dragTo(barsOne, { targetPosition: { x: barsOneBox.width * 0.2, y: barsOneBox.height * 0.8 } });
+  await waitForIds(fp, ['profile', 'bars', 'timers', 'chips', 'battle']);
   const oneSave = layoutReply(fp, 'POST');
   await fp.locator('#ow-done').click();
   await oneSave;
-  assert.deepEqual(savedIds(freePosts[5]), ['profile', 'edu', 'drug', 'day', 'bars', 'chips', 'battle', 'company']);
+  assert.deepEqual(savedIds(freePosts[5]), ['profile', 'bars', 'timers', 'chips', 'battle', 'company']);
   assert.deepEqual(free.errors, []);
 
   // lapsed: 3000002 becomes a member, saves a second layout with sizes, lapses and renews.
@@ -850,7 +1082,7 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   assert.deepEqual(lapse.errors, []);
   assert.deepEqual(forbidden, [], 'never: POST /api/stock-order, /api/faction/report, /api/targets');
 
-  console.log(JSON.stringify({ ok: true, assertions: ['default layout with the tall profile first', 'company hidden by company mode, never by the grid', 'profile name as text and Torn profile link', 'fixed IDs stay in the DOM', 'saved layout after reload', 'corrupt cached copy and failed request fall back quietly', 'a failed request is asked again; an unconfirmed save toasts and sends nothing', 'a default-screen change confirmed late never replaces the saved layouts', 'free cards before the layout reply', 'another player sees the default layout; a save toasts and sends nothing', 'commit saves once and caches; 409 reloads; errors toast', 'empty layout hint', 'classic switch', 'widths 1440/1366/1280/1100/760/640/600', 'a multi-day education countdown is one line at 1280/1366/1440', 'five themes', 'TR/EN', 'member: networth and travel tiles render escaped data', 'a tile click opens its page', 'edit mode: a click, Enter or a drag attempt on a tile body opens nothing', 'member: S/M/L chips resize and a second layout is saved and switched', 'member: a layout name with markup is shown as text', 'every Premium widget renders; orders without company mode shows the note', 'off: no Premium group, tiles read Not available; Premium tiles hide in classic', 'Premium page Open goes to the Overview edit mode', 'fetch policy: none on another view, 1 within 59 s, 2 after 61 s; a failed attempt counts', 'page off: the Settings note and no request', 'unknown: the checking placeholder and no widget request', 'never requested: POST /api/stock-order, /api/faction/report, /api/targets', 'lapsed: default sizes and locked tiles, saved layout kept; renewal restores it','the profile card opens the Torn profile; in edit mode a click or a drag attempt on it opens no tab', 'edit mode shows a handle and × for each shown widget', '× removes chips and #mini-row stays in the DOM', 'keyboard: ArrowLeft twice on battle moves it two places; Delete on day removes it', 'drag drug onto edu moves drug after edu', 'add list: chips comes back last; Premium items are disabled with a lock', 'no Edit before an overview player is known', 'Done saves: after a reload the order is the same', 'a Done with no change sends nothing', 'leaving the Overview while editing saves and closes edit mode', 'hiding the window or switching the layout off saves and closes edit mode', 'lrx-premium-reset closes edit mode without saving', 'two-step Reset to default', '640 px with the drawer open: no sideways scrolling; the drawer is below the grid', 'edit mode in five themes at 1440 and 640', 'one column: drop by the vertical midpoint', 'no page errors or CSP reports'], screenshots: output }));
+  console.log(JSON.stringify({ ok: true, assertions: ['default layout with the profile first, ending with Bars', 'live timer strip beside the profile: three ticking countdowns under a LIVE header that turns DELAYED, none before data, stacked at 2 columns', 'Edit in the page header, on the Overview only; no toolbar row outside edit mode', 'company hidden by company mode, never by the grid', 'profile name as text and Torn profile link', 'fixed IDs stay in the DOM', 'saved layout after reload', 'corrupt cached copy and failed request fall back quietly', 'a failed request is asked again; an unconfirmed save toasts and sends nothing', 'a default-screen change confirmed late never replaces the saved layouts', 'free cards before the layout reply', 'another player sees the default layout; a save toasts and sends nothing', 'commit saves once and caches; 409 reloads; errors toast', 'empty layout hint', 'classic switch', 'widths 1440/1366/1280/1100/760/640/600', 'a multi-day education countdown is one line at 1280/1366/1440', 'five themes', 'TR/EN', 'member: networth and travel tiles render escaped data', 'a tile click opens its page', 'edit mode: a click, Enter or a drag attempt on a tile body opens nothing', 'member: S/M/L chips resize and a second layout is saved and switched', 'member: a layout name with markup is shown as text', 'every Premium widget renders; orders without company mode shows the note', 'off: no Premium group, tiles read Not available; Premium tiles hide in classic', 'Premium page Open goes to the Overview edit mode', 'fetch policy: none on another view, 1 within 59 s, 2 after 61 s; a failed attempt counts', 'page off: the Settings note and no request', 'unknown: the checking placeholder and no widget request', 'never requested: POST /api/stock-order, /api/faction/report, /api/targets', 'lapsed: default sizes and locked tiles, saved layout kept; renewal restores it','the profile card opens the Torn profile; in edit mode a click or a drag attempt on it opens no tab', 'edit mode shows a handle and × for each shown widget', '× removes chips and #mini-row stays in the DOM', 'keyboard: ArrowLeft twice on battle moves it two places; Delete on day removes it', 'drag drug onto edu moves drug after edu', 'add list: chips comes back last; Premium items are disabled with a lock', 'no Edit before an overview player is known', 'Done saves: after a reload the order is the same', 'a Done with no change sends nothing', 'leaving the Overview while editing saves and closes edit mode', 'hiding the window or switching the layout off saves and closes edit mode', 'lrx-premium-reset closes edit mode without saving', 'two-step Reset to default', '640 px with the drawer open: no sideways scrolling; the drawer is below the grid', 'edit mode in five themes at 1440 and 640', 'one column: drop by the vertical midpoint', 'no page errors or CSP reports'], screenshots: output }));
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => {
   await browser?.close();
   for (const child of children) { child.kill(); await new Promise((r) => child.exitCode !== null ? r() : child.once('exit', r)); }

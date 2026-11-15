@@ -37,9 +37,9 @@ barrier against copying; this document states permissions, not copy protection.
 Third-party software, fonts, scripts and assets retain their own licenses.
 This license does not restrict any rights granted by those licenses and does
 not apply to code that must remain under a copyleft license. In particular,
-FF Scouter and its covered wrappers retain GPL-3.0 permissions; TornW3B,
-React/React DOM and other MIT components retain MIT permissions; Mona Sans
-retains the SIL Open Font License. TornTools retains its upstream license.
+FF Scouter, OpenMarket and their covered wrappers retain GPL-3.0 permissions;
+TornW3B, React/React DOM and other MIT components retain MIT permissions;
+Mona Sans retains the SIL Open Font License. TornTools retains its upstream license.
 See userscripts/NOTICE.txt, userscripts/GPL-3.0.txt and website/OFL.txt.
 
 5. No warranty

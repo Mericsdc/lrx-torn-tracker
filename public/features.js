@@ -2,7 +2,7 @@
    LRX extra features
    - Ayarlar → Özellikler: her özelliği aç / kapat
    - Masaüstü bildirimleri
-   - İş Asistanı, Gym & Statlar, Networth, Seyahat Kârı sayfaları
+   - İş Asistanı, Gym & Statlar, Seyahat Kârı sayfaları (Networth: Finance page, finance.js)
    Bu dosya app.js'ten sonra yüklenir ve onun yardımcılarını kullanır.
    ========================================================= */
 
@@ -10,7 +10,8 @@
 const FEATURE_DEFS = [
   { group: 'pages', key: 'page.job', def: true, tr: ['İş Asistanı', 'Uygun şirket pozisyonları · bir işin varken gizlenir'], en: ['Job Assistant', 'Positions that fit your working stats · hidden while you have a job'] },
   { group: 'pages', key: 'page.gym', def: true, tr: ['Gym & Statlar', 'Battle stat geçmişi ve günlük artış'], en: ['Gym & Stats', 'Battle stat history and daily gains'] },
-  { group: 'pages', key: 'page.networth', def: true, tr: ['Networth', 'Servet dökümü ve günlük değişim'], en: ['Networth', 'Wealth breakdown and daily change'] },
+  { group: 'pages', key: 'page.networth', def: true, tr: ['Finans: Networth sekmesi', 'Servet dağılımı, dönem değişimi ve geçmiş'], en: ['Finance: Networth tab', 'Wealth allocation, change over a period and history'] },
+  { group: 'pages', parent: 'page.networth', key: 'finance.milestone', def: true, tr: ['Sonraki networth eşiği', "Torn'un networth rank eşiklerine ilerleme ve tahmini süre"], en: ['Next networth milestone', "Progress and an estimated time to Torn's networth rank triggers"] },
   { group: 'pages', key: 'page.travel', def: true, tr: ['Seyahat Kârı', "Kâr, stok ve restock zamanları (YATA + Prometheus) · seviye 15'ten itibaren görünür"], en: ['Travel Profit', 'Profit, stock and restock times (YATA + Prometheus) · shown from level 15'] },
   { group: 'pages', key: 'page.war', def: true, tr: ['Savaş Hedefleri', 'Fair Fight hedef önerileri'], en: ['War Targets', 'Fair Fight target suggestions'] },
   { group: 'pages', parent: 'page.war', key: 'war.groups', def: true, tr: ['Hedef grupları', 'Rakipleri gruplara ayır ve gruba göre filtrele · bu bilgisayarda saklanır'], en: ['Target groups', 'Sort enemies into groups and filter by group · saved on this computer'] },
@@ -21,12 +22,13 @@ const FEATURE_DEFS = [
   { group: 'pages', parent: 'page.crimes', key: 'crimes.jail', def: true, tr: ["Jail bust takibi", "Son 24 / 72 saatteki bustlar ve tahmini ceza puanı"], en: ["Jail bust tracker", "Busts in the last 24 / 72 hours and estimated penalty score"] },
   { group: 'pages', key: 'page.faction', def: true, tr: ['Faction', "Kendi OC durumun · OC'ye girmeyenler, geciken OC'ler ve haftalık üye raporu (yalnızca lider, eş lider ve Organised Crimes yetkili pozisyonlar)"], en: ['Faction', 'Your OC status · members not in an OC, delayed OCs and the weekly member report (leader, co-leader and positions with the Organised Crimes permission only)'] },
   { group: 'pages', key: 'page.awards', def: true, tr: ['Merit Takibi', 'Eksik honor / medal\'lar ve ilerlemen'], en: ['Merit Tracker', 'Missing honors / medals and your progress'] },
-  { group: 'pages', key: 'page.tools', def: true, tr: ['Araçlar', 'Alış fiyatı koruması, etkinlik takvimi ve rehberi'], en: ['Tools', 'Purchase price protection, event calendar and guide'] },
+  { group: 'pages', key: 'page.tools', def: true, tr: ['Araçlar', 'Alış fiyatı koruması, etkinlik takvimi ve rehberi, happy jump kartı'], en: ['Tools', 'Purchase price protection, event calendar and guide, happy jump card'] },
   { group: 'pages', parent: 'page.tools', key: 'tools.events', def: true, tr: ["Etkinlik takvimi", "Yaklaşan Torn etkinlikleri ve geri sayım"], en: ["Event calendar", "Upcoming Torn events with countdowns"] },
   { group: 'pages', parent: 'page.tools', key: 'tools.purchases', def: true, tr: ["Alış fiyatı kayıtları", "Alış fiyatlarını kaydet ve listele (Torn'daki uyarı için gerekir)"], en: ["Purchase price records", "Record and list purchase prices (needed for the warning in Torn)"] },
+  { group: 'pages', parent: 'page.tools', key: 'tools.happyJump', def: true, tr: ['Happy jump kartı', "Canlı hazırlık listesi ve adım adım happy jump rehberi · seviye 15'ten itibaren (altında Başlangıç Rehberi'nde)"], en: ['Happy jump card', 'Live readiness checklist and a step-by-step happy jump guide · from level 15 (below it, in the Beginner Guide)'] },
   { group: 'pages', parent: 'page.tools', key: 'tools.helpers', def: true, tr: ["Torn yardımcıları listesi", "Torn sayfa yardımcılarının ne yaptığı ve durumu"], en: ["Torn helpers list", "What each Torn page helper does and whether it is on"] },
   { group: 'pages', key: 'page.levelling', def: true, tr: ['Seviye 15 altı', "Baldr's Levelling Targets ve Başlangıç Rehberi · yalnızca seviye 15'in altındayken görünür"], en: ['Under level 15', "Baldr's Levelling Targets and Beginner Guide · shown only below level 15"] },
-  { group: 'pages', key: 'page.company', def: true, tr: ['Şirket sayfaları', 'Stok, rapor, çalışanlar, gelir (yalnızca direktör)'], en: ['Company pages', 'Stock, report, employees, income (directors only)'] },
+  { group: 'pages', key: 'page.company', def: true, tr: ['Şirket sayfaları', 'Stok, rapor, çalışanlar ve Finans şirket sekmesi (yalnızca direktör)'], en: ['Company pages', 'Stock, report, employees and the Finance company tab (directors only)'] },
 
   { group: 'notify', key: 'notify', def: true, master: true, tr: ['Masaüstü bildirimleri', 'Tümünü aç / kapat'], en: ['Desktop notifications', 'Turn all on / off'] },
   { group: 'notify', key: 'notify.energy', def: true, tr: ['Enerji doldu', ''], en: ['Energy full', ''] },
@@ -49,12 +51,15 @@ const FEATURE_DEFS = [
   { group: 'torn', key: 'torn.liveFight', def: true, tr: ['Canlı savaş analizi', 'Saldırı ekranında iki tarafın canı, gözlenen can kaybı ve iyileşme'], en: ['Live fight analysis', 'Both players’ life, observed life loss and recovery on the attack page'] },
   { group: 'torn', key: 'torn.ffScouterScript', def: true, tr: ['FF Scouter V2 · 3.4', 'Kayıtlı FFScouter anahtarını, yoksa Torn API anahtarını otomatik kullanır · yeniden başlatınca uygulanır'], en: ['FF Scouter V2 · 3.4', 'Automatically uses your saved FFScouter key, or your Torn API key · restart to apply'] },
   { group: 'torn', key: 'torn.tornw3bScript', def: true, tr: ['TornW3B Bazaar · 4.1.8', 'Item Market içinde bazaar teklifleri · açık artırma ilanlarını Weav3r’a senkronlar · yeniden başlatınca uygulanır'], en: ['TornW3B Bazaar · 4.1.8', 'Bazaar offers in Item Market · syncs auction listings to Weav3r · restart to apply'] },
+  { group: 'torn', key: 'torn.openMarketScript', def: true, tr: ['OpenMarket · 1.11.9', 'Item Market, bazaar ve açık artırmada silahların kalite yüzdesi ve bonusları · sıralama ve filtre ekleri kapalı · yeniden başlatınca uygulanır'], en: ['OpenMarket · 1.11.9', 'Weapon and armor quality % and bonuses on the Item Market, bazaars and the Auction House · its sort and filter add-ons are off · restart to apply'] },
   { group: 'torn', key: 'torn.crimeHelper', def: true, tr: ['Yankesicilik: XP ve renkler', "Her hedefin yanında Crime XP çarpanı (%100–350) · skill'ine göre en iyi hedef koyu yeşil, riskli olanlar kırmızı"], en: ['Pickpocketing: XP and colors', 'Crime XP multiplier next to each mark (100–350%) · best mark for your skill in dark green, risky ones in red'] },
   { group: 'torn', key: 'torn.crimeValue', def: true, tr: ['Suçlar: nerve başına kazanç', "Suç merkezinde ve seçeneklerde $/N rozeti (Emforus tablosu) · Disposal'da en iyi yöntem yeşil"], en: ['Crimes: money per nerve', '$/N badges on the Torn crimes hub and on each option (Emforus sheet) · best Disposal method in green'] },
   { group: 'torn', key: 'torn.crimeRank', def: true, tr: ['Suçlar: düğme renkleri', "Her seçeneğin sağındaki düğmenin (Search, Shoplift, Disposal yöntemleri…) etrafı $/N sırasına göre: kırmızı en kötü → sarı → yeşil en iyi"], en: ['Crimes: button colors', 'The button on the right of each option (Search, Shoplift, Disposal methods…) is outlined by $/N rank: red worst → yellow → green best'] },
   { group: 'torn', key: 'torn.burglaryHelper', def: true, tr: ['Burglary yardımcısı', 'Her hedefte önerilen keşif (case) sayısı, $/N ve güvenlik notu · satırlar gizlenmez'], en: ['Burglary helper', 'Recommended casings, $/N and safety note for each target · rows are never hidden'] },
   { group: 'torn', key: 'torn.jailHelper', def: true, tr: ['Jail: bust zorluğu', 'Her mahkûmun yanında zorluk puanı (seviye × (saat+3)) ve renk · onay atlatma yok'], en: ['Jail: bust difficulty', 'Difficulty score (level × (hours+3)) and color next to each inmate · never skips the confirmation'] },
   { group: 'torn', key: 'torn.sellGuard', def: true, tr: ['Alış fiyatı koruması', 'Item Market / bazaar ilanında alış fiyatının altına girersen kırmızı uyarı'], en: ['Purchase price protection', 'Red warning on Item Market / bazaar listings priced below what you paid'] },
+  { group: 'torn', key: 'torn.bazaarUndercut', def: true, tr: ['Bazaar: $1 altına fiyat', "Bazaar → Add items ve Manage'de her eşyanın yanında −$1 düğmesi: tıkladığın eşyanın fiyat kutusuna weav3r.dev'deki en ucuz diğer bazaar fiyatının $1 altını yazar · miktarı ve Torn'daki onayı (Add / Update) sen verirsin"], en: ['Bazaar: undercut by $1', "A −$1 button next to each item on Bazaar → Add items and Manage: fills the price box of the item you click with $1 under the cheapest other bazaar on weav3r.dev · you enter the amount and confirm on Torn (Add / Update) yourself"] },
+  { group: 'torn', key: 'torn.profileWorkStats', def: true, tr: ['Profil: çalışma statları + şirket yıldızı', "Oyuncu profilinde Life satırının üstüne çalışma statları (Hall of Fame) ve şirketin x/10 yıldızı · profil başına 2 Torn API isteği, kayıtlı anahtarınla · bellekte saklanır (oyuncu 12 sa, şirket 24 sa) · yalnızca baktığın sekmede"], en: ['Profile: working stats + company stars', "Working stats (Hall of Fame) and the company's x/10 stars above Life on player profiles · 2 Torn API requests per profile with your saved key · kept in memory (player 12 h, company 24 h) · only in the tab you are viewing"] },
   { group: 'torn', key: 'torn.pokerHelper', def: true, tr: ['Poker oranları', "Hold'em masasında elin adı ve kazanma yüzdesi · tavsiye vermez, oynamaz"], en: ['Poker odds', "Hand name and win chance at the Hold'em table · no advice, never plays"] },
   { group: 'torn', key: 'torn.fastSlots', def: true, tr: ['Hızlı Slot', 'Kumarhane slotunda animasyonsuz spin · her tıklama tek spin'], en: ['Fast Slots', 'Casino slots without the reel animation · one spin per click'] },
   { group: 'torn', key: 'torn.stockSync', def: true, tr: ['Stok teslim süresini Torn\'dan oku', 'Şirket stok sayfasındaki "Delivered in" sayaçları'], en: ['Read stock delivery times from Torn', '"Delivered in" timers on the company stock page'] },
@@ -67,7 +72,9 @@ const FEATURE_DEFS = [
 
   { group: 'app', key: 'app.animations', def: true, tr: ['Animasyonlar', 'Geçişler, sayaç animasyonları, kart efektleri'], en: ['Animations', 'Transitions, counter animations, card effects'] },
   { group: 'app', key: 'app.splash', def: true, tr: ['Açılış ekranı', 'Uygulama açılırken LRX logosu'], en: ['Splash screen', 'LRX logo on startup'] },
-  { group: 'app', key: 'app.newYear', def: true, tr: ['Yılbaşı süsü', '20 Aralık – 6 Ocak arası giriş ekranında yılbaşı ağacı ve kar'], en: ['New Year decoration', 'Christmas tree and snow on the sign-in screen, 20 Dec – 6 Jan'] },
+  { group: 'app', key: 'app.newYear', def: true, tr: ['Yılbaşı süsü', 'Christmas Town boyunca (19 Aralık 16:00 – 31 Aralık 16:00 TCT) giriş ekranında yılbaşı ağacı, kardan adam, kar ve süslü logo'], en: ['New Year decoration', 'Christmas tree, snowman, snow and a dressed-up logo on the sign-in screen while Christmas Town is open (19 Dec 16:00 – 31 Dec 16:00 TCT)'] },
+  { group: 'app', key: 'app.newYearSnow', def: true, tr: ['Uygulama içinde kar', 'Christmas Town boyunca kartların arkasında hafif kar yağar'], en: ['Snow in the app', 'Light snow behind the cards while Christmas Town is open'] },
+  { group: 'app', key: 'app.newYearWelcome', def: true, tr: ['Yılbaşı kutlaması', "1 Ocak'ta uygulama ilk açıldığında konfeti ve havai fişek"], en: ['New Year celebration', 'Confetti and fireworks the first time the app opens on 1 January'] },
   { group: 'app', key: 'app.premiumProfile', def: true, tr: ['Premium profil kartı', 'Premium sayfasında üyelik kartının yanında Torn profilin'], en: ['Premium profile card', 'Your Torn profile next to the membership card on the Premium page'] },
   { group: 'app', key: 'app.overviewLayout', def: true, tr: ['Genel Bakış düzeni', "Genel Bakış'ı widget'larla düzenle; kapalıyken klasik sabit ekran"], en: ['Overview layout', 'Arrange the Overview with widgets; off shows the classic fixed screen'] },
   { group: 'app', key: 'app.torntools', def: true, tr: ['TornTools', 'Yerleşik Torn sekmelerinde TornTools eklentisi (yeniden başlatınca)'], en: ['TornTools', 'TornTools extension in Torn tabs (after restart)'] },
@@ -80,7 +87,7 @@ const FEATURE_DEFS = [
   { group: 'app', key: 'app.premiumPromos', def: true, tr: ['Premium modül kartları', 'Savaş, Seyahat, Merit, Araçlar ve Ayarlar sayfalarındaki Premium kartları · Premium sayfası her zaman açık kalır'], en: ['Premium module cards', 'Premium cards on the War, Travel, Merits, Tools and Settings pages · the Premium page always stays available'] },
 ];
 const FEATURE_DEF_MAP = Object.fromEntries(FEATURE_DEFS.map((f) => [f.key, f]));
-const EXTRA_VIEWS = { job: 'page.job', gym: 'page.gym', networth: 'page.networth', travel: 'page.travel', war: 'page.war', level: 'page.levelling', guide: 'page.levelling', crimes: 'page.crimes', awards: 'page.awards', tools: 'page.tools', faction: 'page.faction' };
+const EXTRA_VIEWS = { job: 'page.job', gym: 'page.gym', travel: 'page.travel', war: 'page.war', level: 'page.levelling', guide: 'page.levelling', crimes: 'page.crimes', awards: 'page.awards', tools: 'page.tools', faction: 'page.faction' };
 const LEVELLING_VIEWS = ['level', 'guide'];
 
 function feat(key) {
@@ -113,10 +120,13 @@ function viewHidden(v) {
   // Faction sayfası yalnızca bir faction'dayken
   if (v === 'faction' && state.overview?.player?.faction && !Number(state.overview.player.faction.faction_id)) return true;
   if (EXTRA_VIEWS[v] && !feat(EXTRA_VIEWS[v])) return true;
+  // Finance page (finance.js): shown while either tab is; networth / income are its tabs.
+  if (v === 'finance') return !window.LRXFinance?.anyTab();
+  if (v === 'networth' || v === 'income') return !window.LRXFinance?.tabs()[v === 'income' ? 'company' : 'wealth'];
   return COMPANY_VIEWS.includes(v) && !(feat('page.company') && state.companyMode !== false);
 }
 function applyNavVisibility() {
-  for (const v of [...Object.keys(EXTRA_VIEWS), ...COMPANY_VIEWS]) {
+  for (const v of [...Object.keys(EXTRA_VIEWS), ...COMPANY_VIEWS, 'finance']) {
     const b = $(`.nav-item[data-view="${v}"]`);
     if (b) b.hidden = viewHidden(v);
   }
@@ -125,6 +135,8 @@ function applyNavVisibility() {
   else if (state.view === 'guide') renderGuide(); // her overview yenilemesinde kişisel adımlar güncellensin
 }
 const FEATURE_HOOKS = []; // ek sayfalar: özellik açılıp kapanınca yeniden çiz
+FEATURE_HOOKS.push(() => { if (typeof syncAppSnow === 'function') syncAppSnow(); }); // New Year snow follows its switch and Animations
+FEATURE_HOOKS.push(() => { if (typeof checkNewYearWelcome === 'function') checkNewYearWelcome(); }); // switched off: an open celebration closes
 function applyFeatures() {
   applyNavVisibility();
   document.body.classList.toggle('no-anim', !feat('app.animations'));
@@ -140,7 +152,6 @@ function applyFeatures() {
 Object.assign(I18N, {
   'nav.job': ['İş Asistanı', 'Job Assistant'],
   'nav.gym': ['Gym & Statlar', 'Gym & Stats'],
-  'nav.networth': ['Networth', 'Networth'],
   'nav.travel': ['Seyahat Kârı', 'Travel Profit'],
   'nav.level': ["Baldr's Levelling Targets", "Baldr's Levelling Targets"],
   'nav.guide': ['Başlangıç Rehberi', 'Beginner Guide'],
@@ -148,10 +159,9 @@ Object.assign(I18N, {
 Object.assign(VIEW_META, {
   job: { tr: ['İş Asistanı', 'Çalışma statlarına göre uygun pozisyonlar'], en: ['Job Assistant', 'Positions that fit your working stats'] },
   gym: { tr: ['Gym & Statlar', 'Battle stat geçmişi ve günlük artış'], en: ['Gym & Stats', 'Battle stat history and daily gains'] },
-  networth: { tr: ['Networth', 'Servet dökümü ve değişim'], en: ['Networth', 'Wealth breakdown and change'] },
   travel: { tr: ['Seyahat Kârı', 'Yurt dışından alışverişte en kârlı ürünler'], en: ['Travel Profit', 'Most profitable items to buy abroad'] },
   level: { tr: ["Baldr's Levelling Targets", "Seviye 15'e hızlı çıkmak için düşük statlı hedefler"], en: ["Baldr's Levelling Targets", 'Low-stat targets for a fast climb to level 15'] },
-  guide: { tr: ['Başlangıç Rehberi', 'İş, eğitim, gym ve alışveriş: seviye 15 öncesi yol haritası'], en: ['Beginner Guide', 'Job, education, gym and shopping: a roadmap to level 15'] },
+  guide: { tr: ['Başlangıç Rehberi', "Seviye 15'e adım adım yol haritası: gym, happy jump, suçlar, iş ve daha fazlası"], en: ['Beginner Guide', 'A step-by-step roadmap to level 15: gym, happy jump, crimes, job and more'] },
 });
 
 /* ---------- Ayarlar: sekmeler ve özellik anahtarları ---------- */
@@ -338,7 +348,8 @@ function mountChart(el, render) {
   el._render(el._w);
   if (chartRO && !el._observed) { chartRO.observe(el); el._observed = true; }
 }
-function lineChart(series, W, { height = 240, color = '#c9a96a', fmt = cmoney, fill = true } = {}) {
+// tickFmt(v, step) labels the y axis (a caller can pick its precision from the tick step); fmt labels the points.
+function lineChart(series, W, { height = 240, color = '#c9a96a', fmt = cmoney, tickFmt = (v) => fmt(v), fill = true } = {}) {
   const H = height, pl = 66, pr = 14, pt = 16, pb = 30;
   const vals = series.map((p) => p.v);
   let lo = Math.min(...vals), hi = Math.max(...vals);
@@ -348,11 +359,16 @@ function lineChart(series, W, { height = 240, color = '#c9a96a', fmt = cmoney, f
   const x = (i) => pl + (series.length === 1 ? (W - pl - pr) / 2 : (i / (series.length - 1)) * (W - pl - pr));
   const y = (v) => pt + ((top - v) / (top - bot || 1)) * (H - pt - pb);
   let grid = '';
-  for (let v = bot; v <= top + 1e-6; v += step) grid += `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(255,255,255,.05)" stroke-dasharray="3 4"/><text x="${pl - 10}" y="${y(v) + 4}" text-anchor="end" fill="#5f6870" font-size="11" font-family="JetBrains Mono, monospace">${fmt(v)}</text>`;
+  for (let v = bot; v <= top + 1e-6; v += step) grid += `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(255,255,255,.05)" stroke-dasharray="3 4"/><text x="${pl - 10}" y="${y(v) + 4}" text-anchor="end" fill="#5f6870" font-size="11" font-family="JetBrains Mono, monospace">${tickFmt(v, step)}</text>`;
   const path = series.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
-  const area = fill ? `<path d="${path} L${x(series.length - 1)},${y(bot)} L${x(0)},${y(bot)} Z" fill="url(#lcFill)"/>` : '';
+  const area = fill ? `<path d="${path} L${x(series.length - 1)},${y(bot)} L${x(0)},${y(bot)} Z" fill="url(#lcFill)" stroke="none"/>` : ''; // no outline from the global svg stroke
   const every = Math.ceil(series.length / Math.max(1, Math.floor((W - pl - pr) / 64)));
-  const labels = series.map((p, i) => (i % every === 0 || i === series.length - 1) ? `<text x="${x(i)}" y="${H - 9}" text-anchor="middle" fill="#7d8790" font-size="11">${shortDate(p.date)}</text>` : '').join('');
+  // The last date ends at the right edge; a regular label too close to it is dropped so the two never overlap.
+  const last = series.length - 1;
+  const labels = series.map((p, i) => {
+    if (i !== last && (i % every !== 0 || x(last) - x(i) < 60)) return '';
+    return `<text x="${x(i)}" y="${H - 9}" text-anchor="${i === last && last > 0 ? 'end' : 'middle'}" fill="#7d8790" font-size="11">${shortDate(p.date)}</text>`;
+  }).join('');
   const dots = series.length <= 40 ? series.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.v)}" r="3" fill="#0b0c0e" stroke="${color}" stroke-width="1.8"><title>${p.date}: ${fmt(p.v)}</title></circle>`).join('') : '';
   return `<svg class="ic-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><defs><linearGradient id="lcFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".28"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>${grid}${area}<path d="${path}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>${dots}${labels}</svg>`;
 }
@@ -445,83 +461,65 @@ async function loadGym() {
   if (!el.innerHTML) el.innerHTML = loadingBox();
   try { renderGym(await api('/api/stats')); } catch (e) { el.innerHTML = errorBox(e); }
 }
+/* y-axis label exact to the tick step: "4.25M" for 50K ticks, "4.2521M" for 100 ticks, so no two labels match.
+   A unit that would need more than 4 decimals gives way to the next smaller one. */
+function gymTick(v, step) {
+  const units = [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+  const [unit, suffix] = units.find(([u]) => Math.abs(v) >= u && step / u >= 1e-4) || [1, ''];
+  const s = step / unit;
+  let d = 0;
+  while (d < 4 && Math.abs(Math.round(s * 10 ** d) - s * 10 ** d) > 1e-6) d++;
+  return (v / unit).toFixed(d) + suffix;
+}
+const GYM_STATS = [['str', 'Strength', '#c9a96a'], ['def', 'Defense', '#d4d9df'], ['spd', 'Speed', '#8fa3b8'], ['dex', 'Dexterity', '#b08d6e']];
+/* Key numbers first (4 tiles), then "Your stats" beside a short chart; the day-by-day table is collapsed. */
 function renderGym(d) {
   const hist = d.history || [];
   const last = hist[hist.length - 1];
   const ago = (n) => recordBack(hist, n, n === 1);
-  const gain = (n) => (ago(n) && last ? last.total - ago(n).total : null);
-  const sumDiff = (k, n) => (ago(n) && last && last[k] != null && ago(n)[k] != null ? last[k] - ago(n)[k] : null);
+  const diff = (k, n) => (ago(n) && last && last[k] != null && ago(n)[k] != null ? last[k] - ago(n)[k] : null);
   const span = (n) => (ago(n) && last ? daysApart(ago(n), last) : 0); // days the figure really covers
-  const b = d.battle;
-  const total = last?.total ?? b?.totals?.base ?? 0;
-  const parts = last ? [['Strength', last.str], ['Defense', last.def], ['Speed', last.spd], ['Dexterity', last.dex]] : [];
-  const pal = ['#c9a96a', '#d4d9df', '#8fa3b8', '#b08d6e'];
+  const cover = (n) => tr(`kayıt ${span(n)} günlük`, `records cover ${span(n)} ${span(n) === 1 ? 'day' : 'days'}`);
+  const delta = (v) => `<span class="${deltaCls(v)}">${signed(v, n0)}</span>`;
+  const total = last?.total ?? d.battle?.totals?.base ?? 0;
+  const g1 = diff('total', 1), g7 = diff('total', 7), g30 = diff('total', 30);
+  const xan = diff('xantaken', 7), refills = diff('refills', 7);
+  const energy = state.overview?.bars?.energy; // already loaded by the overview: no request of its own
+  const shown = Math.min(30, hist.length);
   $('#gym-body').innerHTML = `
-    <div class="grid kpis">
+    <div class="grid kpis gym-kpis">
       ${kpi(tr('Toplam battle stat', 'Total battle stats'), n0(total), '', 'tq')}
-      ${kpi(tr('Dünden beri', 'Since yesterday'), `<span class="${deltaCls(gain(1))}">${signed(gain(1), n0)}</span>`, gain(1) == null && hist.length > 1 ? tr('dünkü kayıt yok', 'no record from yesterday') : '')}
-      ${kpi(tr('7 günde', 'Last 7 days'), `<span class="${deltaCls(gain(7))}">${signed(gain(7), n0)}</span>`, gain(7) != null ? `${tr('günlük ort.', 'daily avg')} ${n0(gain(7) / span(7))}${span(7) < 7 ? ` · ${tr(`kayıt ${span(7)} günlük`, `records cover ${span(7)} ${span(7) === 1 ? 'day' : 'days'}`)}` : ''}` : tr('son 7 günde başka kayıt yok', 'no other record in the last 7 days'))}
-      ${kpi(tr('30 günde', 'Last 30 days'), `<span class="${deltaCls(gain(30))}">${signed(gain(30), n0)}</span>`, gain(30) != null && span(30) < 30 ? tr(`kayıt ${span(30)} günlük`, `records cover ${span(30)} ${span(30) === 1 ? 'day' : 'days'}`) : '')}
-      ${kpi(tr('Xanax (7 gün)', 'Xanax (7 days)'), sumDiff('xantaken', 7) != null ? n0(sumDiff('xantaken', 7)) : '—', `${tr('Refill', 'Refills')}: ${sumDiff('refills', 7) != null ? n0(sumDiff('refills', 7)) : '—'}`)}
+      ${kpi(tr('Dünden beri', 'Since yesterday'), delta(g1), g1 == null && hist.length > 1 ? tr('dünkü kayıt yok', 'no record from yesterday') : '')}
+      ${kpi(tr('7 günde', 'Last 7 days'), delta(g7), g7 != null ? `${tr('günlük ort.', 'daily avg')} ${n0(g7 / span(7))}${span(7) < 7 ? ` · ${cover(7)}` : ''}` : tr('son 7 günde başka kayıt yok', 'no other record in the last 7 days'))}
+      ${kpi(tr('30 günde', 'Last 30 days'), delta(g30), g30 != null && span(30) < 30 ? cover(30) : '')}
     </div>
-    <article class="glass card">
-      <div class="card-head"><h3>${tr('Toplam stat geçmişi', 'Total stats history')}</h3><span class="muted">${hist.length} ${tr('gün kayıtlı', hist.length === 1 ? 'day recorded' : 'days recorded')}</span></div>
-      <div class="chart" id="gym-chart"></div>
-    </article>
-    ${parts.length ? `<article class="glass card"><div class="card-head"><h3>${tr('Stat dağılımı', 'Stat distribution')}</h3></div>
-      <div class="storage-bar">${parts.map(([n, v], i) => `<i style="width:${(v / (last.total || 1)) * 100}%;background:${pal[i]}" title="${n}: ${n0(v)}"></i>`).join('')}</div>
-      <div class="legend">${parts.map(([n, v], i) => `<span><b style="background:${pal[i]}"></b>${n} <span class="mono">${n0(v)}</span> <span class="muted">${pct(v / (last.total || 1), 1)}</span></span>`).join('')}</div></article>` : ''}
-    <article class="glass card"><div class="card-head"><h3>${tr('Gün gün', 'Day by day')}</h3></div>
+    <div class="gym-main">
+      <article class="glass card gym-stats" id="gym-stats">
+        <div class="card-head"><h3>${tr('Statların', 'Your stats')}</h3>${last ? `<span class="muted">${shortDate(last.date)}</span>` : ''}</div>
+        ${last ? `<div class="storage-bar">${GYM_STATS.map(([k, n, c]) => `<i style="width:${(last[k] / (last.total || 1)) * 100}%;background:${c}" title="${n}: ${n0(last[k])}"></i>`).join('')}</div>
+        <div class="tbl-wrap"><table class="tbl compact"><thead><tr><th>Stat</th><th class="num">${tr('Değer', 'Value')}</th><th class="num">${tr('Pay', 'Share')}</th><th class="num">${tr('Dünden', '24h')}</th><th class="num">${tr('7 gün', '7 days')}</th></tr></thead><tbody>
+          ${GYM_STATS.map(([k, n, c]) => `<tr data-stat="${k}"><td><i class="gym-dot" style="background:${c}"></i>${n}</td><td class="num">${n0(last[k])}</td><td class="num muted">${pct(last[k] / (last.total || 1), 1)}</td><td class="num">${delta(diff(k, 1))}</td><td class="num">${delta(diff(k, 7))}</td></tr>`).join('')}
+        </tbody></table></div>` : `<p class="muted">${tr('Henüz kayıt yok. Uygulama açık kaldıkça her gün kayıt alınır.', 'No records yet. A snapshot is saved every day while the app runs.')}</p>`}
+        <div class="gym-foot" id="gym-foot">
+          ${energy ? `<span data-gym="energy">${tr('Enerji', 'Energy')} <b>${n0(energy.current)}/${n0(energy.maximum)}</b></span>` : ''}
+          <span data-gym="usage">${tr('Son 7 gün', 'Last 7 days')}: Xanax <b>${xan != null ? n0(xan) : '—'}</b> · ${tr('Refill', 'Refills')} <b>${refills != null ? n0(refills) : '—'}</b></span>
+        </div>
+      </article>
+      <article class="glass card">
+        <div class="card-head"><h3>${tr('Toplam stat geçmişi', 'Total stats history')}</h3><span class="muted">${hist.length} ${tr('gün kayıtlı', hist.length === 1 ? 'day recorded' : 'days recorded')}</span></div>
+        <div class="chart gym-chart" id="gym-chart"></div>
+      </article>
+    </div>
+    ${hist.length ? `<details class="glass card gym-days" id="gym-days"${lsGet('tt.gym.days', '0') === '1' ? ' open' : ''}>
+      <summary><h3>${tr('Gün gün', 'Day by day')}</h3><span class="muted">${tr(`son ${shown} kayıt`, `last ${shown} ${shown === 1 ? 'record' : 'records'}`)}</span></summary>
       <div class="tbl-wrap"><table class="tbl compact"><thead><tr><th>${tr('Tarih', 'Date')}</th><th class="num">STR</th><th class="num">DEF</th><th class="num">SPD</th><th class="num">DEX</th><th class="num">${tr('Toplam', 'Total')}</th><th class="num">${tr('Artış', 'Gain')}</th><th class="num">Xanax</th></tr></thead><tbody>
       ${hist.slice().reverse().slice(0, 30).map((r) => {
         const i = hist.indexOf(r); const p = hist[i - 1];
         return `<tr><td class="mono">${r.date}</td><td class="num">${n0(r.str)}</td><td class="num">${n0(r.def)}</td><td class="num">${n0(r.spd)}</td><td class="num">${n0(r.dex)}</td><td class="num"><b>${n0(r.total)}</b></td><td class="num ${p ? deltaCls(r.total - p.total) : ''}">${p ? signed(r.total - p.total, n0) : '—'}</td><td class="num">${p && r.xantaken != null && p.xantaken != null ? n0(r.xantaken - p.xantaken) : '—'}</td></tr>`;
-      }).join('')}</tbody></table></div></article>`;
-  if (hist.length >= 2) mountChart($('#gym-chart'), (W) => lineChart(hist.map((r) => ({ date: r.date, v: r.total })), W, { fmt: (v) => compact(v) }));
+      }).join('')}</tbody></table></div></details>` : ''}`;
+  $('#gym-days')?.addEventListener('toggle', (e) => lsSet('tt.gym.days', e.currentTarget.open ? '1' : '0'));
+  if (hist.length >= 2) mountChart($('#gym-chart'), (W) => lineChart(hist.map((r) => ({ date: r.date, v: r.total })), W, { height: 180, fmt: n0, tickFmt: gymTick }));
   else $('#gym-chart').innerHTML = emptyBox(tr('Geçmiş birikiyor', 'Building history'), tr('Uygulama açık kaldıkça her gün stat kaydı alınır. Grafik 2. günden itibaren görünür.', 'A snapshot is saved every day while the app runs. The chart appears from day 2.'));
-}
-
-/* ---------- Networth ---------- */
-// [API alanı, TR, EN] — Torn yer adları (Item Market, Bazaar…) iki dilde de İngilizce kalır
-const NW_PARTS = [
-  ['wallet', 'Cüzdan', 'Wallet'], ['bank', 'Banka', 'Bank'], ['cayman', 'Cayman', 'Cayman'], ['vault', 'Vault', 'Vault'], ['piggybank', 'Piggy Bank', 'Piggy Bank'], ['points', 'Points', 'Points'],
-  ['items', 'Eşyalar', 'Items'], ['displaycase', 'Display Case', 'Display Case'], ['bazaar', 'Bazaar', 'Bazaar'], ['itemmarket', 'Item Market', 'Item Market'], ['trade', 'Takas', 'Trade'],
-  ['auctionhouse', 'Auction House', 'Auction House'], ['stockmarket', 'Stock Market', 'Stock Market'], ['properties', 'Mülkler', 'Properties'], ['company', 'Şirket', 'Company'],
-  ['enlistedcars', 'Enlisted Cars', 'Enlisted Cars'], ['bookie', 'Bookie', 'Bookie'], ['pending', 'Bekleyen', 'Pending'], ['loan', 'Kredi', 'Loan'], ['unpaidfees', 'Ödenmemiş ücretler', 'Unpaid fees'],
-];
-async function loadNetworth(force = false) {
-  const el = $('#networth-body');
-  if (!el.innerHTML) el.innerHTML = loadingBox();
-  try { renderNetworth(await api('/api/networth' + (force ? '?force=1' : ''))); } catch (e) { el.innerHTML = errorBox(e); }
-}
-function renderNetworth(d) {
-  const cur = d.current || {};
-  const hist = d.history || [];
-  const ago = (n) => recordBack(hist, n, n === 1);
-  const chg = (n) => (ago(n) ? (cur.total || 0) - ago(n).total : null);
-  const lastRec = hist[hist.length - 1];
-  const span = (n) => (ago(n) && lastRec ? daysApart(ago(n), lastRec) : 0);
-  const parts = NW_PARTS.map(([k, nTr, nEn]) => [tr(nTr, nEn), Number(cur[k]) || 0, k]).filter(([, v]) => v !== 0).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
-  const maxV = Math.max(...parts.map(([, v]) => Math.abs(v)), 1);
-  const prev = ago(1);
-  $('#networth-body').innerHTML = `
-    <div class="grid kpis">
-      ${kpi(tr('Toplam networth', 'Total networth'), money(cur.total), `${tr('güncellendi', 'updated')} ${new Date(d.timestamp * 1000).toLocaleTimeString(state.lang === 'en' ? 'en-GB' : 'tr-TR', { hour: '2-digit', minute: '2-digit' })}`, 'tq')}
-      ${kpi(tr('Dünden beri', 'Since yesterday'), `<span class="${deltaCls(chg(1))}">${signed(chg(1))}</span>`, chg(1) != null && ago(1).total ? pct(chg(1) / ago(1).total, 2) : tr('dünkü kayıt yok', 'no record from yesterday'))}
-      ${kpi(tr('7 günde', 'Last 7 days'), `<span class="${deltaCls(chg(7))}">${signed(chg(7))}</span>`, chg(7) != null && span(7) < 7 ? tr(`kayıt ${span(7)} günlük`, `records cover ${span(7)} ${span(7) === 1 ? 'day' : 'days'}`) : '')}
-      ${kpi(tr('30 günde', 'Last 30 days'), `<span class="${deltaCls(chg(30))}">${signed(chg(30))}</span>`, chg(30) != null && span(30) < 30 ? tr(`kayıt ${span(30)} günlük`, `records cover ${span(30)} ${span(30) === 1 ? 'day' : 'days'}`) : '')}
-      ${kpi(tr('Nakit (cüzdan + banka)', 'Cash (wallet + bank)'), money((cur.wallet || 0) + (cur.bank || 0) + (cur.cayman || 0) + (cur.vault || 0) + (cur.piggybank || 0)))}
-    </div>
-    <div class="grid two">
-      <article class="glass card"><div class="card-head"><h3>${tr('Servet dökümü', 'Wealth breakdown')}</h3><span class="muted">${tr('dünkü değişim', 'change vs yesterday')}</span></div>
-        <div class="nw-list">${parts.map(([n, v, k]) => {
-          const pv = prev ? Number(prev[k]) || 0 : null; const dv = pv == null ? null : v - pv;
-          return `<div class="nw-row"><span>${n}</span><div class="nw-bar"><i style="width:${(Math.abs(v) / maxV) * 100}%;${v < 0 ? 'background:var(--danger)' : ''}"></i></div><span class="mono">${cmoney(v)}</span><span class="mono sub-text ${deltaCls(dv)}">${dv ? signed(dv) : ''}</span></div>`;
-        }).join('')}</div></article>
-      <article class="glass card"><div class="card-head"><h3>${tr('Networth geçmişi', 'Networth history')}</h3><span class="muted">${hist.length} ${tr('gün kayıtlı', hist.length === 1 ? 'day recorded' : 'days recorded')}</span></div><div class="chart" id="nw-chart"></div></article>
-    </div>`;
-  if (hist.length >= 2) mountChart($('#nw-chart'), (W) => lineChart(hist.map((r) => ({ date: r.date, v: r.total })), W));
-  else $('#nw-chart').innerHTML = emptyBox(tr('Geçmiş birikiyor', 'Building history'), tr('Her gün networth kaydı alınır; grafik 2. günden itibaren görünür.', 'Networth is recorded daily; the chart appears from day 2.'));
 }
 
 /* ---------- Seyahat Kârı ---------- */
@@ -812,19 +810,13 @@ async function loadLevel() {
   } catch (e) { if (!levelState.data) el.innerHTML = errorBox(e); }
 }
 
-// Saldırılabilir olanlar önce (seviye yüksekten), sonra hastaneden en erken çıkacaklar, sonra kontrol edilmeyenler
-function levelRows() {
-  const now = nowTct() / 1000;
-  const rank = (t) => {
-    const s = t.status?.state;
-    if (s === 'Okay') return 0;
-    if ((s === 'Hospital' || s === 'Jail') && t.status.until > now) return 1;
-    if (!t.status || s === 'Hospital' || s === 'Jail') return 2;
-    return 3;
-  };
-  return levelState.data.targets
-    .filter((t) => !levelState.okOnly || t.status?.state === 'Okay')
-    .sort((a, b) => rank(a) - rank(b) || (rank(a) === 1 ? a.status.until - b.status.until : b.lvl - a.lvl || a.total - b.total));
+// What the page shows (public/levelling.js): attackable targets you can beat first, highest level first, then the
+// attackable ones whose stats match or beat yours, then those not checked yet. Targets in hospital, jail or travel
+// are left out until they can be attacked again.
+const levelMine = () => LRXLevelling.mineFrom(state.overview?.battle);
+function levelView() {
+  const v = LRXLevelling.order(levelState.data.targets, levelMine(), nowTct() / 1000);
+  return levelState.okOnly ? { ...v, rows: v.rows.filter((t) => t.status?.state === 'Okay') } : v;
 }
 
 function levelShell(d) {
@@ -840,9 +832,9 @@ function levelShell(d) {
         'En yüksek EXP bu şekilde gelir. Mug para çalmak, Hospitalize rakibi hastanede tutmak içindir; ikisi de daha az EXP verir.',
         'That is how you get the most EXP. Mug is for stealing cash and Hospitalize for keeping them in hospital; both give less EXP.')}</div></div>
       <ul class="lv-tips">
-        <li>${tr('Her saldırı 25 enerji harcar. Seviyesi yüksek hedef daha çok EXP verir; liste bu yüzden en yüksek seviyeden başlar.', 'Each attack costs 25 energy. Higher-level targets give more EXP, so the list starts with the highest level.')}</li>
+        <li>${tr('Her saldırı 25 enerji harcar. Seviyesi yüksek hedef daha çok EXP verir, kaybedilen saldırı hiç vermez. ⭐ En yüksek EXP: statları seninkini geçmeyen en yüksek seviyeli üç hedef.', 'Each attack costs 25 energy. Higher-level targets give more EXP, and a lost attack gives none. ⭐ Best EXP: the three highest-level targets whose stats do not beat yours.')}</li>
         <li>${tr('Önce dört statını da yaklaşık 300\'e çıkar (Başlangıç Rehberi), sonra enerjini buraya harca.', 'First get all four stats to about 300 (Beginner Guide), then spend your energy here.')}</li>
-        <li>${tr('Hedef hastanedeyse ya da kaybedersen sıradakine geç; durumlar kendiliğinden güncellenir.', 'If a target is in hospital or you lose, move to the next one; statuses refresh by themselves.')}</li>
+        <li>${tr('Hastanede, hapiste ya da yolda olan hedefler listede görünmez; çıkınca geri gelir. Saldırdığın hedef birkaç saniye içinde yeniden kontrol edilir.', 'Targets in hospital, in jail or travelling are not listed; they come back once they are out. A target you attack is checked again within seconds.')}</li>
       </ul>
     </article>
     <article class="glass card">
@@ -867,26 +859,36 @@ function renderLevel() {
   const d = levelState.data; if (!d) return;
   const key = `${state.lang}|${d.list}|${d.lists.join('|')}|${myLevel()}`;
   if (levelState.shellFor !== key || !$('#lv-tbody')) { $('#level-body').innerHTML = levelShell(d); levelState.shellFor = key; }
-  const rows = levelRows();
-  const best = rows.find((t) => t.status?.state === 'Okay');
+  const v = levelView(), best = new Set(v.best), mine = levelMine();
+  const faces = { str: 'def', def: 'str', spd: 'dex', dex: 'spd' };
   const atkIcon = '<svg viewBox="0 0 24 24"><path d="M14.5 4.5l5 5L9 20H4v-5zM4 4l4 4"/></svg>';
-  $('#lv-tbody').innerHTML = rows.map((t, i) => {
-    const st = t.status;
-    const statusCell = st ? statusTimerChip(st, true) : `<span class="muted">${t.checkedAt ? '?' : tr('kontrol ediliyor…', 'checking…')}</span>`;
-    return `<tr class="${t === best ? 'lv-best' : st && st.state !== 'Okay' ? 'lv-dim' : ''}">
+  const checking = (t) => `<span class="muted">${t.checkedAt && !t.status ? '?' : tr('kontrol ediliyor…', 'checking…')}</span>`;
+  $('#lv-tbody').innerHTML = v.rows.map((t, i) => {
+    const st = t.status, okay = st?.state === 'Okay';
+    const strong = okay ? LRXLevelling.stronger(t, mine) : [];
+    const strongTip = strong.map((k) => `${k.toUpperCase()} ≥ ${tr('senin', 'your')} ${faces[k].toUpperCase()}`).join(' · ');
+    const tag = best.has(t.id) ? ` <span class="chip tq">⭐ ${tr('En yüksek EXP', 'Best EXP')}</span>`
+      : strong.length ? ` <span class="chip warn" title="${esc(strongTip)}">⚠ ${tr('Güçlü', 'Strong')}</span>` : '';
+    return `<tr class="${best.has(t.id) ? 'lv-best' : !okay ? 'lv-dim' : ''}">
       <td class="mono muted">${i + 1}</td>
-      <td><a href="https://www.torn.com/profiles.php?XID=${t.id}">${esc(t.name)}</a> <span class="muted mono">[${t.id}]</span>${t === best ? ` <span class="chip tq">⭐ ${tr('En yüksek EXP', 'Best EXP')}</span>` : ''}</td>
+      <td><a href="https://www.torn.com/profiles.php?XID=${t.id}">${esc(t.name)}</a> <span class="muted mono">[${t.id}]</span>${tag}</td>
       <td class="num">${t.lvl}</td>
       <td class="num" title="STR ${n0(t.str)} · DEF ${n0(t.def)} · SPD ${n0(t.spd)} · DEX ${n0(t.dex)}">${n0(t.total)}</td>
-      <td>${statusCell}</td>
-      <td><a class="attack-btn" href="https://www.torn.com/page.php?sid=attack&user2ID=${t.id}">${atkIcon}${tr('Saldır', 'Attack')}</a></td>
+      <td>${okay ? statusTimerChip(st, true) : checking(t)}</td>
+      <td><a class="attack-btn" data-lv-id="${t.id}" href="https://www.torn.com/page.php?sid=attack&user2ID=${t.id}">${atkIcon}${tr('Saldır', 'Attack')}</a></td>
     </tr>`;
   }).join('') || `<tr><td colspan="6" class="muted">${tr('Şu an saldırılabilir hedef yok; filtreyi kapat ya da başka listeye geç.', 'No attackable targets right now; clear the filter or pick another list.')}</td></tr>`;
-  const okCount = d.targets.filter((t) => t.status?.state === 'Okay').length;
+  const okCount = v.rows.filter((t) => t.status?.state === 'Okay').length;
   $('#lv-progress').innerHTML = d.error
     ? `<span class="neg">${esc(d.error)}</span>`
-    : `${tr('Saldırılabilir', 'Attackable')}: <b>${okCount}</b> · ${tr('kontrol edilen', 'checked')} ${d.checked}/${d.targets.length}`;
+    : `${tr('Saldırılabilir', 'Attackable')}: <b>${okCount}</b> · ${tr('hastane, hapis ya da yolda (gizli)', 'in hospital, jail or travelling (hidden)')}: ${v.blocked} · ${tr('kontrol edilen', 'checked')} ${d.checked}/${d.targets.length}`;
 }
+
+// Attack: the scan checks that target again every few seconds for a while, so it leaves the list once it is in hospital.
+$('#level-body')?.addEventListener('click', (e) => {
+  const a = e.target.closest('.attack-btn[data-lv-id]');
+  if (a) api('/api/levelling/attacked', { method: 'POST', body: JSON.stringify({ id: Number(a.dataset.lvId) }) }).catch(() => {});
+});
 
 $('#level-body')?.addEventListener('change', (e) => {
   if (e.target.id === 'lv-list') {
@@ -902,107 +904,95 @@ $('#level-body')?.addEventListener('change', (e) => {
 // Sayfa açıkken durumları 5 sn'de bir al (sunucu taramayı yalnızca bu istekler gelirken sürdürür)
 setInterval(() => { if (state.view === 'level' && trackerVisible()) loadLevel(); }, 5000);
 
-/* ---------- Seviye 15 altı: Başlangıç Rehberi ---------- */
-const GUIDE_SECTIONS = [
-  { icon: '🧭', title: ['Büyük resim', 'The big picture'], items: [
-    ['Torn bir maratondur. Her gün düzenli olarak enerji ve nerve harcamak, bir günde her şeyi yapmaya çalışmaktan çok daha hızlı ilerletir.', 'Torn is a marathon. Spending your energy and nerve steadily every day gets you further than trying to do everything at once.'],
-    ['İlk hedefin seviye 15: yurt dışı seyahat açılır ve para kazanmak asıl o zaman başlar.', 'Your first goal is level 15: it unlocks travel abroad, which is where real money starts.'],
-    ['Hastaneye düşmek ya da hapse girmek oyunun doğal parçası. Hapisteyken yüksek seviyeli oyuncular seni bust edip çıkarabilir.', 'Landing in hospital or jail is part of the game. While jailed, higher-level players may bust you out.'],
-  ] },
-  { icon: '🏋️', title: ['Gym nasıl ilerletilir', 'How to progress in the gym'], items: [
-    ['Gym kazancını enerji, happy (mutluluk) ve gym belirler. Happy bir çarpan gibi çalışır; daha iyi ev, daha yüksek taban happy demektir. İlk ara hedef olarak Mansion iyi bir seçimdir; personel tutmak happy\'yi artırır ama günlük gideri vardır.', 'Gym gains depend on energy, happy and the gym itself. Happy works like a multiplier, and a better property means a higher base happy. A Mansion is a good first milestone; staff raise happy but cost upkeep every day.'],
-    ['Antrenmana taban happy ile başlama. Şehirdeki dükkânlardan alınan ucuz bir şeker ya da lolipop bile happy\'yi yükseltir.', 'Never train at base happy. Even a cheap candy or lollipop from a city shop raises it.'],
-    ['Enerjini tek seferde harca. Her antrenmandan sonra happy biraz düşer; tüm enerjiyi tek tıkta harcarsan oyun hepsini başlangıçtaki yüksek happy ile hesaplar.', 'Spend all your energy in one go. Happy drops a little after each train; one big train is calculated at your starting, highest happy.'],
-    ['Bulunduğun gym\'de en çok kazanç veren statı çalış. Statları eşit tutmaya çalışmak verimsizdir; geride kalanları ileride dengeli gym\'lerde yakalarsın.', 'Train the stat with the best gain in your current gym. Forcing equal stats is inefficient; you can catch up on the lagging ones later in balanced gyms.'],
-    ['Yeni gym\'ler belli miktarda enerji harcayınca açılır. Dolu duran enerji barı kayıptır.', 'New gyms unlock after you spend a set amount of energy. A full energy bar sitting idle is wasted progress.'],
-    ['300 kuralı: dört stat da yaklaşık 300 olana kadar enerjini gym\'e ver. Sonra enerjiyi saldırılara (Baldr\'s Levelling Targets) çevir ve seviye atla.', 'The 300 rule: train until all four stats are around 300. Then switch your energy to attacks (Baldr\'s Levelling Targets) and level up.'],
-    ['Donator Pack en değerli uzun vadeli yatırımlardan biridir: maksimum enerji 150 olur ve daha hızlı dolar. Xanax +250 enerji verir ama uzun cooldown\'u ve bağımlılığı vardır.', 'A Donator Pack is one of the best long-term buys: max energy becomes 150 and refills faster. Xanax gives +250 energy but has a long cooldown and adds addiction.'],
-  ] },
-  { icon: '💼', title: ['Hangi işe girmeli', 'Which job to take'], items: [
-    ['Şehir işleri (City Jobs) iş puanı (JP) ve rütbe ödülleri verir; son rütbenin ödülü kalıcıdır.', 'City jobs give job points (JP) and rank rewards; the final-rank reward is permanent.'],
-    ['Education: başlamak için en iyisi. JP\'yi çalışma statlarına çevirebilirsin; son rütbe tüm kurs sürelerini kalıcı olarak %10 kısaltır.', 'Education: the best place to start. JP converts into working stats, and the final rank permanently cuts every course time by 10%.'],
-    ['Army: erken dönemde savaşa katkı verir; JP\'yi Strength ya da Defense\'e çevirebilirsin.', 'Army: helps your combat early on; JP converts into Strength or Defense.'],
-    ['Medical: son rütbe başkalarını revive etme yeteneği verir, bu da iyi bir gelir kaynağıdır. Law: son rütbe crime EXP\'sine ve skill kazancına kalıcı %5 ekler.', 'Medical: the final rank lets you revive others, which pays well. Law: the final rank adds a permanent 5% to crime EXP and skill gain.'],
-    ['Grocer ve Casino başlangıçta pek değmez.', 'Grocer and Casino are rarely worth it early on.'],
-    ['Oyuncu şirketlerinden gym\'e yardımcı olanlar: Fitness Center (gym kazancı +%3, happy kaybı azalır), Music Store (gym deneyimi +%30, yeni gym\'ler daha hızlı açılır), Gents / Ladies Strip Club (Dexterity / Defense kazancı +%10), Sweet Shop ve Adult Novelties (happy), Pub ve Restaurant (enerji / nerve).', 'Player companies that help training: Fitness Center (+3% gym gains, less happy loss), Music Store (+30% gym experience, gyms unlock faster), Gents / Ladies Strip Club (+10% Dexterity / Defense gains), Sweet Shop and Adult Novelties (happy), Pub and Restaurant (energy / nerve).'],
-    ['Çalışma statların pozisyon şartının altındaysa daha yavaş artar. İşsizken uygulamadaki İş Asistanı sana uygun pozisyonları listeler.', 'Working stats grow slower while they are below a position\'s requirement. While unemployed, the Job Assistant page lists positions that fit you.'],
-  ] },
-  { icon: '🎓', title: ['Eğitim sırası', 'Education order'], items: [
-    ['Kurslar gerçek zamanlı ilerler (14 gün = gerçekten 14 gün). Her zaman açık bir kursun olsun.', 'Courses run in real time (14 days really is 14 days). Always keep one running.'],
-    ['1) BIO1340 → BIO2127 (Intravenous Therapy): blood bag kullanabilirsin; hastanede daha az kalırsın.', '1) BIO1340 → BIO2127 (Intravenous Therapy): lets you use blood bags, so you spend less time in hospital.'],
-    ['2) Sports Science: SPT1430, ardından SPT2440 / 2450 / 2460 / 2470. Her biri bir statın gym kazancına +%1 ekler; bölüm diploması tüm statlara kalıcı +%2 verir.', '2) Sports Science: SPT1430, then SPT2440 / 2450 / 2460 / 2470. Each adds +1% gym gains to one stat; the bachelor\'s degree adds a permanent +2% to all stats.'],
-    ['Merit\'lerini erken dönemde Education perk\'lerine harcamak kurs sürelerini kısaltır. West Side University (WSU) hissesinin ödülü de eğitim süresini %10 kısaltır.', 'Spending early merits on Education perks shortens courses. The West Side University (WSU) stock benefit cuts education time by another 10%.'],
-    ['Bağımlılığın çok yükselirse kurstan atılabilirsin; uyuşturucuyu ölçülü kullan.', 'If your addiction gets too high you can be kicked out of a course, so use drugs in moderation.'],
-  ] },
-  { icon: '🛒', title: ['Ne almalı, ne almamalı', 'What to buy, what to skip'], items: [
-    ['Al: happy için ucuz şekerler, ev yükseltmeleri, ileride Xanax ve (BIO2127\'den sonra) blood bag.', 'Buy: cheap candy for happy, property upgrades, later Xanax and (after BIO2127) blood bags.'],
-    ['Alma: statların taşıyamayacağı pahalı silah ve zırhlar, crime aletleri (oynadıkça bulursun) ve kumarhane; kumarhane uzun vadede hep kaybettirir.', 'Skip: expensive weapons and armor your stats cannot use, crime tools (you find them as you play) and the casino, which always loses in the long run.'],
-    ['Hiçbir eşyayı çöpe atma: değersiz görünen eşyalar bile markette satılır, önce fiyatına bak.', 'Never trash items: even junk-looking items sell on the market, so check the price first.'],
-    ['Uyuşturucuda başta yalnızca Xanax (enerji), Ecstasy (happy\'yi ikiye katlar) ve Cannabis (nerve) işe yarar. Speed ve PCP\'de overdose kalıcı stat kaybına yol açabilir; uzak dur.', 'Early on only Xanax (energy), Ecstasy (doubles happy) and Cannabis (nerve) matter. Overdosing on Speed or PCP can cost you stats permanently; avoid them.'],
-  ] },
-  { icon: '🕵️', title: ['Crimes (nerve)', 'Crimes (nerve)'], items: [
-    ['Listenin başından bir suç seç ve onu ilerlet; başarı çubuğu yeşilken dene.', 'Pick one crime from the top of the list and level it up; attempt it while the success bar is green.'],
-    ['Alet satın alma; ihtiyacın olanlar oynadıkça çıkar.', 'Do not buy tools; the ones you need drop as you play.'],
-  ] },
-  { icon: '🧰', title: ['Yardımcı araçlar', 'Helpful tools'], items: [
-    ['TornTools bu uygulamada yerleşik gelir: sayaçlar, market değerleri ve daha fazlası.', 'TornTools is built into this app: timers, market values and more.'],
-    ['Torn Stats: API key\'inle statlarını ve gelişimini takip eder. Torn PDA: telefonda oynuyorsan çok kullanışlı.', 'Torn Stats tracks your stats and progress via your API key. Torn PDA is very handy if you play on your phone.'],
-  ] },
-  { icon: '✈', title: ['Seviye 15 sonrası', 'After level 15'], items: [
-    ['Seyahat açılınca uygulamadaki Seyahat Kârı sayfası hangi üründen ne kazanacağını gösterir.', 'Once travel unlocks, the app\'s Travel Profit page shows what each item earns.'],
-    ['Uzun vadeli hedef: pistli bir Private Island (pilotla uçuş daha kısa sürer) ve Large Suitcase (daha çok eşya taşırsın).', 'Long-term goal: a Private Island with an airstrip (a private pilot flies faster) and a Large Suitcase (more items per trip).'],
-    ['Başındaysan kısa uçuşlar, uzun süre uzak kalacaksan uzun uçuşlar daha kârlıdır. Üzerinde fazla nakitle iniş yapma; mug edilebilirsin.', 'Short flights pay best while you are at the keyboard, long ones when you will be away. Do not land carrying lots of cash; you can get mugged.'],
-  ] },
-];
-
-const STAT_NAMES = { strength: 'Strength', defense: 'Defense', speed: 'Speed', dexterity: 'Dexterity' };
-function guideSteps() {
-  const o = state.overview; if (!o) return [];
-  const steps = [];
-  const stats = Object.entries(o.battle?.stats || {}).map(([k, s]) => [STAT_NAMES[k] || k, Number(s.base) || 0]);
-  const low = stats.filter(([, v]) => v < 300);
-  if (stats.length && low.length) {
-    steps.push({ done: false, text: tr(`Gym: ${low.map(([n, v]) => `${n} ${n0(v)}`).join(', ')} henüz 300'ün altında. Enerjini gym'de harca.`, `Gym: ${low.map(([n, v]) => `${n} ${n0(v)}`).join(', ')} still below 300. Spend your energy in the gym.`) });
-  } else if (stats.length) {
-    steps.push({ done: true, text: tr('Dört stat da 300+: enerjini Levelling hedeflerine harca.', "All four stats are 300+: spend your energy on Baldr's Levelling Targets."), action: `<button class="btn sm" data-goto-view="level">🎯 ${tr('Hedeflere git', 'Open targets')}</button>` });
-  }
-  const job = o.player?.job || {};
-  if (hasJob()) {
-    const name = Number(job.company_id) > 0 ? job.company_name : job.job;
-    steps.push({ done: true, text: tr(`İşin var: ${esc(name || '')} ${job.position ? `(${esc(job.position)})` : ''}`, `You have a job: ${esc(name || '')} ${job.position ? `(${esc(job.position)})` : ''}`) });
-  } else {
-    steps.push({ done: false, text: tr('Henüz işin yok: başlangıç için en iyisi Education şehir işi.', 'No job yet: the Education city job is the best start.'), action: feat('page.job') ? `<button class="btn sm" data-goto-view="job">💼 ${tr('İş Asistanı', 'Job Assistant')}</button>` : '' });
-  }
-  const edu = o.education || {};
-  const eduBtn = `<button class="btn sm ghost" data-open-url="https://www.torn.com/page.php?sid=education" data-tab-label="${tr('Eğitim', 'Education')}">🎓 ${tr('Eğitim sayfası', 'Education page')}</button>`;
-  if (edu.currentId) steps.push({ done: true, text: tr(`Kurs devam ediyor: ${esc(edu.current || '')}`, `Course in progress: ${esc(edu.current || '')}`) });
-  else steps.push({ done: false, text: tr('Şu an kurs okumuyorsun: BIO1340 ile başla, sonra BIO2127 ve Sports Science.', 'You are not taking a course: start with BIO1340, then BIO2127 and Sports Science.'), action: eduBtn });
-  const happy = o.bars?.happy;
-  if (happy && happy.maximum) {
-    if (happy.current <= happy.maximum) steps.push({ done: false, text: tr(`Happy taban seviyede (${n0(happy.current)}). Antrenmandan önce ucuz bir şekerle yükselt.`, `Happy is at base (${n0(happy.current)}). Raise it with cheap candy before training.`) });
-    else steps.push({ done: true, text: tr(`Happy tabanın üstünde (${n0(happy.current)}): antrenman için iyi an.`, `Happy is above base (${n0(happy.current)}): good time to train.`) });
-  }
-  const en = o.bars?.energy;
-  if (en && en.maximum && en.current >= en.maximum) steps.push({ done: false, text: tr(`Enerjin dolu (${en.current}/${en.maximum}), boşa gidiyor: şimdi harca.`, `Energy is full (${en.current}/${en.maximum}) and going to waste: spend it now.`) });
-  return steps;
+/* ---------- Seviye 15 altı: Başlangıç Rehberi (metinler ve kurallar: beginner-guide.js) ---------- */
+// The shell is drawn once per language; every overview refresh repaints only the personal steps and the Happy jump
+// checklist, so an opened Details stays open. Each <details data-gd-id> also remembers being open across redraws
+// (a language switch, the Tools page). LRX only shows: every step is done by the player in Torn.
+const guideUi = { shell: '', open: new Set() };
+document.addEventListener('toggle', (e) => {
+  const d = e.target;
+  if (!(d instanceof HTMLDetailsElement) || !d.dataset.gdId) return;
+  if (d.open) guideUi.open.add(d.dataset.gdId); else guideUi.open.delete(d.dataset.gdId);
+}, true); // toggle does not bubble
+const L2 = (p) => tr(p[0], p[1]);
+const guideFmt = () => ({ num: n0, dur: human, time: (sec) => tctTime(sec * 1000).slice(0, 5) });
+const gdList = (items, tag = 'ul') => `<${tag} class="gd-list">${items.map((p) => `<li>${esc(L2(p))}</li>`).join('')}</${tag}>`;
+function gdDetails(id, blocks) {
+  return `<details class="gd-more" data-gd-id="${id}"${guideUi.open.has(id) ? ' open' : ''}><summary>${tr('Detaylar', 'Details')}</summary>
+      ${blocks.map((b) => `${b.head ? `<h4>${esc(L2(b.head))}</h4>` : ''}${gdList(b.items)}`).join('')}</details>`;
 }
 
-function renderGuide() {
+// The Happy jump card: the guide shows it under level 15, the Tools page from level 15 (tools.happyJump).
+function happyJumpCard() {
+  const s = LRXGuide.SECTIONS.find((x) => x.id === 'jump');
+  return `<article class="glass card hj-card">
+      <div class="card-head wrap"><h3>${s.icon} ${esc(L2(s.title))}</h3><span class="chip">${tr('Yalnızca gösterir', 'Display only')}</span></div>
+      <div class="hj-live" data-hj-live></div>
+      ${gdList(s.summary)}
+      ${gdDetails('jump', s.details)}
+      <p class="muted sl-note">${esc(L2(LRXGuide.JUMP_NOTE))}</p>
+    </article>`;
+}
+// The live checklist of every Happy jump card under `root`, from the overview the app already has.
+function paintJumpLive(root) {
+  const slots = root?.querySelectorAll('[data-hj-live]');
+  if (!slots?.length) return;
+  const r = LRXGuide.jumpReadiness(state.overview, { nowMs: Date.now(), skewMs: state.skew || 0 });
+  const c = r.checks;
+  const row = (ok, label, value, title = '') => `<li class="${ok ? 'ok' : 'todo'}"${title ? ` title="${esc(title)}"` : ''}><span>${ok ? '✅' : '▫️'}</span><b>${label}</b><span class="mono">${value}</span></li>`;
+  const rows = r.phase === 'unknown' ? '' : `<ul class="hj-checks">
+      ${row(c.status.ok, tr('Durum', 'Status'), esc(statusInfo({ state: r.state || 'Okay' }).text))}
+      ${row(c.energy.ok, tr('Enerji', 'Energy'), `${n0(c.energy.current)} / ${n0(c.energy.max)}`, tr(`Xanax ile biriktirme sınırı: ${n0(LRXGuide.STACK_CAP)}`, `Stacking cap with Xanax: ${n0(LRXGuide.STACK_CAP)}`))}
+      ${row(c.drug.ok, 'Drug CD', c.drug.left ? human(c.drug.left) : tr('Hazır', 'Ready'))}
+      ${row(c.booster.ok, 'Booster CD', c.booster.left ? human(c.booster.left) : tr('Boş', 'Empty'))}
+      ${row(c.happy.ok, 'Happy', `${n0(c.happy.current)} / ${n0(c.happy.max)}`)}
+    </ul>`;
+  const html = `<div class="hj-next"><b>👉 ${tr('Sıradaki adım', 'Next step')}:</b> ${esc(L2(LRXGuide.phaseText(r, guideFmt())))}</div>${rows}`;
+  for (const slot of slots) slot.innerHTML = html;
+}
+
+function guideAction(a) {
+  if (!a) return '';
+  if (a.view === 'level') return `<button class="btn sm" data-goto-view="level">🎯 ${tr('Hedeflere git', 'Open targets')}</button>`;
+  if (a.view === 'job') return feat('page.job') ? `<button class="btn sm" data-goto-view="job">💼 ${tr('İş Asistanı', 'Job Assistant')}</button>` : '';
+  if (a.url) return `<button class="btn sm ghost" data-open-url="${esc(a.url)}" data-tab-label="${esc(L2(a.label))}">${a.icon || ''} ${esc(L2(a.label))}</button>`;
+  return '';
+}
+function paintGuideLive(body) {
   const lvl = myLevel();
-  const steps = guideSteps();
-  const pctTo15 = lvl ? Math.min(100, (lvl / 15) * 100) : 0;
-  $('#guide-body').innerHTML = `
+  $('#gd-level').innerHTML = lvl ? `<span class="chip tq">${tr('Seviye', 'Level')} ${lvl} / 15</span>` : '';
+  $('#gd-progress').innerHTML = lvl ? `<div class="storage-bar gd-progress"><i style="width:${Math.min(100, (lvl / 15) * 100)}%;background:var(--tq)"></i></div>` : '';
+  const steps = LRXGuide.steps(state.overview, guideFmt());
+  $('#gd-steps').innerHTML = steps.length
+    ? steps.map((s) => `<li class="${s.done ? 'done' : 'todo'}"><span>${s.done ? '✅' : '▫️'}</span><div>${esc(L2(s.text))}</div>${guideAction(s.action)}</li>`).join('')
+    : `<li class="muted">${tr('Kişisel öneriler için önce genel bakış verilerinin yüklenmesi gerekiyor.', 'Personal tips appear once your overview data has loaded.')}</li>`;
+  paintJumpLive(body);
+}
+function renderGuide() {
+  const body = $('#guide-body');
+  if (!body) return;
+  if (guideUi.shell !== state.lang || !body.querySelector('#gd-steps')) {
+    body.innerHTML = `
     <article class="glass card">
-      <div class="card-head wrap"><h3>👉 ${tr('Sıradaki adımların', 'Your next steps')}</h3>${lvl ? `<span class="chip tq">${tr('Seviye', 'Level')} ${lvl} / 15</span>` : ''}</div>
-      ${lvl ? `<div class="storage-bar gd-progress"><i style="width:${pctTo15}%;background:var(--tq)"></i></div>` : ''}
-      ${steps.length ? `<ul class="gd-steps">${steps.map((s) => `<li class="${s.done ? 'done' : 'todo'}"><span>${s.done ? '✅' : '▫️'}</span><div>${s.text}</div>${s.action || ''}</li>`).join('')}</ul>`
-        : `<p class="muted">${tr('Kişisel öneriler için önce genel bakış verilerinin yüklenmesi gerekiyor.', 'Personal tips appear once your overview data has loaded.')}</p>`}
+      <div class="card-head wrap"><h3>👉 ${tr('Sıradaki adımların', 'Your next steps')}</h3><span id="gd-level"></span></div>
+      <div id="gd-progress"></div>
+      <ul class="gd-steps" id="gd-steps"></ul>
     </article>
-    ${GUIDE_SECTIONS.map((sec) => `
-      <article class="glass card">
-        <div class="card-head"><h3>${sec.icon} ${tr(sec.title[0], sec.title[1])}</h3></div>
-        <ul class="gd-list">${sec.items.map(([a, b]) => `<li>${esc(tr(a, b))}</li>`).join('')}</ul>
+    <article class="glass card">
+      <div class="card-head"><h3>🧭 ${tr('Yol haritası', 'Roadmap')}</h3></div>
+      <p class="muted gd-lead">${esc(L2(LRXGuide.LEAD))}</p>
+      <div class="gd-road">${LRXGuide.ROADMAP.map((ph) => `<section class="gd-phase"><h4>${esc(L2(ph.title))}</h4>${gdList(ph.items, 'ol')}</section>`).join('')}</div>
+    </article>
+    ${happyJumpCard()}
+    ${LRXGuide.SECTIONS.filter((s) => s.id !== 'jump').map((s) => `
+      <article class="glass card" data-gd-section="${s.id}">
+        <div class="card-head"><h3>${s.icon} ${esc(L2(s.title))}</h3></div>
+        ${gdList(s.summary)}
+        ${gdDetails(s.id, s.details)}
       </article>`).join('')}`;
+    guideUi.shell = state.lang;
+  }
+  paintGuideLive(body);
 }
 
 document.addEventListener('click', (e) => {
@@ -1011,7 +1001,7 @@ document.addEventListener('click', (e) => {
 });
 
 /* ---------- Görünüm kancaları ---------- */
-const EXTRA_LOADERS = { job: loadJob, gym: loadGym, networth: loadNetworth, travel: loadTravel, level: loadLevel, guide: renderGuide };
+const EXTRA_LOADERS = { job: loadJob, gym: loadGym, finance: (force) => window.loadFinance?.(force), travel: loadTravel, level: loadLevel, guide: renderGuide };
 window.onViewShown = (v) => {
   if (v === 'settings') renderFeatureSettings();
   if (EXTRA_LOADERS[v]) EXTRA_LOADERS[v]();

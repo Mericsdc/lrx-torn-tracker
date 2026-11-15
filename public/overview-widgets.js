@@ -6,6 +6,7 @@
   const titles = {
     profile: ['Profil kartı', 'Profile card'], drug: ['Xanax / drug sayacı', 'Xanax / drug timer'],
     edu: ['Eğitim sayacı', 'Education timer'], day: ['Gün dönümü (18:00 TCT)', 'Day reset (18:00 TCT)'],
+    timers: ['Canlı sayaçlar', 'Live timers'],
     bars: ['Barlar', 'Bars'], chips: ['Durum çipleri', 'Status chips'], battle: ['Savaş gücü', 'Battle stats'],
     company: ['Şirket özeti', 'Company summary'],
     gym: ['Gym kazancı', 'Gym gains'], networth: ['Networth', 'Networth'], travel: ['Seyahat kârı', 'Travel profit'],
@@ -101,11 +102,16 @@
       + more(size, [[tr('Başarılı bust', 'Successful busts'), n0(d?.total?.success)], [tr('Ceza puanı (tahmini)', 'Penalty score (est.)'), n0(d?.score)]]);
   }
 
-  // Merit Tracker (awardRows): the missing award with the most progress.
+  // Merit Tracker (awardEasyCard, LRXMerit.easyWins): the easiest next award with its how-to line: the counter closest
+  // to done, then what comes by itself soon, then a one-time award most players have. Long grinds (level, rank, gym)
+  // never lead, whatever their percentage.
   function awards(d, size) {
-    const [top, ...rest] = (d?.awards || []).filter((a) => !a.owned && a.pct != null).sort((a, b) => b.pct - a.pct || b.circulation - a.circulation);
-    if (!top) return main(tr('İlerlemesi ölçülen eksik ödül yok', 'No missing award with progress'));
-    return main(esc(top.name), `${pct(top.pct)} · ${n0(top.cur)} / ${n0(top.goal)}`) + more(size, rest.slice(0, 2).map((a) => [esc(a.name), pct(a.pct)]));
+    const e = window.LRXMerit ? LRXMerit.easyWins(d?.awards || [], { num: n0, money: cmoney }) : { count: [], time: [], once: [] };
+    const [top, ...rest] = [e.count[0], e.time[0], e.once[0], ...e.count.slice(1)].filter(Boolean);
+    if (!top) return main(tr('Şu an kolay kazanım yok', 'No easy wins right now'));
+    const say = (pair) => esc(tr(pair[0], pair[1]));
+    const badge = (a) => (a.g.group === 'count' ? pct(a.pct) : a.g.side ? say(a.g.side) : '');
+    return main(esc(top.name), `${badge(top)} · ${say(top.g.how)}`) + more(size, rest.slice(0, 2).map((a) => [esc(a.name), badge(a)]));
   }
 
   // Faction (myOcCard): the player's own OC, when it is ready and whether its slot is set.

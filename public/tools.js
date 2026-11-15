@@ -3,12 +3,13 @@
    - Alış fiyatı koruması: alış fiyatları (Torn log'u ya da elle) → Item Market / bazaar ilanında uyarı
    - Etkinlikler: Torn takvimi, kişisel başlangıç saati, yıllık etkinlik rehberleri (events.js)
    - Torn sayfa yardımcıları: ne yaptıkları ve açık / kapalı durumları
+   - Happy jump kartı (seviye 15+; altında Başlangıç Rehberi'nde): features.js happyJumpCard() / paintJumpLive()
    Torn kuralları: veriler yalnızca Torn API'den gelir; sayfa yardımcıları yalnızca açık sayfayı boyar, tıklamaz.
    ========================================================= */
 
 Object.assign(I18N, { 'nav.tools': ['Araçlar', 'Tools'] });
 Object.assign(VIEW_META, {
-  tools: { tr: ['Araçlar', 'Alış fiyatı koruması, etkinlikler ve Torn sayfa yardımcıları'], en: ['Tools', 'Purchase price protection, events and Torn page helpers'] },
+  tools: { tr: ['Araçlar', 'Alış fiyatı koruması, etkinlikler, Torn sayfa yardımcıları ve happy jump'], en: ['Tools', 'Purchase price protection, events, Torn page helpers and the happy jump'] },
 });
 
 const toolState = { pur: null, purErr: null, ev: null, evErr: null, cfg: null, add: { name: '', cost: '' }, busy: false };
@@ -97,7 +98,7 @@ function eventsCard() {
 /* ---------- Torn sayfa yardımcıları ---------- */
 const HELPER_LIST = [
   ['torn.crimeHelper', '🕵️', 'page.php?sid=crimes#/pickpocketing'], ['torn.crimeValue', '💰', 'page.php?sid=crimes'], ['torn.crimeRank', '🚦', 'page.php?sid=crimes#/searchforcash'],['torn.burglaryHelper', '🏠', 'page.php?sid=crimes#/burglary'],
-  ['torn.jailHelper', '🔓', 'jailview.php'], ['torn.sellGuard', '🛡️', 'page.php?sid=ItemMarket#/addListing'], ['torn.pokerHelper', '🃏', 'page.php?sid=holdem'],
+  ['torn.jailHelper', '🔓', 'jailview.php'], ['torn.sellGuard', '🛡️', 'page.php?sid=ItemMarket#/addListing'], ['torn.bazaarUndercut', '🏷️', 'bazaar.php#/add'], ['torn.profileWorkStats', '⭐', ''], ['torn.pokerHelper', '🃏', 'page.php?sid=holdem'],
   ['torn.ctHelper', '🎄', 'christmas_town.php'], ['torn.halloweenHelper', '🎃', 'shops.php?step=candy'], ['torn.eggFinder', '🥚', ''], ['torn.warHelper', '⚔️', 'factions.php'], ['torn.fastSlots', '🎰', 'page.php?sid=slots'],
 ];
 // Etkinlik yardımcıları yalnızca etkinlik penceresinde çalışır
@@ -119,16 +120,21 @@ function helpersCard() {
         ${url ? `<button class="btn sm ghost" data-open-url="https://www.torn.com/${url}" data-tab-label="${esc(name)}">↗</button>` : ''}</div></div>`;
     }).join('')}</div>
     <p class="muted sl-note">${tr(
-      'Torn kuralları gereği bu yardımcılar yalnızca açıp baktığın sayfayı okur ve boyar; Torn\'a fazladan istek atmaz, senin yerine tıklamaz ya da onay ekranlarını atlatmaz. Arka plandaki sekmeden uyarı vermez.',
-      'To follow Torn\'s rules, these helpers only read and paint the page you are looking at; they make no extra requests to Torn, never click for you and never skip confirmation screens. They never send alerts from a background tab.')}</p>
+      'Torn kuralları gereği bu yardımcılar yalnızca açıp baktığın sayfayı okur ve boyar; senin yerine tıklamaz ya da onay ekranlarını atlatmaz. Arka plandaki sekmeden uyarı vermez. Torn\'a ek istek gönderen tek yardımcı profil yardımcısıdır: profil başına 2 API isteği, kayıtlı anahtarınla ve önbellekli.',
+      'To follow Torn\'s rules, these helpers only read and paint the page you are looking at; they never click for you and never skip confirmation screens. They never send alerts from a background tab. The profile helper is the only one that sends Torn extra requests: 2 API requests per profile, with your saved key and cached.')}</p>
   </article>`;
 }
 
 function renderTools() {
   const html = (feat('event.guide') && toolState.ev ? window.eventGuideCards() : '') + (feat('tools.events') ? eventsCard() : '')
-    + (feat('tools.purchases') ? purchaseCard() : '') + (feat('tools.helpers') ? helpersCard() : '');
+    + (feat('tools.purchases') ? purchaseCard() : '') + (feat('tools.helpers') ? helpersCard() : '')
+    + (feat('tools.happyJump') && !underLevel15() ? happyJumpCard() : '');
   $('#tools-body').innerHTML = html || allCardsOff();
+  paintJumpLive($('#tools-body'));
 }
+// Each overview refresh repaints only the jump checklist, so the purchase form and an opened Details are left alone.
+const toolsOverviewRendered = window.onOverviewRendered;
+window.onOverviewRendered = () => { toolsOverviewRendered?.(); if (state.view === 'tools') paintJumpLive($('#tools-body')); };
 
 async function savePurchase(id, cost) {
   await api('/api/purchases', { method: 'POST', body: JSON.stringify({ id, cost }) });

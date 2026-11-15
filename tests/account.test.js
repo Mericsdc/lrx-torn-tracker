@@ -122,10 +122,11 @@ test('a key of another player entered in Settings starts clean and drops the pre
 
 test('each player gets back only their own Overview layouts', async () => {
   const daily = { v: 1, active: 0, layouts: [{ name: 'Daily', widgets: [{ id: 'battle', size: 'M' }] }] };
+  const stored = { ...daily, v: 2 }; // sets are stored and returned at the current version
   await request('/api/logout', {});
   assert.equal((await request('/api/auth', { apiKey: KEY_A })).data.player.id, 111);
   assert.equal((await request('/api/overview-layouts', { playerId: 111, layouts: daily })).status, 200);
-  assert.deepEqual((await request('/api/overview-layouts')).data, { playerId: 111, layouts: daily });
+  assert.deepEqual((await request('/api/overview-layouts')).data, { playerId: 111, layouts: stored });
 
   await request('/api/logout', {});
   assert.equal((await request('/api/auth', { apiKey: KEY_B })).data.player.id, 222);
@@ -133,11 +134,11 @@ test('each player gets back only their own Overview layouts', async () => {
   const hijack = { v: 1, active: 0, layouts: [{ name: 'Hijack', widgets: [] }] };
   const stale = await request('/api/overview-layouts', { playerId: 111, layouts: hijack });
   assert.equal(stale.status, 409); assert.equal(stale.data.code, 'PLAYER_CHANGED');
-  assert.deepEqual(savedConfig().overviewLayouts, { 111: daily }, 'a refused save stores nothing');
+  assert.deepEqual(savedConfig().overviewLayouts, { 111: stored }, 'a refused save stores nothing');
 
   await request('/api/logout', {});
   assert.equal((await request('/api/auth', { apiKey: KEY_A })).data.player.id, 111);
-  assert.deepEqual((await request('/api/overview-layouts')).data, { playerId: 111, layouts: daily });
+  assert.deepEqual((await request('/api/overview-layouts')).data, { playerId: 111, layouts: stored });
 });
 
 test('a hostile saved layout is repaired before it is stored', async () => {

@@ -14,6 +14,33 @@ test('cookie import removes stale auth/token cookies and retains unrelated domai
   assert.equal(set[0].value, 'new'); assert.equal(set[0].expirationDate, undefined);
   assert.ok(removed.every(([url]) => url.includes('torn.com')));
 });
+// The Google sign-in import reads a closed Chrome profile, which never holds session-only cookies such as Torn's
+// rfc_id. A leftover rfc_id from the previous login, next to the imported PHPSESSID and rfc_v, made Torn answer
+// "Wrong rfcv token" on every page until the app was restarted.
+test('cookie import replaces the whole Torn session but keeps Cloudflare and other sites', async () => {
+  let jar = [
+    { name: 'PHPSESSID', domain: 'www.torn.com', path: '/', value: 'old' },
+    { name: 'rfc_v', domain: 'www.torn.com', path: '/', value: 'old-token' },
+    { name: 'rfc_id', domain: 'www.torn.com', path: '/', value: 'old-id', session: true },
+    { name: 'secret', domain: 'www.torn.com', path: '/', value: 'old-secret' },
+    { name: 'cf_clearance', domain: '.torn.com', path: '/', value: 'browser-bound' },
+    { name: '__cf_bm', domain: '.torn.com', path: '/', value: 'browser-bound' },
+    { name: 'rfc_id', domain: 'example.com', path: '/', value: 'unrelated' },
+  ];
+  const session = { cookies: {
+    get: async () => jar.map((c) => ({ ...c })),
+    remove: async (url, name) => { const host = new URL(url).hostname; jar = jar.filter((c) => !(c.name === name && c.domain.replace(/^\./, '') === host)); },
+    set: async (c) => { jar.push({ name: c.name, domain: c.domain || new URL(c.url).hostname, path: c.path, value: c.value }); },
+    flushStore: async () => {} } };
+  await replaceTornCookies(session, [
+    { name: 'PHPSESSID', domain: 'www.torn.com', path: '/', value: 'new' },
+    { name: 'rfc_v', domain: 'www.torn.com', path: '/', value: 'new-token' },
+  ]);
+  assert.deepEqual(jar.map((c) => `${c.domain} ${c.name}=${c.value}`).sort(), [
+    '.torn.com __cf_bm=browser-bound', '.torn.com cf_clearance=browser-bound',
+    'example.com rfc_id=unrelated', 'www.torn.com PHPSESSID=new', 'www.torn.com rfc_v=new-token',
+  ]);
+});
 test('duplicate RFC cookie cleanup restores the preferred token after removal', async () => {
   const operations = [];
   const session = { cookies: { get: async () => [
