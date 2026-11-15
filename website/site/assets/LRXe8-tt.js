@@ -33,6 +33,14 @@
     credNote: `Bağımsız projeler, teşekkürle anılır. Herhangi bir onay ima edilmez ve lisansları geçerliliğini korur. <a href="${GH}/blob/main/userscripts/NOTICE.txt" rel="noopener">Üçüncü taraf bildirimleri</a>`,
     relEyebrow: 'Sürüm notları', relTitle: 'Sürüm sürüm neler değişti.', relLead: 'Güncellemeler uygulamanın içinden kurulur. Key\'in, ayarların ve verilerin yerinde kalır.',
     relLatest: 'En yeni',
+    rel14t: 'Yeni Genel Bakış ve yenilenen sayfalar',
+    rel14: '<li>Genel Bakış artık sürükleyip ekleyip çıkarabildiğin kartlardan oluşuyor. Ayarlar\'da <b>Genel Bakış düzeni</b> kapatılırsa eski ekran geri gelir.</li>'
+      + '<li><b>Canlı sayaçlar</b> şeridi ilaç bekleme süreni, eğitimini ve 18:00 TCT gün dönümünü tek satırda gösterir.</li>'
+      + '<li>15. seviyenin altındakiler için yeni <b>Başlangıç Rehberi</b>, 15\'ten itibaren Araçlar\'da <b>Happy jump</b> rehberi.</li>'
+      + '<li>Networth ve Gelir Tablosu artık tek bir <b>Finans</b> sayfası.</li>'
+      + '<li>Stock Status, Employees, Merit Tracker, Gym &amp; Stats, Premium ve Temalar yenilendi.</li>'
+      + '<li>Yalnızca gösteren yeni Torn yardımcıları: OpenMarket etiketleri, Bazaar −$1 fiyat düğmesi ve profillerde çalışma istatistikleri.</li>'
+      + '<li>Chrome üzerinden Google ile giriş artık Torn\'un "Wrong rfcv token" demesine yol açmıyor.</li>',
     rel13t: 'Daha güvenli güncellemeler ve eklentiler',
     rel13: '<li>Yarıda kalan bir güncelleme önceki sürümü kendiliğinden geri yükler.</li>'
       + '<li>TornTools yalnızca paketi TornTools\'un kendi imzasını taşıyorsa kurulur; Chrome da böyle denetler.</li>'
