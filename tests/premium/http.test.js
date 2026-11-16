@@ -149,3 +149,10 @@ test('logout and elapsed sessions revoke access; privacy configuration is requir
   assert.equal((await live.call('/v1/auth/torn', { apiKey: 'AbCdEfGh12345678' })).data.code, 'PRIVACY_NOTICE_NOT_CONFIGURED');
   assert.equal(live.upstreamCalls(), 0);
 });
+test('one address hammering the login cannot use up the global login budget for everyone else', async (t) => {
+  const { call, login } = await fixture(t);
+  const attacker = { 'CF-Connecting-IP': '203.0.113.5' };
+  for (let i = 0; i < 320; i++) await call('/v1/auth/test', { tornId: 4037017 }, null, attacker);
+  assert.equal((await call('/v1/auth/test', { tornId: 4037017 }, null, attacker)).status, 429);
+  assert.ok(await login(4037017)); // a different (loopback) address still signs in
+});

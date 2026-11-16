@@ -22,7 +22,9 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       }
       const headers = Object.fromEntries(Object.entries(message.headers || {}).filter(([name]) => !/^(cookie|origin|host|referer|sec-|proxy-)/i.test(name)));
       const method = String(message.method || 'GET').toUpperCase();
-      if (!['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'PATCH'].includes(method)) throw new Error('Invalid request method');
+      // The scripts only read (GET) and send their own data (POST); nothing else is relayed.
+      if (!['GET', 'POST'].includes(method)) throw new Error('Invalid request method');
+      if (message.script === 'tornw3b-bazaars' && !url.pathname.startsWith('/api/')) throw new Error('Userscript request is not allowed');
       // The bazaar helper only ever reads one item's public listings
       if (message.script === 'lrx-bazaar-price' && (method !== 'GET' || !/^\/api\/marketplace\/\d{1,6}$/.test(url.pathname) || url.search)) throw new Error('Userscript request is not allowed');
       // Redirects are intentionally not followed to a different service.

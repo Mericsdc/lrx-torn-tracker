@@ -16,7 +16,7 @@ const isGoogleAuthUrl = (u) => /^https:\/\/accounts\.(google\.[a-z.]+|youtube\.c
 const isTornUrl = (u) => /^https?:\/\/([^/]+\.)?torn\.com(\/|$)/i.test(String(u || ''));
 
 const { APP_ROOT } = require('../app-paths');
-const { createNavigationGuard } = require('./nav-guard');
+const { createNavigationGuard, isLoopbackUrl } = require('./nav-guard');
 const isPackaged = app.isPackaged;
 const DEFAULT_UPDATE_URL = require('../../package.json').updateUrl || '';
 const APP_ICON = path.join(APP_ROOT, 'assets', 'icon.ico');
@@ -53,12 +53,20 @@ function main() {
       fs.writeFileSync(logFile, tail.slice(tail.indexOf('\n') + 1));
     }
   } catch {}
+  // First run of an install whose data still sits in the app folder (old layout): carry it to the data folder.
+  // An old config.json holds the keys as plain text; the server encrypts them in the new copy when it starts. In an
+  // install the old copy is then removed, so no plain-text key stays behind. A Git checkout keeps its copy: it is
+  // the data folder of `npm run web`.
   if (isPackaged && fs.existsSync(bundledDataDir) && path.resolve(bundledDataDir) !== path.resolve(persistentDataDir)) {
+    const gitCheckout = fs.existsSync(path.join(APP_ROOT, '.git'));
     for (const fname of ['config.json', 'history.json']) {
       const src = path.join(bundledDataDir, fname);
       const dst = path.join(persistentDataDir, fname);
       if (fs.existsSync(src) && !fs.existsSync(dst)) {
-        try { fs.copyFileSync(src, dst); } catch {}
+        try {
+          fs.copyFileSync(src, dst);
+          if (fname === 'config.json' && !gitCheckout) { fs.unlinkSync(src); log('Moved config.json from the app folder to the data folder.'); }
+        } catch (e) { log('Copying', fname, 'to the data folder:', e.message); }
       }
     }
   }
@@ -466,7 +474,18 @@ function main() {
     wc.on('will-redirect', (e, url) => guard(e, url));
   }
 
-  ipcMain.handle('open-external', async (_event, url) => {
+  // Torn tabs and their popups never load an address on this computer: a Torn page, a redirect or a typed
+  // address must not reach the app page or its local API from the Torn session.
+  function guardLoopbackNavigation(wc) {
+    const guard = (e, url) => { if (isLoopbackUrl(url)) e.preventDefault(); };
+    wc.on('will-navigate', guard);
+    wc.on('will-redirect', guard);
+    wc.on('will-frame-navigate', (e) => { if (isLoopbackUrl(e.url)) e.preventDefault(); });
+  }
+
+  // Only the main window has the preload, but every channel still checks that the app page itself is asking.
+  ipcMain.handle('open-external', async (event, url) => {
+    if (!fromAppPage(event)) return;
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
       await shell.openExternal(url);
     }
@@ -476,10 +495,12 @@ function main() {
     return clipboard.readText();
   });
 
-  // A tab only ever shows a web page or a TornTools page: never a local file or a script URL run inside a Torn page.
-  const isTabUrl = (u) => typeof u === 'string' && /^(https?|chrome-extension):\/\//i.test(u);
+  // A tab only ever shows a web page or a TornTools page: never a local file, a script URL run inside a Torn page,
+  // or an address on this computer (the app page and its local API).
+  const isTabUrl = (u) => typeof u === 'string' && /^(https?|chrome-extension):\/\//i.test(u) && !isLoopbackUrl(u);
 
-  ipcMain.handle('tab-create', async (_event, { id, url, activate = true } = {}) => {
+  ipcMain.handle('tab-create', async (event, { id, url, activate = true } = {}) => {
+    if (!fromAppPage(event)) return;
     if (typeof id !== 'string' || !isTabUrl(url) || tabs.has(id) || pendingTabCreates.has(id)) return;
     pendingTabCreates.add(id);
     if (activate) markActive(id);
@@ -509,6 +530,7 @@ function main() {
 
     const wc = view.webContents;
     const openHandler = ({ url: targetUrl }) => {
+      if (isLoopbackUrl(targetUrl)) return { action: 'deny' };
       if (targetUrl && isGoogleAuthUrl(targetUrl)) {
         startExternalLogin();
         return { action: 'deny' };
@@ -522,9 +544,11 @@ function main() {
     wc.setWindowOpenHandler(openHandler);
     wc.on('did-create-window', (win) => {
       guardGoogleNavigation(win.webContents);
+      guardLoopbackNavigation(win.webContents);
       win.webContents.setWindowOpenHandler(openHandler);
     });
     guardGoogleNavigation(wc);
+    guardLoopbackNavigation(wc);
     // Pages that keep navigating by themselves are stopped (fast bursts always, slow loops unless turned off): src/main/nav-guard.js
     const navGuard = createNavigationGuard({ slowGuard: () => featureEnabled('app.loopGuard') });
     wc.on('input-event', (_e, input) => navGuard.input(input.type));
@@ -610,7 +634,8 @@ function main() {
     for (const [id, t] of tabs) if (id !== activeTabId && now - t.lastActive > TAB_SLEEP_MS) sleepTab(t);
   }, 60_000);
 
-  ipcMain.handle('tab-activate', async (_event, tabId) => {
+  ipcMain.handle('tab-activate', async (event, tabId) => {
+    if (!fromAppPage(event)) return;
     markActive(tabId);
     layoutViews();
     if (tabs.has(activeTabId)) injectTornHelpers(activeTabId); // odak gerektiren yardımcılar şimdi çalışsın
@@ -632,7 +657,8 @@ function main() {
     };
   });
 
-  ipcMain.handle('tab-close', async (_event, tabId) => {
+  ipcMain.handle('tab-close', async (event, tabId) => {
+    if (!fromAppPage(event)) return;
     pendingTabCreates.delete(tabId);
     const t = tabs.get(tabId);
     if (!t) return;
@@ -646,7 +672,8 @@ function main() {
     layoutViews();
   });
 
-  ipcMain.handle('tab-navigate', async (_event, { tabId, url } = {}) => {
+  ipcMain.handle('tab-navigate', async (event, { tabId, url } = {}) => {
+    if (!fromAppPage(event)) return;
     const t = tabs.get(tabId);
     if (!t || !isTabUrl(url)) return;
     t.url = url;
@@ -657,7 +684,8 @@ function main() {
   // Torn rules: the app never types into, clicks on or sends anything on Torn. Rehab messages are only copied
   // (public/app.js); the player pastes and sends them. There is deliberately no chat IPC here.
 
-  ipcMain.handle('tab-action', async (_event, { tabId, action }) => {
+  ipcMain.handle('tab-action', async (event, { tabId, action } = {}) => {
+    if (!fromAppPage(event)) return;
     const t = tabs.get(tabId);
     if (!t) return;
     const wc = t.view.webContents;
@@ -667,7 +695,8 @@ function main() {
     else if (action === 'reload') wc.reload();
   });
 
-  ipcMain.handle('set-view-visibility', async (_event, visible) => {
+  ipcMain.handle('set-view-visibility', async (event, visible) => {
+    if (!fromAppPage(event)) return;
     viewsVisible = Boolean(visible);
     if (!visible) {
       for (const t of tabs.values()) t.view.setVisible(false);
@@ -678,7 +707,7 @@ function main() {
   });
 
   ipcMain.handle('torntools-info', async () => ({ ...tornTools }));
-  ipcMain.handle('external-login', async () => { startExternalLogin(); });
+  ipcMain.handle('external-login', async (event) => { if (fromAppPage(event)) startExternalLogin(); });
 
   // ---- Güncelleme ----
   // Güncelleme adresi sabit: package.json'daki resmi GitHub sürüm adresi (ayarlardan değiştirilemez)

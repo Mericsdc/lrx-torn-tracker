@@ -96,3 +96,19 @@ test('the bridge forwards the bazaar helper and still ignores unknown scripts', 
   post('lrx-bazaar-price'); post('openmarket'); post('lrx-bazaar-price', 'https://evil.example'); post('lrx-bazaar-price', 'https://www.torn.com', {});
   assert.deepEqual(sent, ['lrx-bazaar-price']);
 });
+
+test('the userscript relay only sends the GET and POST requests the scripts use, TornW3B only under /api/', async () => {
+  const { send, calls } = background();
+  for (const bad of [
+    { script: 'tornw3b-bazaars', method: 'DELETE', url: 'https://weav3r.dev/api/marketplace/206' },
+    { script: 'tornw3b-bazaars', method: 'PUT', url: 'https://weav3r.dev/api/bazaar' },
+    { script: 'tornw3b-bazaars', method: 'PATCH', url: 'https://weav3r.dev/api/bazaar' },
+    { script: 'tornw3b-bazaars', method: 'GET', url: 'https://weav3r.dev/admin' },
+    { script: 'ff-scouter', method: 'DELETE', url: 'https://ffscouter.com/api/v1/get-stats' },
+  ]) assert.ok((await send(bad)).error, `${bad.method} ${bad.url}`);
+  assert.equal(calls.length, 0);
+  assert.ok((await send({ script: 'tornw3b-bazaars', method: 'GET', url: 'https://weav3r.dev/api/marketplace/206' })).response);
+  assert.ok((await send({ script: 'ff-scouter', method: 'GET', url: 'https://ffscouter.com/api/v1/get-stats?key=x&targets=1' })).response);
+  assert.ok((await send({ script: 'ff-scouter', method: 'POST', url: 'https://ffscouter.com/claim-bounties' })).response);
+  assert.equal(calls.length, 3);
+});

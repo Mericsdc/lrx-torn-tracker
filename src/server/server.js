@@ -42,7 +42,28 @@ function writeJson(file, obj, pretty = false) {
   fs.renameSync(tmp, file);
 }
 
-let config = { ...DEFAULT_CONFIG, ...readJson(CONFIG_FILE, {}) };
+// The saved keys are encrypted at rest inside the Electron app (see secret-store.js). safeStorage works only once
+// Electron is ready, so the settings load now and the keys follow; until then the API waits and nothing is saved.
+const secretStoreLib = require('./secret-store');
+const secretStore = secretStoreLib.createSecretStore(secretStoreLib.defaultCipher(), { log: (...args) => console.warn('[secrets]', ...args) });
+const rawConfig = readJson(CONFIG_FILE, {});
+let config = { ...DEFAULT_CONFIG, ...secretStore.settingsOf(rawConfig) };
+let secretsOpen = false, saveWaiting = false;
+function openSecrets() {
+  const { values, migrate } = secretStore.open(rawConfig);
+  Object.assign(config, values);
+  secretsOpen = true;
+  // Plain-text keys from an older version (or `npm run web`) are encrypted now; a save asked for meanwhile runs now.
+  if (migrate || saveWaiting) {
+    try { saveConfig(); } catch (e) { console.warn('[secrets] saving config.json failed; the file is unchanged:', e.message); }
+  }
+}
+const secretsReady = (() => {
+  const ready = secretStore.whenReady();
+  if (!ready) { openSecrets(); return Promise.resolve(); }
+  // If the keys can't be opened, nothing is written (the file stays as it is) and the app asks for a key.
+  return ready.then(openSecrets).catch((e) => console.warn('[secrets] opening the saved keys failed:', e.message));
+})();
 const premiumClient = require('./premium-client').createPremiumClient(() => config.apiKey, {
   defaultServiceUrl: PKG.premiumServiceUrl || '',
   getRemembered: () => config.premiumConnection || null,
@@ -67,7 +88,11 @@ if (history.lastOverview?.battle && history.lastOverview.battle.calculationVersi
   if (old.drug) old.drug.xanaxActive = old.battle.xanaxActive;
 }
 
-const saveConfig = () => writeJson(CONFIG_FILE, config, true);
+function saveConfig() {
+  if (!secretsOpen) { saveWaiting = true; return; } // the keys on disk are not known yet: never write over them
+  saveWaiting = false;
+  writeJson(CONFIG_FILE, secretStore.seal(config), true);
+}
 // Geçmiş her yenilemede değil, 10 sn içindeki değişiklikler toplanıp tek seferde yazılır
 let historyTimer = null;
 function flushHistory() {
@@ -848,8 +873,10 @@ function startEstimateJob(factionId, ids) {
   const todo = ids.filter((id) => { const c = estCache.get(id); return !c || Date.now() - c.t > 12 * 3600_000; });
   const job = { total: todo.length, done: 0, running: todo.length > 0, errors: 0, startedAt: Date.now() };
   estJobs.set(factionId, job);
+  const gen = keyGen;
   (async () => {
     for (const id of todo) {
+      if (gen !== keyGen) break; // the key changed: a new page load starts a fresh job with the new key
       try {
         const j = await tornRaw(`user/${id}?selections=profile,personalstats`);
         const ps = j.personalstats || {};
@@ -1670,8 +1697,11 @@ async function runFactionReport() {
   const access = await factionAccess();
   if (!access.allowed) throw new ApiError(T('Bu rapor faction liderine ve yetki verdiği pozisyonlara açık.', 'This report is only available to the faction leader and the positions they have given access.'), 'FAC_DENIED');
   Object.assign(facJob, { running: true, done: 0, total: 0, error: null, startedAt: Date.now(), finishedAt: 0 });
+  const gen = keyGen;
   (async () => {
     const st = facStore();
+    // Another player signed in (or the key changed): stop instead of walking the old faction with the new key.
+    const keyChanged = () => gen !== keyGen;
     try {
       const mem = await torn('v2/faction/members', 60_000);
       const ids = (mem.members || []).map((m) => m.id);
@@ -1686,12 +1716,14 @@ async function runFactionReport() {
       }
       facJob.total = todo.length + 1;
       for (const [id, ts, day] of todo) {
+        if (keyChanged()) return;
         try { st.snaps[day][id] = await memberStats(id, ts); }
         catch (e) { if (!FAC_NO_ACCESS.has(Number(e.code)) && Number(e.code) !== 6) throw e; } // 6: geçersiz ID → atla
         facJob.done++;
         if (facJob.done % 10 === 0) saveHistory();
         await sleep(1500); // ~40 istek/dk: uygulamanın diğer istekleri ve TornTools için pay kalır (Torn sınırı 100/dk)
       }
+      if (keyChanged()) return;
       // Gym enerjisi: faction katkı listesi (toplam değer) — günlük kayıt, fark kayıtlar arasından hesaplanır
       try {
         const c = await tornRaw('v2/faction/contributors?stat=gymenergy&cat=current');
@@ -1705,9 +1737,10 @@ async function runFactionReport() {
       for (const k of Object.keys(st.gym)) if (k < cut) delete st.gym[k];
       st.builtAt = Date.now();
     } catch (e) {
-      facJob.error = e.message;
+      if (!keyChanged()) facJob.error = e.message;
     } finally {
       facJob.running = false; facJob.finishedAt = Date.now();
+      if (keyChanged()) Object.assign(facJob, { done: 0, total: 0, error: null }); // the stopped run belonged to the previous key
       saveHistory();
     }
   })();
@@ -1894,6 +1927,7 @@ async function verifyTornKey(key) {
 
 async function handleApi(req, res, url) {
   const p = url.pathname;
+  if (!secretsOpen) await secretsReady; // the saved keys are decrypted once Electron is ready
   try {
     if (p.startsWith('/api/premium/')) {
       try {
@@ -1918,6 +1952,7 @@ async function handleApi(req, res, url) {
     if (p === '/api/config' && req.method === 'GET') {
       return send(res, 200, {
         hasKey: !!config.apiKey, apiKeyMasked: maskKey(config.apiKey), ffscouterKeyMasked: maskKey(config.ffscouterKey), logKeyMasked: maskKey(config.logKey),
+        secretStorage: secretStore.mode, secretsUnreadable: secretStore.unreadable,
         coverDays: config.coverDays, pollMinutes: config.pollMinutes,
         deliveryHours: config.deliveryHours || 6, deliveryMode: config.deliveryMode || 'hours',
         updateUrl: DEFAULT_UPDATE_URL, version: APP_VERSION,
@@ -2057,6 +2092,7 @@ async function handleApi(req, res, url) {
       config.apiKey = '';
       config.ffscouterKey = '';
       config.logKey = '';
+      secretStore.discardUnreadable(); // Log Out forgets every saved key, also those this computer can't read
       resetKeyCaches();
       // Remember whose records these are: the next sign-in may be a different player.
       const owner = historyOwner();
@@ -2089,6 +2125,8 @@ async function handleApi(req, res, url) {
           hasKey: Boolean(config.apiKey),
           apiKeyMasked: maskKey(config.apiKey),
           ffscouterKeyMasked: maskKey(config.ffscouterKey),
+          secretStorage: secretStore.mode,
+          secretsUnreadable: secretStore.unreadable,
           coverDays: config.coverDays,
           pollMinutes: config.pollMinutes,
           deliveryHours: config.deliveryHours || 6,
@@ -2194,10 +2232,11 @@ function startServer(preferredPort = PORT) {
       const actualPort = server.address().port;
       console.log(`\n  ◆ Torn Tracker hazır →  http://localhost:${actualPort}\n`);
       schedulePoll();
-      if (config.apiKey) {
+      secretsReady.then(() => {
+        if (!config.apiKey) return;
         getOverview(false).catch((e) => console.warn('[init] overview:', e.message));
         fetchCompany(false).then(buildCompanyReport).catch((e) => console.warn('[init] company:', e.message));
-      }
+      });
       resolve(actualPort);
     };
     server.once('listening', onListen);

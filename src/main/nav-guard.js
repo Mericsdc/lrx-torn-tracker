@@ -39,4 +39,17 @@ function createNavigationGuard({ now = Date.now, slowGuard = () => true } = {}) 
   };
 }
 
-module.exports = { createNavigationGuard, USER_INPUT, FAST_WINDOW_MS, FAST_MAX, SLOW_WINDOW_MS, SLOW_MAX };
+/**
+ * True for an address on this computer (localhost, 127.x.x.x, ::1, 0.0.0.0 and IPv4-mapped forms).
+ * Torn tabs and their popups must never load these: the app page and its local API live there.
+ */
+function isLoopbackUrl(url) {
+  let host;
+  try { host = new URL(String(url)).hostname.toLowerCase(); } catch { return false; }
+  if (!host) return false;
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  if (/^127\.\d+\.\d+\.\d+$/.test(host) || host === '0.0.0.0') return true;
+  return ['[::1]', '[::]', '[::ffff:7f00:1]'].includes(host) || /^\[::ffff:(127\.|7f)/.test(host);
+}
+
+module.exports = { createNavigationGuard, isLoopbackUrl, USER_INPUT, FAST_WINDOW_MS, FAST_MAX, SLOW_WINDOW_MS, SLOW_MAX };

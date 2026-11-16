@@ -87,6 +87,8 @@ function parseCrx(buf, expectedId = EXT_ID) {
   return { zip, key };
 }
 
+const MAX_UNZIP_BYTES = 512 * 1024 * 1024;
+
 function unzip(buf, dest) {
   let eocd = -1;
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) {
@@ -97,10 +99,12 @@ function unzip(buf, dest) {
   let p = buf.readUInt32LE(eocd + 16);
   const root = path.resolve(dest);
   fs.mkdirSync(root, { recursive: true });
+  let total = 0;
   for (let n = 0; n < count; n++) {
     if (buf.readUInt32LE(p) !== 0x02014b50) throw new Error(T('ZIP dizini bozuk', 'The ZIP directory is corrupt'));
     const method = buf.readUInt16LE(p + 10);
     const csize = buf.readUInt32LE(p + 20);
+    const usize = buf.readUInt32LE(p + 24);
     const nlen = buf.readUInt16LE(p + 28), xlen = buf.readUInt16LE(p + 30), clen = buf.readUInt16LE(p + 32);
     const lho = buf.readUInt32LE(p + 42);
     // ZIP paths use "/"; a "\" is read as a separator too, so "..\x" is caught on every platform, not only on Windows
@@ -109,12 +113,18 @@ function unzip(buf, dest) {
     const out = path.resolve(root, name);
     if (!out.startsWith(root + path.sep)) continue; // zip-slip koruması
     if (name.endsWith('/')) { fs.mkdirSync(out, { recursive: true }); continue; }
+    if (buf.readUInt32LE(lho) !== 0x04034b50) throw new Error(T('ZIP dosya başlığı bozuk', 'A ZIP file header is corrupt'));
+    // Every file is unpacked to exactly the size the directory declares, and all of them together stay
+    // under MAX_UNZIP_BYTES: a damaged or hostile archive cannot fill the disk or memory.
+    total += usize;
+    if (total > MAX_UNZIP_BYTES) throw new Error(T('ZIP içeriği çok büyük', 'The ZIP content is too large'));
     const start = lho + 30 + buf.readUInt16LE(lho + 26) + buf.readUInt16LE(lho + 28);
     const data = buf.subarray(start, start + csize);
     let content;
     if (method === 0) content = data;
-    else if (method === 8) content = zlib.inflateRawSync(data);
+    else if (method === 8) content = zlib.inflateRawSync(data, { maxOutputLength: Math.max(1, usize) });
     else throw new Error(T('Desteklenmeyen ZIP sıkıştırması: ', 'Unsupported ZIP compression: ') + method);
+    if (content.length !== usize) throw new Error(T('ZIP dosyası beklenen boyutta değil', 'A ZIP file does not have its declared size'));
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.writeFileSync(out, content);
   }

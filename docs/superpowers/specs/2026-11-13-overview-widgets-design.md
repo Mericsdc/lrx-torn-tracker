@@ -205,3 +205,15 @@ The owner found the profile card too tall and the Edit row above the grid too wa
 - **Saved layouts move to the strip once (owner's call to confirm):** a saved set from before this change (v 1) that has all three timer cards gets them replaced by one strip (size L) where the first of them was; the set is saved as v 2 and never changed again, so putting the three cards back later sticks.
 - **Narrow widths.** At 2 columns the strip is 1 column and 3 rows with its segments stacked, so it sits beside the profile exactly where the three cards were. At 1 column it is full width; its segments stack whenever the strip is too narrow for three.
 - **On/off.** Like every widget, Edit removes it; the classic switch brings back the fixed screen.
+
+## Addendum 3 (2026-11-15): a quieter strip, the trip once, with its landing time
+
+**Intent.** The owner found the Overview too busy while flying: the trip showed three times (the Bars header chip, the profile card chip, the Status row) and the strip had a LIVE badge. They want it simpler, and the flight time in Status, the way FFScouter Premium shows a landing time.
+
+**Where FFScouter's number comes from.** FFScouter Premium asks its own server (`/api/v1/player-flights`) for an *estimate* of another player's landing window (earliest–latest, by travel type). For the player's own trip the tracker needs no estimate and no new request: the overview already fetches Torn's `travel` selection, which gives the exact landing time.
+
+**Design.**
+- **The strip has no header any more.** First the LIVE / DELAYED badge went; then, at the owner's word, the "updated 12 s ago" line too. When a refresh fails, the existing warning above the page still says how old the data on screen is.
+- **Each countdown is its own tile**, in the look of the Battle Stats totals: a small drawn icon (pill, cap, moon, in the theme's accent) beside the label, the countdown, the line under it and the bar, in the middle of the tile. The tiles fill the card; a finished timer's tile gets the accent edge. The emoji icons are gone from the strip (the single timer cards keep theirs).
+- **The trip is shown once, in Status.** While the player flies or is abroad there is no status chip in the Bars header or on the profile card (also on the Premium page, which shares the card); back in Torn the chips return.
+- **Status rows while flying:** *Travel* with the route, short ("China → Torn"; United Kingdom, Cayman Islands and United Arab Emirates read UK, Cayman and UAE), then *Landing* with a countdown that ticks every second and the TCT landing time ("33m 28s · 14:42 TCT"). Past the landing time it reads "landed" until the next overview. When the row has no room for the TCT time, that part is hidden whole; the countdown always shows. Abroad, only *Travel* ("In China").

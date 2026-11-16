@@ -42,46 +42,40 @@
   #ow-grid:not(.ow-classic) > .timer-card[data-size="S"] .timer-value { font-size:clamp(12px,13.5cqi,25px); }
 }
 
-/* The live timer strip (Addendum 2). A header says whether the data on screen is live (a pulsing green dot, amber and
-   still once it is DELAYED); below it the three countdowns sit side by side with a line between them, each over a bar
-   that drains every second. A countdown scales with its segment (13cqi: 12 mono characters of 0.6em, "12d 05:12:56",
-   fit on one line). When the strip is narrower than 520 px its segments stack. The pulse and the glide stop under the
-   Animations switch (body.no-anim) and the system's reduced motion. */
-#ow-grid > .ls-card { display:flex; flex-direction:column; gap:12px; padding:14px 18px 16px; container:ls / inline-size; }
-.ls-head { display:flex; align-items:center; justify-content:space-between; gap:12px; min-width:0; }
-.ls-live { display:inline-flex; flex:none; align-items:center; gap:8px; color:var(--muted); font-size:10.5px; font-weight:700; letter-spacing:1.4px; }
-.ls-dot { flex:none; width:8px; height:8px; border-radius:50%; background:var(--muted-2); }
-.ls-live.is-live { color:var(--ok); }
-.ls-live.is-live .ls-dot { background:var(--ok); animation:lsPulse 1.8s ease-out infinite; }
-.ls-live.is-stale { color:var(--warn); }
-.ls-live.is-stale .ls-dot { background:var(--warn); box-shadow:0 0 8px color-mix(in srgb,var(--warn) 55%,transparent); }
-@keyframes lsPulse { 0% { box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 60%,transparent); } 70%, 100% { box-shadow:0 0 0 7px transparent; } }
-.ls-fresh { min-width:0; overflow:hidden; color:var(--muted); font:500 11px var(--mono); text-overflow:ellipsis; white-space:nowrap; }
-.ls-row { display:grid; flex:1; grid-template-columns:repeat(3,minmax(0,1fr)); }
-.ls-seg { display:flex; flex-direction:column; justify-content:center; min-width:0; padding:2px 18px; container-type:inline-size; }
-.ls-seg:first-child { padding-left:0; }
-.ls-seg:last-child { padding-right:0; }
-.ls-seg + .ls-seg { border-left:1px solid var(--stroke); }
-.ls-seg .eyebrow { display:flex; align-items:center; gap:7px; min-width:0; overflow:hidden; white-space:nowrap; }
+/* The live timer strip (Addendum 2, quieter since Addendum 3). The three countdowns sit side by side, each in its own
+   tile (the look of the Battle Stats totals): an icon and a label, the countdown, the line under it and a bar that
+   drains every second, all in the middle of the tile. A countdown scales with its tile (13cqi: 12 mono characters of
+   0.6em, "12d 05:12:56", fit on one line). When the strip is narrower than 520 px its tiles stack. The bars' glide
+   stops under the Animations switch (body.no-anim) and the system's reduced motion. */
+#ow-grid > .ls-card { display:flex; flex-direction:column; padding:14px; container:ls / inline-size; }
+.ls-row { display:grid; flex:1; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.ls-seg { display:flex; flex-direction:column; justify-content:center; min-width:0; padding:14px 16px; border:1px solid var(--stroke); border-radius:var(--radius-sm); background:var(--ow-field); container-type:inline-size; }
+.ls-seg.done { border-color:color-mix(in srgb,var(--ow-accent) 40%,transparent); box-shadow:inset 2px 0 0 var(--ow-accent); }
+.ls-seg .eyebrow { display:flex; align-items:center; gap:9px; min-width:0; overflow:hidden; white-space:nowrap; }
 .ls-seg .eyebrow > :last-child { overflow:hidden; text-overflow:ellipsis; }
-.ls-icon { flex:none; font-size:13px; }
-.ls-value { margin:6px 0 3px; color:var(--text); font-size:clamp(14px,13cqi,28px); font-weight:600; letter-spacing:-0.5px; white-space:nowrap; }
+.ls-icon { display:grid; flex:none; place-items:center; width:24px; height:24px; border-radius:7px; background:color-mix(in srgb,var(--ow-accent) 14%,transparent); color:var(--ow-accent); }
+.ls-icon svg { width:14px; height:14px; stroke-width:2; }
+.ls-value { margin:10px 0 4px; color:var(--text); font-size:clamp(14px,13cqi,30px); font-weight:600; letter-spacing:-0.5px; white-space:nowrap; }
 .ls-value.ready { color:var(--ow-accent); }
-.ls-bar { height:3px; margin-top:11px; overflow:hidden; border-radius:3px; background:var(--stroke); }
+.ls-bar { height:3px; margin-top:12px; overflow:hidden; border-radius:3px; background:var(--stroke); }
 .ls-bar > i { display:block; width:0; height:100%; border-radius:inherit; background:linear-gradient(90deg,color-mix(in srgb,var(--ow-accent) 28%,transparent),var(--ow-accent)); transition:width 1s linear; }
 .ls-seg.done .ls-bar > i { background:var(--ow-accent); box-shadow:0 0 8px color-mix(in srgb,var(--ow-accent) 60%,transparent); }
-/* Reduced motion: no pulse; the global rule in styles.css cuts the bars' glide to .01ms. */
-@media (prefers-reduced-motion:reduce) { .ls-live.is-live .ls-dot { animation:none; } }
+/* Reduced motion: the global rule in styles.css cuts the bars' glide to .01ms. */
 @container ls (max-width:520px) {
-  .ls-row { grid-template-columns:minmax(0,1fr); }
-  .ls-seg, .ls-seg:first-child, .ls-seg:last-child { padding:10px 0; }
-  .ls-seg + .ls-seg { border-top:1px solid var(--stroke); border-left:0; }
+  .ls-row { grid-template-columns:minmax(0,1fr); gap:8px; }
+  .ls-seg { padding:10px 14px; }
+  .ls-value { margin:6px 0 2px; }
+  .ls-bar { margin-top:8px; }
 }
 
 /* Split from the bars card: Status is its own widget. Its rows fill the card down to its bottom (1fr rows), so the card
    ends with the widget beside it and nothing is left empty under the rows. */
 #ow-grid > [data-widget="chips"] { display:flex; flex-direction:column; }
 #ow-grid > [data-widget="chips"] .mini-row { flex:1 1 auto; margin-top:0; }
+/* Landing: the countdown is always whole; its "· 14:42 TCT" sits beside it when the row has room and otherwise wraps
+   onto a second line that the one-line box hides, so it is never cut in half. */
+.st-land .st-v { display:flex; flex-wrap:wrap; justify-content:flex-end; align-content:flex-start; column-gap:.6ch; height:1.3em; line-height:1.3em; }
+.st-land .st-when { white-space:nowrap; }
 
 /* The profile card is profile-card.js, the same component as on the Premium page. */
 .ow-profile { --pm-accent:#e1c38d; --pm-soft:#e1c38d12; --pm-border:#e1c38d45; }

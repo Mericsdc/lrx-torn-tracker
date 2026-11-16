@@ -43,7 +43,7 @@ Five themes (Obsidian, Ocean, Forest, Amethyst, Light), English by default with 
 
 ## Torn rules and your data
 
-- **Your key stays on your PC.** It is saved in the local `data/` folder and used with the Torn API and FFScouter. With **Settings → App → Premium membership connection** on (the default), it is also sent to lrxe8.com to verify your Torn ID and is not stored there. Turn the setting off and nothing is sent to the membership service.
+- **Your key stays on your PC.** It is saved in the local `data/` folder, encrypted with Windows DPAPI so that only your Windows account can read it. The other settings in `config.json` stay readable, and the app asks for the key again if the data folder moves to another Windows account or PC. The key is used with the Torn API and FFScouter. With **Settings → App → Premium membership connection** on (the default), it is also sent to lrxe8.com to verify your Torn ID and is not stored there. Turn the setting off and nothing is sent to the membership service.
 - **Display only.** Helpers never click, attack, buy or send anything. They add information to the Torn page you are looking at; you press every button.
 - **Only the tab you look at.** Helpers run on the focused Torn tab and make no extra requests to Torn's pages.
 - **A switch for everything.** Every page, notification, helper, add-on and connection can be turned off in Settings.
@@ -81,7 +81,7 @@ Development and CI use Node 24 (22.14 also works; the local server alone runs on
 ```bash
 npm ci             # install (use --ignore-scripts for tests only, without the Electron download)
 npm start          # run the Electron app from source
-npm run web        # local server only: http://localhost:3737
+npm run web        # local server only: http://localhost:3737 (saves keys as plain text: no Windows encryption without Electron)
 npm run check      # syntax check
 npm run test:all   # all automated tests
 ```
@@ -98,4 +98,4 @@ New original work, including the website, is under the [Original Additions Licen
 
 ## Türkçe
 
-LRX Torn Tracker, Torn City için ücretsiz bir Windows uygulamasıdır: süreler, savaş hedefleri, seyahat kârı, şirket stoku ve yalnızca bilgi gösteren Torn yardımcıları tek pencerede. ZIP'i [indir](https://github.com/Mericsdc/lrx-torn-tracker/releases/latest/download/LRX-Torn-Tracker-Windows-x64.zip), çıkar, `TornTracker.exe`'yi aç ve kendi **Limited Access** API key'ini gir. Key bilgisayarında kalır; yardımcılar hiçbir şeye tıklamaz ve her özellik Ayarlar'dan kapatılabilir. Uygulama dili varsayılan İngilizcedir, üst çubuktaki EN / TR düğmesiyle Türkçeye geçebilirsin. Sürüm notları [`docs/releases/`](docs/releases) klasöründe ve [web sitesinde](https://lrxe8.com/torn-tracker#releases).
+LRX Torn Tracker, Torn City için ücretsiz bir Windows uygulamasıdır: süreler, savaş hedefleri, seyahat kârı, şirket stoku ve yalnızca bilgi gösteren Torn yardımcıları tek pencerede. ZIP'i [indir](https://github.com/Mericsdc/lrx-torn-tracker/releases/latest/download/LRX-Torn-Tracker-Windows-x64.zip), çıkar, `TornTracker.exe`'yi aç ve kendi **Limited Access** API key'ini gir. Key bilgisayarında kalır ve Windows DPAPI ile şifreli saklanır, yani yalnızca senin Windows hesabın okuyabilir (veri klasörü başka bir hesaba veya bilgisayara taşınırsa uygulama key'i yeniden ister; yalnızca yerel sunucuyu çalıştıran `npm run web` key'leri düz metin saklar). Yardımcılar hiçbir şeye tıklamaz ve her özellik Ayarlar'dan kapatılabilir. Uygulama dili varsayılan İngilizcedir, üst çubuktaki EN / TR düğmesiyle Türkçeye geçebilirsin. Sürüm notları [`docs/releases/`](docs/releases) klasöründe ve [web sitesinde](https://lrxe8.com/torn-tracker#releases).

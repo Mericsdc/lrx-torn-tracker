@@ -40,6 +40,7 @@
       <div class="auth-rule" aria-hidden="true"></div>
       <div class="auth-body" id="auth-body">
         <p class="auth-sub" data-i18n-html="auth.sub">Enter your Torn <b>Limited Access</b> API key to continue.</p>
+        <p class="auth-notice" id="auth-notice" role="status" hidden></p>
         <form id="auth-form" autocomplete="off">
           <div class="auth-field">
             <input id="auth-key" class="mono" type="password" spellcheck="false" autocapitalize="none" autocorrect="off" placeholder="••••••••••••••••" aria-label="Torn API key" aria-describedby="auth-key-help auth-key-count auth-caps" />
@@ -247,28 +248,24 @@
               </div>
             </article>
 
-            <!-- The live timer strip: the three countdowns above in one card, under a header that says whether the data
-                 on screen is live. app.js paints both copies of each countdown. -->
+            <!-- The live timer strip: the three countdowns above in one card, each its own tile. app.js paints both
+                 copies of each countdown. -->
             <article class="glass card ow-w ls-card" data-widget="timers">
-              <div class="ls-head">
-                <span class="ls-live" id="ls-live"><span class="ls-dot" aria-hidden="true"></span><span data-ls-label>—</span></span>
-                <span class="ls-fresh" id="ls-fresh"></span>
-              </div>
               <div class="ls-row">
                 <section class="ls-seg" data-ls="drug">
-                  <span class="eyebrow"><span class="ls-icon" aria-hidden="true">💊</span><span>Xanax / Drug</span></span>
+                  <span class="eyebrow"><span class="ls-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg></span><span>Xanax / Drug</span></span>
                   <div class="ls-value mono" data-timer="drug">—</div>
                   <div class="timer-sub" data-sub="drug">Loading…</div>
                   <div class="ls-bar"><i></i></div>
                 </section>
                 <section class="ls-seg" data-ls="edu">
-                  <span class="eyebrow"><span class="ls-icon" aria-hidden="true">🎓</span><span data-i18n="ov.edu">Education</span></span>
+                  <span class="eyebrow"><span class="ls-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21.42 10.92a1 1 0 0 0-.02-1.84L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.83l8.57 3.91a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/></svg></span><span data-i18n="ov.edu">Education</span></span>
                   <div class="ls-value mono" data-timer="edu">—</div>
                   <div class="timer-sub" data-sub="edu">Loading…</div>
                   <div class="ls-bar"><i></i></div>
                 </section>
                 <section class="ls-seg" data-ls="day">
-                  <span class="eyebrow"><span class="ls-icon" aria-hidden="true">🌙</span><span data-i18n="ls.day">Day reset</span></span>
+                  <span class="eyebrow"><span class="ls-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></span><span data-i18n="ls.day">Day reset</span></span>
                   <div class="ls-value mono" data-timer="day">—</div>
                   <div class="timer-sub" data-sub="day">Resets at 18:00 TCT</div>
                   <div class="ls-bar"><i></i></div>

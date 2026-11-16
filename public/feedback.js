@@ -49,9 +49,15 @@
     const m = modal(); if (!m) return;
     render();
     m.hidden = false;
+    // Like the other dialogs: hide the native Torn view, or a Torn tab activated meanwhile would cover the form
+    window.electronAPI?.setViewVisibility?.(false);
     setTimeout(() => $('#fb-msg')?.focus(), 30);
   }
-  function close() { const m = modal(); if (m) m.hidden = true; }
+  function close() {
+    const m = modal(); if (!m || m.hidden) return;
+    m.hidden = true;
+    window.electronAPI?.setViewVisibility?.(true);
+  }
 
   async function send() {
     if (busy) return;

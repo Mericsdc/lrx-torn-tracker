@@ -181,6 +181,7 @@ function applyLang() {
   // Placeholder texts that live data replaces later
   if (!state.overview) $$('[data-sub="drug"], [data-sub="edu"]').forEach((el) => { el.textContent = tr('Yükleniyor…', 'Loading…'); });
   if (!state.targets) { const wt = $('#war-title'); if (wt) wt.textContent = tr('Hedefler', 'Targets'); }
+  renderSecretsNotice();
   const ub = $('#update-btn');
   if (ub && !state.update) ub.title = tr('Güncellemeleri denetle', 'Check for updates');
   $$('[data-close-tab]').forEach((b) => { b.title = tr('Sekmeyi kapat', 'Close tab'); });
@@ -295,7 +296,7 @@ function statusInfo(st) {
   if (s === 'Abroad') return { cls: 'blue', text: tr('Yurt dışı', 'Abroad'), color: 'var(--blue)' };
   if (s === 'Federal') return { cls: 'danger', text: 'Federal', color: 'var(--danger)' };
   if (s === 'Fallen') return { cls: 'dim', text: 'Fallen', color: 'var(--muted)' };
-  return { cls: 'dim', text: s, color: 'var(--muted)' };
+  return { cls: 'dim', text: esc(s), color: 'var(--muted)' };
 }
 /* Hastane / hapis çıkış sayacı çipi. withOkay=true ise müsait durumunu da gösterir. */
 function statusTimerChip(st, withOkay = false) {
@@ -395,38 +396,41 @@ function paintTimer(key, { value, sub, frac, ready }) {
   seg.classList.toggle('done', ready);
   $('.ls-bar > i', seg).style.width = (part * 100).toFixed(2) + '%';
 }
-/* The live strip's header says how old the overview on screen is: LIVE while it is fresh, DELAYED (amber) once three
-   30-second refreshes were missed, and nothing at all before the first overview arrives. */
-const LIVE_STALE_S = 90;
-function paintLive(now = Date.now()) {
-  const live = $('#ls-live'), fresh = $('#ls-fresh');
-  if (!live || !fresh) return;
-  const label = $('[data-ls-label]', live);
-  if (!state.overview || !state.overviewAt) {
-    live.classList.remove('is-live', 'is-stale');
-    label.textContent = '—'; fresh.textContent = '';
-    return;
-  }
-  const age = Math.max(0, Math.floor((now - state.overviewAt) / 1000)), stale = age > LIVE_STALE_S;
-  const ago = age < 60 ? tr(`${age} sn`, `${age} s`)
-    : age < 3600 ? tr(`${Math.floor(age / 60)} dk`, `${Math.floor(age / 60)} min`)
-      : age < 86400 ? tr(`${Math.floor(age / 3600)} sa`, `${Math.floor(age / 3600)} h`)
-        : tr(`${Math.floor(age / 86400)} gün`, `${Math.floor(age / 86400)} d`);
-  live.classList.toggle('is-live', !stale);
-  live.classList.toggle('is-stale', stale);
-  label.textContent = stale ? tr('GECİKMELİ', 'DELAYED') : tr('CANLI', 'LIVE');
-  fresh.textContent = stale ? tr(`son veri ${ago} önce`, `last data ${ago} ago`) : tr(`${ago} önce güncellendi`, `updated ${ago} ago`);
+// Flying or abroad: the Overview shows the trip only in Status (no travel chip in the Bars header or on the profile card).
+const isAway = (status) => status?.state === 'Traveling' || status?.state === 'Abroad';
+// Torn's travel text, short: "Traveling from China to Torn" and "Returning to Torn from China" read "China → Torn",
+// "Traveling to China" reads "Torn → China", "In China" stays; the long country names are shortened so the route fits a row.
+const SHORT_PLACES = { 'United Kingdom': 'UK', 'Cayman Islands': 'Cayman', 'United Arab Emirates': 'UAE' };
+const shortPlace = (name) => SHORT_PLACES[name] || name;
+function travelRoute(text) {
+  let m = /^Traveling from (.+?) to (.+)$/i.exec(text);
+  if (m) return `${shortPlace(m[1])} → ${shortPlace(m[2])}`;
+  m = /^Returning to (.+?) from (.+)$/i.exec(text);
+  if (m) return `${shortPlace(m[2])} → ${shortPlace(m[1])}`;
+  m = /^Traveling to (.+)$/i.exec(text);
+  if (m) return `Torn → ${shortPlace(m[1])}`;
+  m = /^In (.+)$/i.exec(text);
+  return m ? `In ${shortPlace(m[1])}` : text;
 }
+// The landing countdown from a Torn timestamp: "33m 28s", then "landed" until the next overview. Its TCT time is landingAt.
+function landingLeft(arrival) {
+  const left = Math.floor(Number(arrival) - nowTct() / 1000);
+  if (left <= 0) return tr('indi', 'landed');
+  const h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60), s = left % 60, two = (n) => String(n).padStart(2, '0');
+  return h ? `${h}${tr('sa', 'h')} ${two(m)}${tr('dk', 'm')}` : m ? `${m}${tr('dk', 'm')} ${two(s)}${tr('sn', 's')}` : `${s}${tr('sn', 's')}`;
+}
+const landingAt = (arrival) => new Date(Number(arrival) * 1000).toISOString().slice(11, 16) + ' TCT';
 
 function renderOverview() {
   const o = state.overview; if (!o) return;
   const p = o.player;
   syncCompanyMode();
 
-  // status chip
+  // status chip; while the player flies or is abroad the trip is shown once, in Status, so the Bars header has none
   const si = statusInfo(p.status);
   $('#status-chip').className = `chip ${si.cls}`;
   $('#status-chip').textContent = decode(p.status?.description || si.text);
+  $('#status-chip').hidden = isAway(p.status);
 
   // bars
   const barDef = [['energy', 'Energy', '#d6dce3'], ['nerve', 'Nerve', '#c4495f'], ['happy', 'Happy', '#c79228'], ['life', 'Life', '#26b880']];
@@ -441,7 +445,16 @@ function renderOverview() {
   // for a cooldown that is over, st-warn while one runs, st-orange, st-blue). Torn text goes through esc().
   const rows = [];
   const row = (state, label, value, title = '') => rows.push(`<div class="st-row${state ? ' ' + state : ''}"${title ? ` title="${esc(title)}"` : ''}><span class="st-k">${esc(label)}</span><span class="st-v">${value}</span></div>`);
-  if (o.travel) row('st-blue', tr('Yolculuk', 'Travel'), `✈ ${esc(decode(o.travel.description || ''))}`, decode(o.travel.description || ''));
+  // Travel: the route, short, then while flying the landing countdown and its TCT time (the overview's own travel data)
+  if (o.travel) {
+    const where = decode(o.travel.description || '');
+    row('st-blue', tr('Yolculuk', 'Travel'), esc(travelRoute(where)), where);
+    if (p.status?.state === 'Traveling' && o.trip?.arrival > 0) {
+      // the countdown always shows; its "· 14:42 TCT" only when the row has room for all of it (see .st-land)
+      const arrival = Number(o.trip.arrival);
+      row('st-blue st-land', tr('İniş', 'Landing'), `<span data-land="${arrival}">${esc(landingLeft(arrival))}</span> <span class="st-when">· ${landingAt(arrival)}</span>`, o.trip.method ? `${tr('Uçuş', 'Flight')}: ${decode(o.trip.method)}` : '');
+    }
+  }
   if (o.drug.xanToday != null) {
     // exact: counted from just before 18:00 TCT · atLeast: only since the app was first opened today · atMost: from an older count of the day before
     const bound = o.drug.xanTodayBound || (o.drug.xanTodayExact === false ? 'atLeast' : 'exact');
@@ -516,7 +529,9 @@ function tick() {
   const resetSec = 18 * 3600; // 18:00 TCT
   const left = secOfDay < resetSec ? (resetSec - secOfDay) : (86400 - secOfDay + resetSec);
   paintTimer('day', { value: clock(left), sub: `18:00 TCT · ${tr('yerel', 'local')} ${new Date(Date.now() + left * 1000).toLocaleTimeString(timeLocale(), { hour: '2-digit', minute: '2-digit' })}`, frac: left / 86400, ready: false });
-  paintLive(now);
+
+  // the Status card's landing countdown
+  $$('[data-land]').forEach((el) => { el.textContent = landingLeft(el.dataset.land); });
 
   // stock order delivery countdowns
   $$('[data-eta]').forEach((el) => {
@@ -2340,6 +2355,19 @@ function showAuth(mode = 'login') {
   $('#auth-error').textContent = '';
   if (mode === 'login') setTimeout(() => $('#auth-key')?.focus(), 450);
 }
+// The saved keys are encrypted for one Windows account (see src/server/secret-store.js). When they can't be read here,
+// the sign-in screen says why it asks for the key again.
+function renderSecretsNotice() {
+  const el = $('#auth-notice'); if (!el) return;
+  const c = state.config;
+  el.hidden = !(c?.secretsUnreadable && !c.hasKey);
+  if (el.hidden) return;
+  el.textContent = c.secretStorage === 'plain'
+    ? tr('Kayıtlı key\'lerin şifreli, ama burada şifre çözme kullanılamıyor, bu yüzden okunamadı. Devam etmek için API key\'ini yeniden gir.',
+      'Your saved keys are encrypted, and decryption isn\'t available here, so they can\'t be read. Enter your API key again to continue.')
+    : tr('Kayıtlı key\'lerin bu Windows hesabında okunamadı (veri klasörü başka bir hesaptan veya bilgisayardan gelmiş ya da uygulama profili sıfırlanmış olabilir). API key\'ini yeniden gir, sonra FFScouter ve log key\'lerini Ayarlar\'dan yeniden ekle.',
+      'Your saved keys couldn\'t be read on this Windows account (the data folder came from another account or PC, or the app profile was reset). Enter your API key again, then re-add your FFScouter and log keys in Settings.');
+}
 function hideAuth(delay = 0) {
   const scr = $('#auth-screen');
   return new Promise((resolve) => setTimeout(() => {
@@ -2563,6 +2591,7 @@ function startApp(b, fresh = false) {
   startUpdateChecks(); // Also runs on first launch, before a Torn API key has been entered.
   if (b?.config && !b.config.hasKey) {
     showAuth('login');
+    renderSecretsNotice();
     return;
   }
   let splashSeen = false;

@@ -349,6 +349,7 @@ function mountChart(el, render) {
   if (chartRO && !el._observed) { chartRO.observe(el); el._observed = true; }
 }
 // tickFmt(v, step) labels the y axis (a caller can pick its precision from the tick step); fmt labels the points.
+let lineChartSeq = 0;
 function lineChart(series, W, { height = 240, color = '#c9a96a', fmt = cmoney, tickFmt = (v) => fmt(v), fill = true } = {}) {
   const H = height, pl = 66, pr = 14, pt = 16, pb = 30;
   const vals = series.map((p) => p.v);
@@ -361,7 +362,9 @@ function lineChart(series, W, { height = 240, color = '#c9a96a', fmt = cmoney, t
   let grid = '';
   for (let v = bot; v <= top + 1e-6; v += step) grid += `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(255,255,255,.05)" stroke-dasharray="3 4"/><text x="${pl - 10}" y="${y(v) + 4}" text-anchor="end" fill="#5f6870" font-size="11" font-family="JetBrains Mono, monospace">${tickFmt(v, step)}</text>`;
   const path = series.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
-  const area = fill ? `<path d="${path} L${x(series.length - 1)},${y(bot)} L${x(0)},${y(bot)} Z" fill="url(#lcFill)" stroke="none"/>` : ''; // no outline from the global svg stroke
+  // Every chart gets its own gradient id: with one shared id a chart could pick up another chart's fill colour.
+  const fillId = `lcFill${++lineChartSeq}`;
+  const area = fill ? `<path d="${path} L${x(series.length - 1)},${y(bot)} L${x(0)},${y(bot)} Z" fill="url(#${fillId})" stroke="none"/>` : ''; // no outline from the global svg stroke
   const every = Math.ceil(series.length / Math.max(1, Math.floor((W - pl - pr) / 64)));
   // The last date ends at the right edge; a regular label too close to it is dropped so the two never overlap.
   const last = series.length - 1;
@@ -370,7 +373,7 @@ function lineChart(series, W, { height = 240, color = '#c9a96a', fmt = cmoney, t
     return `<text x="${x(i)}" y="${H - 9}" text-anchor="${i === last && last > 0 ? 'end' : 'middle'}" fill="#7d8790" font-size="11">${shortDate(p.date)}</text>`;
   }).join('');
   const dots = series.length <= 40 ? series.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.v)}" r="3" fill="#0b0c0e" stroke="${color}" stroke-width="1.8"><title>${p.date}: ${fmt(p.v)}</title></circle>`).join('') : '';
-  return `<svg class="ic-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><defs><linearGradient id="lcFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".28"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>${grid}${area}<path d="${path}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>${dots}${labels}</svg>`;
+  return `<svg class="ic-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><defs><linearGradient id="${fillId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".28"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>${grid}${area}<path d="${path}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>${dots}${labels}</svg>`;
 }
 const emptyBox = (title, text) => `<div class="empty-state"><b class="tq-text">${title}</b><br>${text}</div>`;
 const loadingBox = () => `<div class="empty-state">${tr('Yükleniyor…', 'Loading…')}</div>`;
@@ -695,7 +698,7 @@ function renderTravelResults() {
   const oldest = ages.length ? Math.min(...ages) : null;
   const age = oldest != null ? Math.max(0, Math.round((now - oldest) / 60)) : null;
   const src = [d.sources?.yata && 'YATA', d.sources?.prom && 'Prometheus'].filter(Boolean).join(' + ') || '—';
-  const star = (r) => `<button class="tv-star ${r.watched ? 'on' : ''}" data-watch="${r.key}" title="${r.watched ? tr('Takipten çıkar', 'Unwatch') : tr('Takip et: restock / kalkış bildirimi', 'Watch: restock / departure alerts')}">${r.watched ? '★' : '☆'}</button>`;
+  const star = (r) => `<button class="tv-star ${r.watched ? 'on' : ''}" data-watch="${esc(r.key)}" title="${r.watched ? tr('Takipten çıkar', 'Unwatch') : tr('Takip et: restock / kalkış bildirimi', 'Watch: restock / departure alerts')}">${r.watched ? '★' : '☆'}</button>`;
   const stockCell = (r) => {
     const it = r.it;
     const sub = it.qty > 0 && it.emptyAt ? `<div class="sub-text">≈ ${tvAt(it.emptyAt)} ${tr('sonra biter', 'until empty')}${it.rate ? ` · −${n0(it.rate)}/${tr('dk', 'min')}` : ''}</div>` : '';
@@ -800,14 +803,22 @@ const levelState = {
   shellFor: null,
 };
 
+// The request now running: the 5 s poll waits for it, and a newer request (another list) replaces it,
+// so a slow, older reply can never overwrite the newer one.
+let levelLoading = null;
 async function loadLevel() {
   const el = $('#level-body');
   if (!levelState.data) el.innerHTML = loadingBox();
+  const req = api('/api/levelling?list=' + encodeURIComponent(levelState.list));
+  levelLoading = req;
   try {
-    levelState.data = await api('/api/levelling?list=' + encodeURIComponent(levelState.list));
-    levelState.list = levelState.data.list;
+    const data = await req;
+    if (levelLoading !== req) return;
+    levelState.data = data;
+    levelState.list = data.list;
     renderLevel();
-  } catch (e) { if (!levelState.data) el.innerHTML = errorBox(e); }
+  } catch (e) { if (levelLoading === req && !levelState.data) el.innerHTML = errorBox(e); }
+  finally { if (levelLoading === req) levelLoading = null; }
 }
 
 // What the page shows (public/levelling.js): attackable targets you can beat first, highest level first, then the
@@ -902,7 +913,7 @@ $('#level-body')?.addEventListener('change', (e) => {
   }
 });
 // Sayfa açıkken durumları 5 sn'de bir al (sunucu taramayı yalnızca bu istekler gelirken sürdürür)
-setInterval(() => { if (state.view === 'level' && trackerVisible()) loadLevel(); }, 5000);
+setInterval(() => { if (state.view === 'level' && trackerVisible() && !levelLoading) loadLevel(); }, 5000);
 
 /* ---------- Seviye 15 altı: Başlangıç Rehberi (metinler ve kurallar: beginner-guide.js) ---------- */
 // The shell is drawn once per language; every overview refresh repaints only the personal steps and the Happy jump

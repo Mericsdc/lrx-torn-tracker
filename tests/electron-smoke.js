@@ -5,12 +5,25 @@ const assert = require('assert/strict');
 const { _electron } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'lrx-electron-'));
 const dataDir = path.join(temp, 'data'); fs.mkdirSync(dataDir);
-fs.writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({ features: { 'app.torntools': false, 'app.updates': false, 'page.travel': false, 'app.splash': false, 'app.animations': false, 'app.newYearWelcome': false } }));
+const configFile = path.join(dataDir, 'config.json');
+const FEATURES = { 'app.torntools': false, 'app.updates': false, 'page.travel': false, 'app.splash': false, 'app.animations': false, 'app.newYearWelcome': false };
+// A log key saved as plain text by an older version (synthetic; no main key, so the app makes no Torn request at start).
+const LOG_KEY = 'LogFixtureKey001';
+fs.writeFileSync(configFile, JSON.stringify({ logKey: LOG_KEY, features: FEATURES }));
+const savedConfig = () => JSON.parse(fs.readFileSync(configFile, 'utf8'));
+const launch = (profile) => _electron.launch({ executablePath: path.resolve(__dirname, '../../../TornTracker.exe'), args: ['--user-data-dir=' + profile], env: { ...process.env, TT_DATA_DIR: dataDir, TT_LOG_FILE: path.join(temp, 'startup.log'), TORN_API_KEY: '', TORN_PREMIUM_SERVICE_URL: '' }, timeout: 20000 });
 let app;
 (async () => {
-  app = await _electron.launch({ executablePath: path.resolve(__dirname, '../../../TornTracker.exe'), args: ['--user-data-dir=' + path.join(temp, 'profile')], env: { ...process.env, TT_DATA_DIR: dataDir, TT_LOG_FILE: path.join(temp, 'startup.log'), TORN_API_KEY: '', TORN_PREMIUM_SERVICE_URL: '' }, timeout: 20000 });
+  app = await launch(path.join(temp, 'profile'));
   const page = await app.firstWindow();
   await page.locator('#auth-key').waitFor({ state: 'visible' });
+  // Saved keys are encrypted with Electron safeStorage once the app is ready; the other settings stay readable.
+  const decryptSaved = () => app.evaluate(({ safeStorage }, data) => JSON.parse(safeStorage.decryptString(Buffer.from(data, 'base64'))), savedConfig().secrets.data);
+  assert.ok(!fs.readFileSync(configFile, 'utf8').includes(LOG_KEY), 'no plain-text key left in config.json');
+  assert.equal(savedConfig().secrets.scheme, 'electron-safestorage');
+  assert.deepEqual(savedConfig().features, FEATURES);
+  assert.equal((await decryptSaved()).logKey, LOG_KEY);
+  assert.equal(await page.locator('#auth-notice').isHidden(), true);
   const minimum = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getMinimumSize());
   assert.deepEqual(minimum, [480, 400]);
   const key = 'AbCdEfGh12345678';
@@ -33,9 +46,32 @@ let app;
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(640, 700));
   const size = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getSize());
   assert.deepEqual(size, [640, 700]);
-  // Open a local fixture in the real native WebContentsView. No game account or requests.
+  await app.evaluate(async ({ session }) => {
+    await session.fromPartition('persist:torn_v2').protocol.handle('https', (req) => {
+      const url = new URL(req.url);
+      // A page that sends itself to a new URL every 700 ms: too slow for the burst limit, caught by the slow-loop limit.
+      if (url.hostname === 'www.torn.com' && url.pathname === '/loop.php') {
+        global.__qaLoopLoads = (global.__qaLoopLoads || 0) + 1;
+        const n = Number(url.searchParams.get('n')) || 0;
+        return new Response(`<!doctype html><html><body>loop ${n}<script>setInterval(() => { location.href = '/loop.php?n=${n + 1}'; }, 700);</script></body></html>`, { headers: { 'Content-Type': 'text/html' } });
+      }
+      if (url.hostname === 'www.torn.com' && url.pathname === '/profiles.php') {
+        return new Response('<!doctype html><html><head></head><body><div class="profile-left-wrapper"><ul class="info-table">'
+          + '<li><div class="user-information-section"><span class="bold">Job</span></div><div class="user-info-value"><span>Director at <a href="/joblist.php#/p=corpinfo&ID=77">Shine Co</a></span></div></li>'
+          + '<li><div class="user-information-section"><span class="bold">Life</span></div><div class="user-info-value"><span>100 / 100</span></div></li>'
+          + '</ul></div></body></html>', { headers: { 'Content-Type': 'text/html' } });
+      }
+      if (url.hostname === 'www.torn.com') return new Response('<!doctype html><html><head></head><body><div id="sidebarroot"><a id="test-link" href="/gym.php?rfcv=old">Gym</a></div><div id="profileroot"></div></body></html>', { headers: { 'Content-Type': 'text/html' } });
+      return new Response(JSON.stringify({ fixture: true }), { headers: { 'Content-Type': 'application/json' } });
+    });
+  });
+  // A Torn tab never loads this computer's own addresses (the app page and its local API).
   const localUrl = await page.evaluate(() => location.origin + '/index.html');
-  await page.evaluate((url) => window.electronAPI.tabCreate({ id: 'native-test', url }), localUrl);
+  await page.evaluate((url) => window.electronAPI.tabCreate({ id: 'local-test', url }), localUrl);
+  await page.evaluate((url) => window.electronAPI.tabCreate({ id: 'localhost-test', url }), localUrl.replace('127.0.0.1', 'localhost'));
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.length), 0, 'no view for a local address');
+  // Open a fixture page in the real native WebContentsView. No game account or requests.
+  await page.evaluate(() => window.electronAPI.tabCreate({ id: 'native-test', url: 'https://fixture.invalid/index.html' }));
   await app.evaluate(async ({ BrowserWindow }) => {
     const wc = BrowserWindow.getAllWindows()[0].contentView.children[0].webContents;
     if (wc.isLoading()) await new Promise((resolve) => wc.once('did-stop-loading', resolve));
@@ -70,7 +106,8 @@ let app;
     const [view] = await views();
     assert.ok(Math.abs(view.y - barsEnd) <= 1, `${label}: the view starts at ${view.y} but the top bars end at ${barsEnd}`);
   };
-  await page.evaluate((url) => { openInTab(url, { activate: true }); }, localUrl);
+  const fixtureUrl = 'https://fixture.invalid/page.html';
+  await page.evaluate((url) => { openInTab(url, { activate: true }); }, fixtureUrl);
   await page.waitForFunction(() => document.querySelectorAll('#browser-tabs [data-ws-tab]').length === 1);
   await viewLoaded();
   await aligned('100%');
@@ -92,35 +129,17 @@ let app;
   await page.reload();
   await page.waitForFunction(() => document.querySelectorAll('#browser-tabs [data-ws-tab]').length === 1 && state.activeWsTab === 'tab-1');
   assert.deepEqual((await views()).map((v) => v.visible), [true]);
-  // A tab never loads a script URL or a local file, whatever the app page asks for.
+  // A tab never loads a script URL, a local file or this computer's own addresses, whatever the app page asks for.
+  await page.evaluate((url) => window.electronAPI.tabNavigate('tab-1', url), localUrl);
   await page.evaluate(() => window.electronAPI.tabNavigate('tab-1', 'javascript:document.title="scripted"'));
   await page.evaluate(() => window.electronAPI.tabNavigate('tab-1', 'file:///C:/Windows/win.ini'));
   await page.evaluate(() => window.electronAPI.tabCreate({ id: 'file-tab', url: 'file:///C:/Windows/win.ini' }));
   await new Promise((resolve) => setTimeout(resolve, 400));
   const tabState = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.map((v) => ({ url: v.webContents.getURL(), title: v.webContents.getTitle() })));
-  assert.equal(tabState.length, 1); assert.equal(tabState[0].url, localUrl); assert.notEqual(tabState[0].title, 'scripted');
+  assert.equal(tabState.length, 1); assert.equal(tabState[0].url, fixtureUrl); assert.notEqual(tabState[0].title, 'scripted');
   await page.locator('[data-close-tab="tab-1"]').dispatchEvent('click');
   await page.waitForFunction(() => document.querySelectorAll('#browser-tabs [data-ws-tab]').length === 0 && state.activeWsTab === 'tracker');
   assert.deepEqual(await views(), []);
-  await app.evaluate(async ({ session }) => {
-    await session.fromPartition('persist:torn_v2').protocol.handle('https', (req) => {
-      const url = new URL(req.url);
-      // A page that sends itself to a new URL every 700 ms: too slow for the burst limit, caught by the slow-loop limit.
-      if (url.hostname === 'www.torn.com' && url.pathname === '/loop.php') {
-        global.__qaLoopLoads = (global.__qaLoopLoads || 0) + 1;
-        const n = Number(url.searchParams.get('n')) || 0;
-        return new Response(`<!doctype html><html><body>loop ${n}<script>setInterval(() => { location.href = '/loop.php?n=${n + 1}'; }, 700);</script></body></html>`, { headers: { 'Content-Type': 'text/html' } });
-      }
-      if (url.hostname === 'www.torn.com' && url.pathname === '/profiles.php') {
-        return new Response('<!doctype html><html><head></head><body><div class="profile-left-wrapper"><ul class="info-table">'
-          + '<li><div class="user-information-section"><span class="bold">Job</span></div><div class="user-info-value"><span>Director at <a href="/joblist.php#/p=corpinfo&ID=77">Shine Co</a></span></div></li>'
-          + '<li><div class="user-information-section"><span class="bold">Life</span></div><div class="user-info-value"><span>100 / 100</span></div></li>'
-          + '</ul></div></body></html>', { headers: { 'Content-Type': 'text/html' } });
-      }
-      if (url.hostname === 'www.torn.com') return new Response('<!doctype html><html><head></head><body><div id="sidebarroot"><a id="test-link" href="/gym.php?rfcv=old">Gym</a></div><div id="profileroot"></div></body></html>', { headers: { 'Content-Type': 'text/html' } });
-      return new Response(JSON.stringify({ fixture: true }), { headers: { 'Content-Type': 'application/json' } });
-    });
-  });
   await app.evaluate(() => {
     const original = global.fetch;
     global.__expectedFFKey = 'AbCdEfGh12345678';
@@ -140,6 +159,8 @@ let app;
     const response = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey: 'AbCdEfGh12345678' }) });
     if (!response.ok) throw new Error('Fixture key could not be saved');
   });
+  assert.ok(!fs.readFileSync(configFile, 'utf8').includes('AbCdEfGh12345678'), 'the new key is saved encrypted');
+  assert.equal((await decryptSaved()).apiKey, 'AbCdEfGh12345678');
   await page.evaluate(() => window.electronAPI.tabCreate({ id: 'script-test', url: 'https://www.torn.com/index.php' }));
   const check = await app.evaluate(async ({ BrowserWindow }) => {
     const wc = BrowserWindow.getAllWindows()[0].contentView.children[0].webContents;
@@ -228,7 +249,35 @@ let app;
   const startupLog = fs.readFileSync(path.join(temp, 'startup.log'), 'utf8');
   assert.ok(startupLog.includes('app page renderer gone'));
   assert.ok(!startupLog.includes('UNHANDLED'));
-  console.log(JSON.stringify({ result: 'PASS', checked: ['packaged executable startup', 'native clipboard paste', 'manual key entry', '480x400 minimum', '640x700 window', 'native view bounds', 'modal visibility during resize', 'tab view follows app zoom', 'Reload acts on the viewed tab', 'tabs survive an app page reload', 'session guard document-start', 'FF Scouter initialization', 'isolated React dependency', 'GM network bridge', 'TornW3B market injection', 'page helpers run only on their own page', 'profile helper looks up once, then from memory', 'self-navigating tab stopped until the user clicks', 'app page recovers from a renderer crash'] }));
+
+  // After a restart the same app profile reads the encrypted keys again. Saved without a main key, so the restarted
+  // app makes no Torn request.
+  const entry = { format: 'lrx-secrets', version: 1, scheme: 'electron-safestorage', data: await app.evaluate(({ safeStorage }, text) => safeStorage.encryptString(text).toString('base64'), JSON.stringify({ logKey: LOG_KEY })) };
+  await app.close(); app = null;
+  fs.writeFileSync(configFile, JSON.stringify({ features: FEATURES, secrets: entry }));
+  const signInScreen = async () => { const p = await app.firstWindow(); await p.locator('#auth-key').waitFor({ state: 'visible' }); return p; };
+  const configOf = (p) => p.evaluate(() => fetch('/api/config').then((r) => r.json()));
+  app = await launch(path.join(temp, 'profile'));
+  const restarted = await signInScreen();
+  const afterRestart = await configOf(restarted);
+  assert.equal(afterRestart.secretsUnreadable, false); assert.equal(afterRestart.secretStorage, 'encrypted');
+  assert.ok(afterRestart.logKeyMasked, 'the log key is read back after a restart');
+  assert.equal(await restarted.locator('#auth-notice').isHidden(), true);
+  await app.close(); app = null;
+
+  // A reset app profile (like another Windows account) can't read them: the sign-in screen says so and asks for the
+  // key, and the encrypted keys stay in the file.
+  app = await launch(path.join(temp, 'profile-reset'));
+  const reset = await signInScreen();
+  const afterReset = await configOf(reset);
+  assert.equal(afterReset.secretsUnreadable, true); assert.equal(afterReset.hasKey, false); assert.equal(afterReset.logKeyMasked, '');
+  await reset.locator('#auth-notice').waitFor({ state: 'visible' });
+  assert.match(await reset.locator('#auth-notice').textContent(), /couldn't be read on this Windows account/);
+  await reset.evaluate(() => fetch('/api/features', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ features: { 'app.splash': false } }) }));
+  assert.deepEqual(savedConfig().secrets, entry, 'the unreadable keys are not wiped by a settings save');
+  if (process.env.QA_OUTPUT) await reset.screenshot({ path: path.join(process.env.QA_OUTPUT, 'secrets-unreadable-sign-in.png') });
+
+  console.log(JSON.stringify({ result: 'PASS', checked: ['saved keys encrypted with safeStorage', 'encrypted keys read after a restart', 'unreadable keys reported on the sign-in screen and kept','packaged executable startup', 'native clipboard paste', 'manual key entry', '480x400 minimum', '640x700 window', 'native view bounds', 'modal visibility during resize', 'tab view follows app zoom', 'Reload acts on the viewed tab', 'tabs survive an app page reload', 'session guard document-start', 'FF Scouter initialization', 'isolated React dependency', 'GM network bridge', 'TornW3B market injection', 'page helpers run only on their own page', 'profile helper looks up once, then from memory', 'self-navigating tab stopped until the user clicks', 'app page recovers from a renderer crash'] }));
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => {
   await app?.close();
   const resolved = path.resolve(temp);

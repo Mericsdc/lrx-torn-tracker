@@ -128,20 +128,24 @@ async function expectFetches(page, paths, want, what) {
 // test just made on the service (the Premium page asks too), so that one settles first. A refused answer is not thrown.
 const freshStatus = (page) => page.evaluate(async () => { await PremiumAccess.status().catch(() => {}); return PremiumAccess.status(true).then(() => true, () => false); });
 const shownOf = (page) => page.evaluate(() => LRXOverview.shown().widgets.map((w) => `${w.id}:${w.size}:${w.locked}`));
-// The live timer strip as laid out: its box beside the profile's, each segment (countdown, bar) and the live header.
-const stripOf = (page) => page.evaluate(() => {
+// The live timer strip as laid out: its box beside the profile's and each segment, a tile (countdown, bar, icon, and
+// the room above its label and below its bar). extras counts what the strip no longer has: a LIVE badge or a freshness line.
+const STRIP_EXTRAS = '#ls-live, .ls-live, .ls-dot, #ls-fresh, .ls-fresh, .ls-head';
+const stripOf = (page) => page.evaluate((extras) => {
   const card = document.querySelector('#ow-grid > [data-widget="timers"]'), css = getComputedStyle(card), r = card.getBoundingClientRect();
-  const p = document.querySelector('#ow-grid > [data-widget="profile"]').getBoundingClientRect(), live = card.querySelector('#ls-live');
+  const p = document.querySelector('#ow-grid > [data-widget="profile"]')?.getBoundingClientRect() || { top: 0, right: 0, bottom: 0 };
   const segs = [...card.querySelectorAll('.ls-seg')].map((seg) => {
-    const b = seg.getBoundingClientRect(), v = seg.querySelector('.ls-value'), text = document.createRange();
+    const b = seg.getBoundingClientRect(), v = seg.querySelector('.ls-value'), text = document.createRange(), s = getComputedStyle(seg);
+    const label = seg.querySelector('.eyebrow').getBoundingClientRect(), bar = seg.querySelector('.ls-bar').getBoundingClientRect(), icon = seg.querySelector('.ls-icon');
     text.selectNodeContents(v);
-    return { key: seg.dataset.ls, top: Math.round(b.top), left: Math.round(b.left), value: v.textContent, lines: text.getClientRects().length, clipped: v.scrollWidth > v.clientWidth, bar: parseFloat(seg.querySelector('.ls-bar > i').style.width), done: seg.classList.contains('done') };
+    return { key: seg.dataset.ls, top: Math.round(b.top), left: Math.round(b.left), right: Math.round(b.right), bottom: Math.round(b.bottom), value: v.textContent, lines: text.getClientRects().length, clipped: v.scrollWidth > v.clientWidth, bar: parseFloat(seg.querySelector('.ls-bar > i').style.width), done: seg.classList.contains('done'),
+      tile: parseFloat(s.borderTopLeftRadius) > 0 && s.borderTopStyle === 'solid', svgIcon: !!icon.querySelector('svg') && !/\p{Extended_Pictographic}/u.test(icon.textContent),
+      above: Math.round(label.top - b.top), below: Math.round(b.bottom - bar.bottom) };
   });
   return { top: Math.round(r.top), left: Math.round(r.left), bottom: Math.round(r.bottom), rows: css.gridRowStart, cols: css.gridColumnStart,
     profile: { top: Math.round(p.top), right: Math.round(p.right), bottom: Math.round(p.bottom) }, segs,
-    live: ['is-live', 'is-stale'].filter((c) => live.classList.contains(c)).join(), label: live.querySelector('[data-ls-label]').textContent, fresh: card.querySelector('#ls-fresh').textContent,
-    dot: getComputedStyle(live.querySelector('.ls-dot')).animationName, bars: getComputedStyle(card.querySelector('.ls-bar > i')).transitionDuration };
-});
+    extras: card.querySelectorAll(extras).length, bars: getComputedStyle(card.querySelector('.ls-bar > i')).transitionDuration };
+}, STRIP_EXTRAS);
 // Language clicks and the Settings view reload the app config without awaiting it (app.js). A reply that lands after a
 // later setFeature() puts the old switch value back, so a switch is set only once every such reload has been applied.
 const trackConfigLoads = (page) => page.evaluate(() => {
@@ -168,12 +172,11 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   const { page, errors, context } = await desktop(MEMBER);
   const posts = []; page.on('request', (r) => { if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/overview-layouts') posts.push(r.postDataJSON()); });
   const firstReply = layoutReply(page);
-  // before the first overview arrives the live header claims nothing: no LIVE, no DELAYED, a dash
+  // the strip has no LIVE badge and no "updated … ago" line, before the first overview or after it
   await page.locator('#auth-key').waitFor({ state: 'visible' });
   assert.equal(await page.evaluate(() => state.overview), null, 'no overview yet');
   await page.evaluate(() => tick()); // what the app's one-second interval runs (this fixture skips startApp)
-  assert.deepEqual(await page.evaluate(() => { const live = document.querySelector('#ls-live'); return [live.classList.contains('is-live'), live.classList.contains('is-stale'), live.querySelector('[data-ls-label]').textContent, document.querySelector('#ls-fresh').textContent]; }),
-    [false, false, '—', ''], 'before the first overview the strip claims no live data');
+  assert.equal(await page.evaluate((extras) => document.querySelectorAll(extras).length, STRIP_EXTRAS), 0, 'no LIVE badge and no freshness line');
   await open(page);
 
   // default layout
@@ -274,7 +277,7 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   assert.equal(posts.length, 0, 'loading never saves');
 
   // fixed IDs: app.js renders into these whether or not their widget is shown
-  for (const selector of ['#t-drug', '#t-edu', '#t-day', '#ls-live', '#ls-fresh', '#bars', '#mini-row', '#status-chip', '#xan-chip', '#bs-totals', '#bs-table', '#ov-company']) {
+  for (const selector of ['#t-drug', '#t-edu', '#t-day', '#bars', '#mini-row', '#status-chip', '#xan-chip', '#bs-totals', '#bs-table', '#ov-company']) {
     assert.equal(await page.locator(selector).count(), 1, 'fixed ID ' + selector);
   }
   for (const key of ['drug', 'edu', 'day']) {
@@ -291,7 +294,9 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
     const card = document.querySelector('#mini-row').closest('.card'), list = card.querySelector('#mini-row'), c = card.getBoundingClientRect(), css = getComputedStyle(card);
     const rows = [...list.querySelectorAll('.st-row')].map((r) => {
       const b = r.getBoundingClientRect(), v = r.querySelector('.st-v');
-      return { k: r.querySelector('.st-k').textContent.trim(), v: v.textContent.trim(), state: [...r.classList].filter((x) => x !== 'st-row').join(' '), left: Math.round(b.left), width: Math.round(b.width), bottom: Math.round(b.bottom), fits: v.scrollWidth <= v.clientWidth + 1 };
+      // fits: the laid-out text is no wider than its box (scrollWidth alone missed an ellipsis-cut value)
+      const text = document.createRange(); text.selectNodeContents(v);
+      return { k: r.querySelector('.st-k').textContent.trim(), v: v.textContent.trim(), state: [...r.classList].filter((x) => x !== 'st-row').join(' '), left: Math.round(b.left), width: Math.round(b.width), bottom: Math.round(b.bottom), fits: v.scrollWidth <= v.clientWidth + 1 && text.getBoundingClientRect().width <= v.getBoundingClientRect().width + 1 };
     });
     return { rows, listWidth: Math.round(list.getBoundingClientRect().width), gap: rows.length ? Math.round(c.bottom - parseFloat(css.paddingBottom) - parseFloat(css.borderBottomWidth) - Math.max(...rows.map((r) => r.bottom))) : null };
   });
@@ -306,10 +311,68 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   assert.ok(status.rows.every((r) => r.fits), 'S: every value fits on its row ' + JSON.stringify(status));
   assert.ok(Math.abs(status.gap) <= 2, 'S: the rows fill the card to its bottom ' + JSON.stringify(status));
   assert.ok(Math.abs(await bottomOf('#ow-grid > [data-widget="chips"]') - await bottomOf('#ow-grid > [data-widget="bars"]')) <= 2, 'Status ends with Bars');
+  // traveling: the trip is shown once, in Status, as the route and a landing countdown with its TCT time (from the
+  // overview's own travel data, no extra request); the Bars header and the profile card show no travel chip
+  const landAt = Math.floor(Date.now() / 1000) + 33 * 60 + 28;
+  const travelTo = (fields) => page.evaluate((f) => { Object.assign(state.overview, f); state.overview.player.status = f.status; renderOverview(); tick(); }, fields);
+  await travelTo({ status: { state: 'Traveling', description: 'Traveling from China to Torn', color: 'blue', until: 0 }, travel: { description: 'Traveling from China to Torn', icon: null }, trip: { destination: 'Torn', method: 'Airstrip', timeLeft: 2008, arrival: landAt } });
+  const flying = await statusRows();
+  assert.deepEqual(flying.rows.slice(0, 2).map((r) => [r.k, r.state]), [['Travel', 'st-blue'], ['Landing', 'st-blue st-land']], 'traveling: Travel and Landing lead Status ' + JSON.stringify(flying));
+  assert.equal(flying.rows[0].v, 'China → Torn', 'the route, short');
+  const landTct = new Date(landAt * 1000).toISOString().slice(11, 16);
+  assert.match(flying.rows[1].v, new RegExp('^3[23]m \\d\\ds · ' + landTct + ' TCT$'), 'the landing countdown and its TCT time ' + JSON.stringify(flying.rows[1]));
+  assert.ok(flying.rows.every((r) => r.fits), 'traveling: every value fits on its row ' + JSON.stringify(flying));
+  assert.ok(flying.gap >= -1, 'traveling: the rows stay inside the card ' + JSON.stringify(flying));
+  // the countdown is always whole on its row; its "· HH:MM TCT" is either whole beside it or wrapped out of sight, never cut
+  const landFit = () => page.evaluate(() => {
+    const v = document.querySelector('#mini-row .st-land .st-v'), box = v.getBoundingClientRect();
+    const inside = (b) => b.left >= box.left - 1 && b.right <= box.right + 1 && b.top >= box.top - 1 && b.bottom <= box.bottom + 1;
+    const left = v.querySelector('[data-land]').getBoundingClientRect(), when = v.querySelector('.st-when').getBoundingClientRect();
+    return { left: inside(left), when: inside(when) ? 'shown' : when.top >= box.bottom - 1 ? 'hidden' : 'cut', box: [Math.round(box.width), Math.round(box.height)] };
+  });
+  const fit1440 = await landFit();
+  assert.ok(fit1440.left && fit1440.when !== 'cut', 'at 1440 the landing countdown is whole and its TCT time is never cut ' + JSON.stringify(fit1440));
+  await page.setViewportSize({ width: 1700, height: 1050 });
+  assert.deepEqual(await landFit().then((f) => [f.left, f.when]), [true, 'shown'], 'at 1700 the TCT time has room beside the countdown');
+  await shot(page, 'overview-traveling-1700.png', false);
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  // a narrow Status card: the TCT time steps out of sight whole, the countdown stays
+  await page.evaluate(() => { document.querySelector('#mini-row').style.width = '190px'; });
+  assert.deepEqual(await landFit().then((f) => [f.left, f.when]), [true, 'hidden'], 'in a narrow card the TCT time is hidden whole');
+  await page.evaluate(() => { document.querySelector('#mini-row').style.width = ''; });
+  // long country names are shortened so the route fits
+  assert.deepEqual(await page.evaluate(() => ['Traveling to Cayman Islands', 'Returning to Torn from United Kingdom', 'Traveling from South Africa to Torn', 'In United Arab Emirates', 'In Japan'].map(travelRoute)),
+    ['Torn → Cayman', 'UK → Torn', 'South Africa → Torn', 'In UAE', 'In Japan'], 'travel routes, short');
+  assert.equal(await page.locator('#status-chip').isVisible(), false, 'no travel chip in the Bars header');
+  assert.equal(await page.locator('#ow-grid > [data-widget="profile"] .pm-profile-meta .chip').count(), 0, 'no travel chip on the profile card');
+  assert.equal(await page.evaluate(() => [...document.querySelectorAll('#ow-grid *')].filter((el) => el.offsetParent !== null && [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.includes('Traveling from China to Torn'))).length), 0, "Torn's long travel text is not shown on the Overview");
+  await shot(page, 'overview-traveling-1440.png', false);
+  await page.waitForTimeout(1100);
+  await page.evaluate(() => tick());
+  assert.notEqual((await statusRows()).rows[1].v, flying.rows[1].v, 'the landing countdown ticks');
+  await travelTo({ status: { state: 'Traveling', description: 'Traveling from China to Torn', color: 'blue', until: 0 }, travel: { description: 'Traveling from China to Torn', icon: null }, trip: { destination: 'Torn', method: 'Airstrip', timeLeft: 0, arrival: Math.floor(Date.now() / 1000) - 5 } });
+  assert.match((await statusRows()).rows[1].v, /^landed · \d\d:\d\d TCT$/, 'past the landing time it says landed until the next refresh');
+  assert.equal(await page.locator('#mini-row [data-land]').textContent(), 'landed', 'the countdown part says landed');
+  // abroad: where the player is, no landing line
+  await travelTo({ status: { state: 'Abroad', description: 'In China', color: 'blue', until: 0 }, travel: { description: 'In China', icon: null }, trip: { destination: 'China', method: 'Airstrip', timeLeft: 0, arrival: landAt - 9000 } });
+  const abroad = await statusRows();
+  assert.deepEqual(abroad.rows.slice(0, 2).map((r) => [r.k, r.v]), [['Travel', 'In China'], ['Xanax Today', '1']], 'abroad: where, and no landing line ' + JSON.stringify(abroad));
+  assert.equal(await page.locator('#status-chip').isVisible(), false, 'abroad: no chip in the Bars header');
+  // back in Torn: the chips are back and Status has no travel lines
+  await travelTo({ status: { state: 'Okay', description: 'Okay', color: 'green', until: 0 }, travel: null, trip: null });
+  assert.equal((await statusRows()).rows[0].k, 'Xanax Today', 'in Torn: no travel lines');
+  assert.equal(await page.locator('#status-chip').isVisible(), true, 'in Torn: the Bars header chip is back');
+  assert.equal((await page.locator('#ow-grid > [data-widget="profile"] .pm-profile-meta .chip').textContent()).trim(), 'Okay', 'in Torn: the profile chip is back');
 
-  // the live timer strip: in the first row beside the profile, three countdowns side by side under a LIVE header. They
-  // tick every second (the hidden single cards are painted too) and the header says how old the overview is.
+  // the live timer strip: in the first row beside the profile, three countdowns side by side, each its own tile with an
+  // icon, its content in the middle (no empty band above it: no LIVE badge, no freshness line). They tick every second
+  // (the hidden single cards are painted too).
   const ls = await stripOf(page);
+  assert.equal(ls.extras, 0, 'no LIVE badge and no freshness line ' + JSON.stringify(ls));
+  assert.ok(ls.segs.every((x) => x.tile && x.svgIcon), 'each countdown is a tile with a drawn (not emoji) icon ' + JSON.stringify(ls.segs));
+  assert.ok(ls.segs.every((x, i) => i === 0 || x.left - ls.segs[i - 1].right >= 8), 'the tiles stand apart ' + JSON.stringify(ls.segs));
+  assert.ok(ls.segs.every((x) => Math.abs(x.above - x.below) <= 4), 'each tile has as much room above its label as below its bar ' + JSON.stringify(ls.segs));
+  assert.ok(ls.segs.every((x) => Math.abs((x.top - ls.top) - (ls.bottom - x.bottom)) <= 2), 'the tiles sit in the middle of the card ' + JSON.stringify(ls));
   assert.ok(Math.abs(ls.top - ls.profile.top) <= 2 && ls.left > ls.profile.right, 'the strip is in the first row beside the profile ' + JSON.stringify(ls));
   assert.deepEqual(ls.segs.map((x) => x.key), ['drug', 'edu', 'day']);
   assert.equal(new Set(ls.segs.map((x) => x.top)).size, 1, 'the three segments share one row ' + JSON.stringify(ls.segs));
@@ -321,33 +384,32 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   assert.ok(ls.segs.every((x) => x.bar > 0 && x.bar <= 100 && !x.done), 'a running timer has a part-full bar ' + JSON.stringify(ls.segs));
   const eduCopies = await page.evaluate(() => [...document.querySelectorAll('[data-timer="edu"]')].map((el) => el.textContent));
   assert.ok(eduCopies.length === 2 && eduCopies.every((t) => /^12d /.test(t)), 'the hidden education card is painted too ' + JSON.stringify(eduCopies));
-  assert.deepEqual([ls.live, ls.label], ['is-live', 'LIVE'], 'a fresh overview reads LIVE');
-  assert.match(ls.fresh, /^updated \d+ s ago$/);
   // The app's one-second setInterval(tick) starts with the signed-in app (startApp), which this fixture skips: the test
   // runs tick() itself, as that interval does.
   await page.waitForTimeout(1100);
   await page.evaluate(() => tick());
   assert.notEqual((await stripOf(page)).segs[2].value, segOf('day').value, 'a second later the countdowns have moved on');
-  // three refreshes missed: the header turns amber and says how old the data is; fresh data reads LIVE again
-  const freshAt = await page.evaluate(() => { const at = state.overviewAt; state.overviewAt = Date.now() - 200_000; tick(); return at; });
-  const stale = await stripOf(page);
-  assert.deepEqual([stale.live, stale.label], ['is-stale', 'DELAYED'], 'old data reads DELAYED');
-  assert.match(stale.fresh, /^last data 3 min ago$/);
-  await page.evaluate((at) => { state.overviewAt = at; tick(); }, freshAt);
-  assert.deepEqual((await stripOf(page)).label, 'LIVE', 'fresh data reads LIVE again');
-  // the pulse and the moving bars follow the Animations switch (off in this fixture) and the system's reduced motion
-  assert.deepEqual([ls.dot, ls.bars], ['none', '0s'], 'Animations off: the dot does not pulse and the bars do not glide');
+  // the moving bars follow the Animations switch (off in this fixture) and the system's reduced motion
+  assert.equal(ls.bars, '0s', 'Animations off: the bars do not glide');
   await setSwitch(page, 'app.animations', true);
   const moving = await stripOf(page);
-  assert.notEqual(moving.dot, 'none', 'Animations on: the LIVE dot pulses');
   assert.equal(moving.bars, '1s', 'Animations on: the bars glide for a second');
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const reduced = await stripOf(page);
-  assert.equal(reduced.dot, 'none', 'reduced motion: no pulse');
   assert.ok(parseFloat(reduced.bars) <= 0.0001, 'reduced motion: no glide (the app-wide .01ms) ' + reduced.bars);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await setSwitch(page, 'app.animations', false);
   await shot(page, 'overview-live-strip-1440.png');
+  // the strip at full width (W) on a wide window: the same tiles, in the middle of the card, each countdown whole
+  await page.setViewportSize({ width: 1700, height: 1050 });
+  await showSet(page, oneLayout(['timers', 'W'], ['bars', 'M'], ['chips', 'S']));
+  await waitForIds(page, ['timers', 'bars', 'chips']);
+  const wide = await stripOf(page);
+  assert.ok(wide.extras === 0 && wide.segs.every((x) => x.tile && x.lines === 1 && !x.clipped && Math.abs(x.above - x.below) <= 4 && Math.abs((x.top - wide.top) - (wide.bottom - x.bottom)) <= 2), 'W at 1700: whole, centred tiles ' + JSON.stringify(wide));
+  await shot(page, 'overview-live-strip-W-1700.png', false);
+  await page.evaluate(() => LRXOverview.commit(LRXOverviewLayout.defaultSet(), { save: false }));
+  await waitForIds(page, DEFAULT_IDS);
+  await page.setViewportSize({ width: 1440, height: 1050 });
 
   // saved layout
   assert.equal(await saveDirect(page, MEMBER, [{ id: 'battle', size: 'M' }, { id: 'drug', size: 'S' }]), 200);
@@ -565,9 +627,6 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   await page.locator('[data-lang="tr"]').click();
   await configLoaded(page);
   assert.equal((await page.locator('#ow-grid > [data-widget="chips"] h3').textContent()).trim(), 'Durum');
-  await page.evaluate(() => tick());
-  assert.equal(await page.locator('#ls-live [data-ls-label]').textContent(), 'CANLI');
-  assert.match(await page.locator('#ls-fresh').textContent(), /^\d+ sn önce güncellendi$/);
   await page.evaluate(() => LRXOverview.commit({ v: 1, active: 0, layouts: [{ name: '', widgets: [] }] }, { save: false }));
   assert.equal((await page.locator('#ow-grid .ow-empty').textContent()).trim(), "Bu düzende widget yok. Eklemek için Düzenle'ye bas.");
   await page.locator('[data-lang="en"]').click();
@@ -1082,7 +1141,7 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   assert.deepEqual(lapse.errors, []);
   assert.deepEqual(forbidden, [], 'never: POST /api/stock-order, /api/faction/report, /api/targets');
 
-  console.log(JSON.stringify({ ok: true, assertions: ['default layout with the profile first, ending with Bars', 'live timer strip beside the profile: three ticking countdowns under a LIVE header that turns DELAYED, none before data, stacked at 2 columns', 'Edit in the page header, on the Overview only; no toolbar row outside edit mode', 'company hidden by company mode, never by the grid', 'profile name as text and Torn profile link', 'fixed IDs stay in the DOM', 'saved layout after reload', 'corrupt cached copy and failed request fall back quietly', 'a failed request is asked again; an unconfirmed save toasts and sends nothing', 'a default-screen change confirmed late never replaces the saved layouts', 'free cards before the layout reply', 'another player sees the default layout; a save toasts and sends nothing', 'commit saves once and caches; 409 reloads; errors toast', 'empty layout hint', 'classic switch', 'widths 1440/1366/1280/1100/760/640/600', 'a multi-day education countdown is one line at 1280/1366/1440', 'five themes', 'TR/EN', 'member: networth and travel tiles render escaped data', 'a tile click opens its page', 'edit mode: a click, Enter or a drag attempt on a tile body opens nothing', 'member: S/M/L chips resize and a second layout is saved and switched', 'member: a layout name with markup is shown as text', 'every Premium widget renders; orders without company mode shows the note', 'off: no Premium group, tiles read Not available; Premium tiles hide in classic', 'Premium page Open goes to the Overview edit mode', 'fetch policy: none on another view, 1 within 59 s, 2 after 61 s; a failed attempt counts', 'page off: the Settings note and no request', 'unknown: the checking placeholder and no widget request', 'never requested: POST /api/stock-order, /api/faction/report, /api/targets', 'lapsed: default sizes and locked tiles, saved layout kept; renewal restores it','the profile card opens the Torn profile; in edit mode a click or a drag attempt on it opens no tab', 'edit mode shows a handle and × for each shown widget', '× removes chips and #mini-row stays in the DOM', 'keyboard: ArrowLeft twice on battle moves it two places; Delete on day removes it', 'drag drug onto edu moves drug after edu', 'add list: chips comes back last; Premium items are disabled with a lock', 'no Edit before an overview player is known', 'Done saves: after a reload the order is the same', 'a Done with no change sends nothing', 'leaving the Overview while editing saves and closes edit mode', 'hiding the window or switching the layout off saves and closes edit mode', 'lrx-premium-reset closes edit mode without saving', 'two-step Reset to default', '640 px with the drawer open: no sideways scrolling; the drawer is below the grid', 'edit mode in five themes at 1440 and 640', 'one column: drop by the vertical midpoint', 'no page errors or CSP reports'], screenshots: output }));
+  console.log(JSON.stringify({ ok: true, assertions: ['default layout with the profile first, ending with Bars', 'traveling: route and landing countdown only in Status; no travel chips', 'live timer strip beside the profile: three ticking countdowns as centred tiles with drawn icons (no LIVE badge, no freshness line), whole at W, stacked at 2 columns', 'Edit in the page header, on the Overview only; no toolbar row outside edit mode', 'company hidden by company mode, never by the grid', 'profile name as text and Torn profile link', 'fixed IDs stay in the DOM', 'saved layout after reload', 'corrupt cached copy and failed request fall back quietly', 'a failed request is asked again; an unconfirmed save toasts and sends nothing', 'a default-screen change confirmed late never replaces the saved layouts', 'free cards before the layout reply', 'another player sees the default layout; a save toasts and sends nothing', 'commit saves once and caches; 409 reloads; errors toast', 'empty layout hint', 'classic switch', 'widths 1440/1366/1280/1100/760/640/600', 'a multi-day education countdown is one line at 1280/1366/1440', 'five themes', 'TR/EN', 'member: networth and travel tiles render escaped data', 'a tile click opens its page', 'edit mode: a click, Enter or a drag attempt on a tile body opens nothing', 'member: S/M/L chips resize and a second layout is saved and switched', 'member: a layout name with markup is shown as text', 'every Premium widget renders; orders without company mode shows the note', 'off: no Premium group, tiles read Not available; Premium tiles hide in classic', 'Premium page Open goes to the Overview edit mode', 'fetch policy: none on another view, 1 within 59 s, 2 after 61 s; a failed attempt counts', 'page off: the Settings note and no request', 'unknown: the checking placeholder and no widget request', 'never requested: POST /api/stock-order, /api/faction/report, /api/targets', 'lapsed: default sizes and locked tiles, saved layout kept; renewal restores it','the profile card opens the Torn profile; in edit mode a click or a drag attempt on it opens no tab', 'edit mode shows a handle and × for each shown widget', '× removes chips and #mini-row stays in the DOM', 'keyboard: ArrowLeft twice on battle moves it two places; Delete on day removes it', 'drag drug onto edu moves drug after edu', 'add list: chips comes back last; Premium items are disabled with a lock', 'no Edit before an overview player is known', 'Done saves: after a reload the order is the same', 'a Done with no change sends nothing', 'leaving the Overview while editing saves and closes edit mode', 'hiding the window or switching the layout off saves and closes edit mode', 'lrx-premium-reset closes edit mode without saving', 'two-step Reset to default', '640 px with the drawer open: no sideways scrolling; the drawer is below the grid', 'edit mode in five themes at 1440 and 640', 'one column: drop by the vertical midpoint', 'no page errors or CSP reports'], screenshots: output }));
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => {
   await browser?.close();
   for (const child of children) { child.kill(); await new Promise((r) => child.exitCode !== null ? r() : child.once('exit', r)); }

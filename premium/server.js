@@ -59,15 +59,17 @@ function createHttpServer(config, dependencies = {}) {
       if (['/v1/auth/torn', '/v1/auth/test'].includes(url.pathname) && req.method === 'POST') {
         if (url.pathname.endsWith('/test') && config.mode === 'live') fail('TEST_LOGIN_DISABLED', 403);
         const remote = clientAddress(req, config);
+        // Per-address limit first: requests it refuses must not use up the shared budget below,
+        // or one address could block every login.
+        const bucket = attempts.get(remote);
+        if (bucket && bucket.until > service.store.now() && bucket.count >= 10) fail('AUTH_RATE_LIMIT', 429);
         // Global ceiling so many distinct addresses cannot flood Torn verification
         if (!globalAttempts.until || globalAttempts.until <= service.store.now()) { globalAttempts.until = service.store.now() + 60; globalAttempts.count = 0; }
         if (++globalAttempts.count > 300) fail('AUTH_RATE_LIMIT', 429);
-        const bucket = attempts.get(remote);
         if (!bucket && attempts.size >= 1000) {
           for (const [key, entry] of attempts) if (entry.until <= service.store.now()) attempts.delete(key);
           if (attempts.size >= 1000) fail('AUTH_RATE_LIMIT', 429);
         }
-        if (bucket && bucket.until > service.store.now() && bucket.count >= 10) fail('AUTH_RATE_LIMIT', 429);
         if (!bucket || bucket.until <= service.store.now()) attempts.set(remote, { until: service.store.now() + 60, count: 1 });
         else bucket.count++;
         const body = await readBody(req);

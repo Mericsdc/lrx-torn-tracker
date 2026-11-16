@@ -7,10 +7,12 @@
     const id = Number(p.id), name = decode(p.name || String(id)), photo = httpsUrl(p.image);
     const si = typeof statusInfo === 'function' ? statusInfo(p.status) : { cls: 'dim', text: '', color: 'var(--muted)' };
     const fac = p.faction || {}, tag = fac.faction_tag && fac.faction_tag !== 'None' ? fac.faction_tag : '';
+    // Flying or abroad: no status chip here; the Overview's Status card shows the trip once, with its landing time.
+    const away = p.status?.state === 'Traveling' || p.status?.state === 'Abroad';
     return `<article class="pm-profile${photo ? '' : ' is-missing'}" data-open-url="https://www.torn.com/profiles.php?XID=${id}" data-tab-label="${esc(name)} [${id}]" title="${esc(tr('Profili sekmede aç', 'Open profile in a tab'))}">`
       + `<div class="pm-profile-top"><i class="pm-profile-dot" style="background:${si.color}"></i><strong>${esc(name)}</strong><span>[${id}]</span></div>`
       + `<div class="pm-profile-frame">${photo ? `<img class="pm-profile-photo" src="${esc(photo)}" alt="${esc(name)}" referrerpolicy="no-referrer" decoding="async">` : ''}<span class="pm-profile-initial" aria-hidden="true">${esc(name.trim().charAt(0).toUpperCase() || '?')}</span></div>`
-      + `<div class="pm-profile-meta"><span>Lv ${Number(p.level) || '—'}</span><span class="chip ${si.cls}">${esc(p.status?.description || si.text)}</span>${tag ? `<span class="pm-profile-tag" title="${esc(fac.faction_name || tag)}">${esc(tag)}</span>` : ''}</div>`
+      + `<div class="pm-profile-meta"><span>Lv ${Number(p.level) || '—'}</span>${away ? '' : `<span class="chip ${si.cls}">${esc(p.status?.description || si.text)}</span>`}${tag ? `<span class="pm-profile-tag" title="${esc(fac.faction_name || tag)}">${esc(tag)}</span>` : ''}</div>`
       + details(p) + '</article>';
   }
   // Profile lines under the photo. Only the Overview's medium card shows them (overview.css), where they fill the room

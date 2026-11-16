@@ -50,3 +50,15 @@ test('the slow-loop limit can be turned off in Settings; the fast limit cannot',
   for (let i = 0; i < 7; i++) guard.navigate();
   assert.equal(guard.navigate()?.kind, 'fast');
 });
+
+test('Torn tabs may not open this computer\'s own addresses (the app page and its local API)', () => {
+  const { isLoopbackUrl } = require('../src/main/nav-guard');
+  for (const u of ['http://127.0.0.1:3737/', 'http://127.0.0.1:3737/api/config', 'http://localhost:3737', 'https://LOCALHOST/x',
+    'http://127.8.9.10/', 'http://[::1]:3737/', 'http://0.0.0.0:3737/', 'http://app.localhost:3737/', 'http://[::ffff:127.0.0.1]:3737/']) {
+    assert.equal(isLoopbackUrl(u), true, u);
+  }
+  for (const u of ['https://www.torn.com/', 'https://api.torn.com/user', 'chrome-extension://abc/pages/settings.html', 'https://127.0.0.1.example.com/',
+    'https://localhost.example.com/', 'about:blank', 'not a url', '', null]) {
+    assert.equal(isLoopbackUrl(u), false, String(u));
+  }
+});

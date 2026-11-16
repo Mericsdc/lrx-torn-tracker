@@ -132,3 +132,21 @@ test('archive entries cannot be written outside the target folder', (t) => {
   assert.deepEqual(fs.readdirSync(root), ['out']);
   assert.deepEqual(tree(dest), { 'ok/inside.txt': 'fine' });
 });
+
+test('an archive entry that inflates past its declared size is refused (no ZIP bomb)', (t) => {
+  const zlib = require('node:zlib');
+  const deflated = (name, declared, payload) => {
+    const n = Buffer.from(name), data = zlib.deflateRawSync(payload), lh = Buffer.alloc(30), ch = Buffer.alloc(46);
+    lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(8, 8); lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(declared, 22); lh.writeUInt16LE(n.length, 26);
+    ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(8, 10); ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(declared, 24); ch.writeUInt16LE(n.length, 28);
+    const cd = Buffer.concat([ch, n]), end = Buffer.alloc(22), offset = 30 + n.length + data.length;
+    end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10); end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset, 16);
+    return Buffer.concat([lh, n, data, cd, end]);
+  };
+  const root = fixture(t, []);
+  assert.throws(() => unzip(deflated('bomb.txt', 10, Buffer.alloc(5_000_000)), path.join(root, 'a')));
+  unzip(deflated('ok.txt', 4, Buffer.from('fine')), path.join(root, 'b'));
+  assert.equal(fs.readFileSync(path.join(root, 'b', 'ok.txt'), 'utf8'), 'fine');
+  const broken = deflated('x.txt', 4, Buffer.from('fine')); broken.writeUInt32LE(0, 0); // no local header where the directory points
+  assert.throws(() => unzip(broken, path.join(root, 'c')));
+});
