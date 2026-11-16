@@ -33,6 +33,11 @@
     credNote: `Bağımsız projeler, teşekkürle anılır. Herhangi bir onay ima edilmez ve lisansları geçerliliğini korur. <a href="${GH}/blob/main/userscripts/NOTICE.txt" rel="noopener">Üçüncü taraf bildirimleri</a>`,
     relEyebrow: 'Sürüm notları', relTitle: 'Sürüm sürüm neler değişti.', relLead: 'Güncellemeler uygulamanın içinden kurulur. Key\'in, ayarların ve verilerin yerinde kalır.',
     relLatest: 'En yeni',
+    rel15t: 'Şifreli key\'ler ve daha sade Genel Bakış',
+    rel15: '<li>Kayıtlı API key\'lerin Windows DPAPI ile şifreli saklanıyor; yalnızca bu bilgisayardaki Windows hesabın okuyabilir. Önceden kaydettiğin key\'ler ilk açılışta şifrelenir.</li>'
+      + '<li><b>Canlı sayaçlar</b> şeridi sadeleşti: LIVE rozeti yok, her sayaç kendi kutucuğunda.</li>'
+      + '<li>Uçarken yolculuk yalnızca <b>Status</b>\'ta görünür; iniş geri sayımı ve TCT iniş saatiyle.</li>'
+      + '<li>Güvenlik düzeltmeleri: Torn sekmeleri bilgisayarındaki yerel adresleri açamaz, yardımcılar yalnızca gereken istekleri yapar, TornTools paketleri daha sıkı denetlenir.</li>',
     rel14t: 'Yeni Genel Bakış ve yenilenen sayfalar',
     rel14: '<li>Genel Bakış artık sürükleyip ekleyip çıkarabildiğin kartlardan oluşuyor. Ayarlar\'da <b>Genel Bakış düzeni</b> kapatılırsa eski ekran geri gelir.</li>'
       + '<li><b>Canlı sayaçlar</b> şeridi ilaç bekleme süreni, eğitimini ve 18:00 TCT gün dönümünü tek satırda gösterir.</li>'
