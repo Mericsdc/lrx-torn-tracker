@@ -33,6 +33,10 @@
     credNote: `Bağımsız projeler, teşekkürle anılır. Herhangi bir onay ima edilmez ve lisansları geçerliliğini korur. <a href="${GH}/blob/main/userscripts/NOTICE.txt" rel="noopener">Üçüncü taraf bildirimleri</a>`,
     relEyebrow: 'Sürüm notları', relTitle: 'Sürüm sürüm neler değişti.', relLead: 'Güncellemeler uygulamanın içinden kurulur. Key\'in, ayarların ve verilerin yerinde kalır.',
     relLatest: 'En yeni',
+    rel17t: 'Varlıklar: paran hangi eşyalarda duruyor',
+    rel17: '<li>Finans › Networth\'e <b>Varlıklar</b> kartı eklendi: paranın hangi eşyalarda durduğunu gösterir (envanter, Bazaar, Display Case, Item Market ve hisseler), en büyük eşya ve payıyla.</li>'
+      + '<li><b>Değer | Değişim</b> anahtarı her eşyanın değişimini <b>fiyat etkisi</b> (Torn piyasa değeri oynadı) ve <b>alım / satım</b> olarak ayırır; 1G\'den 1Y\'ye kadar, networth\'e bağlı. Ekstra Torn isteği yok.</li>'
+      + '<li>Pencere küçültülüp geri açıldığında Torn sekmesi tam boyutunda kalır; Kalkış Planlayıcı etiketleri artık üst üste binmiyor.</li>',
     rel16t: 'Kalkış Planlayıcı, Borsa, Faction Intel ve Attack düzeltmesi',
     rel16: '<li>Ranked War <b>Attack</b> düğmesi (ve Merit Rehberi bağlantıları) Torn\'un <code>page.php</code> adresine güncellendi; artık eski endpoint hatası alınmıyor.</li>'
       + '<li>Eşyası eksik OC satırına, rozetine veya bildirimine tıklandığında doğrudan Torn <b>Faction Armory → Utilities</b> sayfası açılır.</li>'
