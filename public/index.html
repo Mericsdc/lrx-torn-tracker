@@ -142,6 +142,9 @@
         <button class="nav-item" data-view="finance">
           <svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 5-6"/></svg><span data-i18n="nav.finance">Finance</span>
         </button>
+        <button class="nav-item" data-view="stocks">
+          <svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 6-8 3 2M3 20h18"/></svg><span data-i18n="nav.stocks">Stock Market</span>
+        </button>
         <button class="nav-item" data-view="war">
           <svg viewBox="0 0 24 24"><path d="M14.5 4.5l5 5L9 20l-5 0 0-5zM12 7l5 5M4 4l4 4"/></svg><span data-i18n="nav.war">War Targets</span>
         </button>
@@ -351,6 +354,7 @@
           <div class="card-head"><h3 data-i18n="emp.tableTitle">Employees &amp; Addiction</h3><span class="muted" data-i18n="emp.tableSub">Addiction lowers effectiveness · Rehab recommended at -8 or worse</span></div>
           <div class="emp-table-wrap"><table class="tbl" id="emp-table"></table></div>
         </article>
+        <article class="glass card emp-advisor" id="emp-advisor-card" hidden></article>
       </section>
 
       <!-- ===================== FINANCE (Networth + Company income · finance.js) ===================== -->
@@ -395,11 +399,13 @@
           <div class="tbl-wrap"><table class="tbl" id="war-table"></table></div>
           <p class="footnote" id="war-footnote"></p>
         </article>
+        <article class="glass card war-payout" id="war-payout-card" hidden></article>
       </section>
 
       <!-- ===================== EXTRA FEATURES ===================== -->
       <section class="view" id="view-job"><div class="stack" id="job-body"></div></section>
       <section class="view" id="view-gym"><div class="stack" id="gym-body"></div></section>
+      <section class="view" id="view-stocks"><div class="stack" id="stocks-body"></div></section>
       <section class="view" id="view-travel"><div class="stack" id="travel-body"></div><div data-feature-slot="travel_advanced"></div></section>
       <section class="view" id="view-level"><div class="stack" id="level-body"></div></section>
       <section class="view" id="view-guide"><div class="stack" id="guide-body"></div></section>
@@ -641,6 +647,11 @@
   <script src="/app.js"></script>
   <script src="/nav-motion.js"></script>
   <script src="/travel-math.js"></script>
+  <script src="/travel-planner.js"></script>
+  <script src="/stocks-math.js"></script>
+  <script src="/war-payout.js"></script>
+  <script src="/company-advisor.js"></script>
+  <script src="/faction-tools.js"></script>
   <script src="/feature-catalog.js"></script>
   <script src="/levelling.js"></script>
   <script src="/beginner-guide.js"></script>
@@ -662,6 +673,10 @@
   <script src="/tools.js"></script>
   <script src="/events.js"></script>
   <script src="/faction.js"></script>
+  <script src="/travel-planner-ui.js"></script>
+  <script src="/stocks.js"></script>
+  <script src="/war-payout-ui.js"></script>
+  <script src="/company-advisor-ui.js"></script>
   <script src="/feedback.js"></script>
 </body>
 </html>

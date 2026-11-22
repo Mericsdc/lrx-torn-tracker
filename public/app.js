@@ -328,7 +328,8 @@ function showView(v) {
   $('#view-title').textContent = vm[0];
   $('#view-sub').textContent = vm[1];
   location.hash = v;
-  if (v === 'war') { if (!state.wars || Date.now() - (state.warsAt || 0) > 60_000) loadWars(); if (state.factionId && !state.targets) loadTargets(); window.loadWarGroups?.(); }
+  if (v === 'war') { if (!state.wars || Date.now() - (state.warsAt || 0) > 60_000) loadWars(); if (state.factionId && !state.targets) loadTargets(); window.loadWarGroups?.(); window.renderWarPayout?.(); }
+  if (v === 'employees') window.renderCompanyAdvisor?.();
   if (v === 'settings') loadConfig();
   window.onViewShown?.(v);
 }
@@ -965,6 +966,7 @@ function renderEmployees(c) {
   $('#emp-table').innerHTML = `<thead><tr>${cols.map(([cls, label]) => `<th class="${cls}">${label}</th>`).join('')}</tr></thead><tbody>${
     e.map((x) => `<tr data-emp="${x.id}"${needsRehab(x) ? ' class="emp-crit"' : ''}>${cols.map(([cls, label, cell]) => `<td class="${cls}" data-label="${esc(label)}">${cell(x)}</td>`).join('')}</tr>`).join('')
   }</tbody>`;
+  window.renderCompanyAdvisor?.();
 }
 
 /* ---------- Gelir Geçmişi grafiği (Finance page, Company tab) ----------

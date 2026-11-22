@@ -12,15 +12,22 @@ const FEATURE_DEFS = [
   { group: 'pages', key: 'page.gym', def: true, tr: ['Gym & Statlar', 'Battle stat geçmişi ve günlük artış'], en: ['Gym & Stats', 'Battle stat history and daily gains'] },
   { group: 'pages', key: 'page.networth', def: true, tr: ['Finans: Networth sekmesi', 'Servet dağılımı, dönem değişimi ve geçmiş'], en: ['Finance: Networth tab', 'Wealth allocation, change over a period and history'] },
   { group: 'pages', parent: 'page.networth', key: 'finance.milestone', def: true, tr: ['Sonraki networth eşiği', "Torn'un networth rank eşiklerine ilerleme ve tahmini süre"], en: ['Next networth milestone', "Progress and an estimated time to Torn's networth rank triggers"] },
+  { group: 'pages', key: 'page.stocks', def: true, tr: ['Borsa', 'Canlı hisse fiyatları, yıllık benefit blok ROI ve portföy kâr/zararı'], en: ['Stock Market', 'Live stock prices, annual benefit block ROI and holdings P/L'] },
   { group: 'pages', key: 'page.travel', def: true, tr: ['Seyahat Kârı', "Kâr, stok ve restock zamanları (YATA + Prometheus) · seviye 15'ten itibaren görünür"], en: ['Travel Profit', 'Profit, stock and restock times (YATA + Prometheus) · shown from level 15'] },
+  { group: 'pages', parent: 'page.travel', key: 'travel.planner', def: true, tr: ['Kalkış planlayıcı (24s zaman çizelgesi)', 'Sonraki uçuş geri sayımı, 24 saatlik kâr / nakit rotası ve uçuş içi plan'], en: ['Departure planner (24h timeline)', 'Next-flight countdown, 24h profit / cash schedule and in-flight planning'] },
   { group: 'pages', key: 'page.war', def: true, tr: ['Savaş Hedefleri', 'Fair Fight hedef önerileri'], en: ['War Targets', 'Fair Fight target suggestions'] },
   { group: 'pages', parent: 'page.war', key: 'war.groups', def: true, tr: ['Hedef grupları', 'Rakipleri gruplara ayır ve gruba göre filtrele · bu bilgisayarda saklanır'], en: ['Target groups', 'Sort enemies into groups and filter by group · saved on this computer'] },
+  { group: 'pages', parent: 'page.war', key: 'war.payout', def: true, tr: ['Ranked War ödeme planlayıcı', 'Respect/hit dağılımı, tavan ödeme, hazır Faction Bank linki ve CSV dışa aktarma'], en: ['Ranked War payout planner', 'Respect/hit split, member caps, prefilled Faction Bank links and CSV export'] },
   { group: 'pages', key: 'page.crimes', def: true, tr: ['Suç Merkezi', 'Shoplifting güvenliği (API) ve nerve başına kazanç'], en: ['Crime Hub', 'Shoplifting security (API) and money per nerve'] },
   { group: 'pages', parent: 'page.crimes', key: 'crimes.shoplift', def: true, tr: ["Shoplifting güvenliği", "Mağaza güvenlik durumu ve ★ alarmı"], en: ["Shoplifting security", "Store security status and ★ alerts"] },
   { group: 'pages', parent: 'page.crimes', key: 'crimes.value', def: true, tr: ["Nerve başına kazanç tablosu", "Bütün suçların $/N değerleri (Emforus tablosu)"], en: ["Money per nerve table", "$/N for every crime (Emforus sheet)"] },
   { group: 'pages', parent: 'page.crimes', key: 'crimes.burglary', def: true, tr: ["Burglary hedefleri", "34 hedefin keşif sayısı, nerve ve $/N tablosu"], en: ["Burglary targets", "Casings, nerve and $/N for all 34 targets"] },
   { group: 'pages', parent: 'page.crimes', key: 'crimes.jail', def: true, tr: ["Jail bust takibi", "Son 24 / 72 saatteki bustlar ve tahmini ceza puanı"], en: ["Jail bust tracker", "Busts in the last 24 / 72 hours and estimated penalty score"] },
-  { group: 'pages', key: 'page.faction', def: true, tr: ['Faction', "Kendi OC durumun · OC'ye girmeyenler, geciken OC'ler ve haftalık üye raporu (yalnızca lider, eş lider ve Organised Crimes yetkili pozisyonlar)"], en: ['Faction', 'Your OC status · members not in an OC, delayed OCs and the weekly member report (leader, co-leader and positions with the Organised Crimes permission only)'] },
+  { group: 'pages', key: 'page.faction', def: true, tr: ['Faction', "Kendi OC durumun · OC'ye girmeyenler, geciken OC'ler ve üye raporu (yetkililer) · aktivite, armory, chain ve yükseltmeler"], en: ['Faction', 'Your OC status · missing/delayed OCs and member reports (officers) · activity, armory, chains and upgrades'] },
+  { group: 'pages', parent: 'page.faction', key: 'faction.activity', def: true, tr: ['Aktivite & ısı haritası', 'Canlı çevrimiçi dağılımı, 7×24 TCT ısı haritası, tam liste ve üye karşılaştırma'], en: ['Activity & heatmap', 'Live online distribution, 7×24 TCT heatmap, full roster and member comparison'] },
+  { group: 'pages', parent: 'page.faction', key: 'faction.armory', def: true, tr: ['Armory geçmişi', 'Son 100 armory hareketi, kategori filtresi ve en çok kullananlar'], en: ['Armory history', 'Last 100 armory events, category filters and top actors'] },
+  { group: 'pages', parent: 'page.faction', key: 'faction.chains', def: true, tr: ['Chain raporları', 'Aktif chain ve son 25 chain bonus / respect özeti'], en: ['Chain reports', 'Active chain and last 25 chains milestone / respect summary'] },
+  { group: 'pages', parent: 'page.faction', key: 'faction.upgrades', def: true, tr: ['Yükseltme simülatörü', 'Dal sırası (1×→32×) çarpanlarıyla respect harcama simülasyonu'], en: ['Upgrade simulator', 'Respect cost simulation with branch-order multipliers (1×→32×)'] },
   { group: 'pages', key: 'page.awards', def: true, tr: ['Merit Takibi', 'Eksik honor / medal\'lar ve ilerlemen'], en: ['Merit Tracker', 'Missing honors / medals and your progress'] },
   { group: 'pages', key: 'page.tools', def: true, tr: ['Araçlar', 'Alış fiyatı koruması, etkinlik takvimi ve rehberi, happy jump kartı'], en: ['Tools', 'Purchase price protection, event calendar and guide, happy jump card'] },
   { group: 'pages', parent: 'page.tools', key: 'tools.events', def: true, tr: ["Etkinlik takvimi", "Yaklaşan Torn etkinlikleri ve geri sayım"], en: ["Event calendar", "Upcoming Torn events with countdowns"] },
@@ -29,6 +36,7 @@ const FEATURE_DEFS = [
   { group: 'pages', parent: 'page.tools', key: 'tools.helpers', def: true, tr: ["Torn yardımcıları listesi", "Torn sayfa yardımcılarının ne yaptığı ve durumu"], en: ["Torn helpers list", "What each Torn page helper does and whether it is on"] },
   { group: 'pages', key: 'page.levelling', def: true, tr: ['Seviye 15 altı', "Baldr's Levelling Targets ve Başlangıç Rehberi · yalnızca seviye 15'in altındayken görünür"], en: ['Under level 15', "Baldr's Levelling Targets and Beginner Guide · shown only below level 15"] },
   { group: 'pages', key: 'page.company', def: true, tr: ['Şirket sayfaları', 'Stok, rapor, çalışanlar ve Finans şirket sekmesi (yalnızca direktör)'], en: ['Company pages', 'Stock, report, employees and the Finance company tab (directors only)'] },
+  { group: 'pages', parent: 'page.company', key: 'company.advisor', def: true, tr: ['Pozisyon optimizasyonu', 'Çalışma statı formülüyle en verimli çalışan–rol eşleşmesi'], en: ['Position optimizer', 'Optimal employee-to-role assignment using Torn’s working-stat formula'] },
 
   { group: 'notify', key: 'notify', def: true, master: true, tr: ['Masaüstü bildirimleri', 'Tümünü aç / kapat'], en: ['Desktop notifications', 'Turn all on / off'] },
   { group: 'notify', key: 'notify.energy', def: true, tr: ['Enerji doldu', ''], en: ['Energy full', ''] },
@@ -87,7 +95,7 @@ const FEATURE_DEFS = [
   { group: 'app', key: 'app.premiumPromos', def: true, tr: ['Premium modül kartları', 'Savaş, Seyahat, Merit, Araçlar ve Ayarlar sayfalarındaki Premium kartları · Premium sayfası her zaman açık kalır'], en: ['Premium module cards', 'Premium cards on the War, Travel, Merits, Tools and Settings pages · the Premium page always stays available'] },
 ];
 const FEATURE_DEF_MAP = Object.fromEntries(FEATURE_DEFS.map((f) => [f.key, f]));
-const EXTRA_VIEWS = { job: 'page.job', gym: 'page.gym', travel: 'page.travel', war: 'page.war', level: 'page.levelling', guide: 'page.levelling', crimes: 'page.crimes', awards: 'page.awards', tools: 'page.tools', faction: 'page.faction' };
+const EXTRA_VIEWS = { job: 'page.job', gym: 'page.gym', stocks: 'page.stocks', travel: 'page.travel', war: 'page.war', level: 'page.levelling', guide: 'page.levelling', crimes: 'page.crimes', awards: 'page.awards', tools: 'page.tools', faction: 'page.faction' };
 const LEVELLING_VIEWS = ['level', 'guide'];
 
 function feat(key) {
@@ -662,6 +670,7 @@ function renderTravel() {
   const opt = (v, label, cur) => `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${label}</option>`;
   const countryChips = d.countries.filter((c) => c.minutes).map((c) => `<button class="tv-cbtn ${t.countries.has(c.code) ? 'active' : ''}" data-country="${c.code}" title="${esc(c.name)}"><span lang="en">${esc(c.name)}</span> <small>${mins(c.minutes * mult)}</small></button>`).join('');
   $('#travel-body').innerHTML = `
+    <div id="tv-planner"></div>
     <article class="glass card tv-controls">
       <div class="tv-row">
         <input class="input" id="tv-q" placeholder="${tr('Ürün ara… (ör. Xanax, Plushie)', 'Search items… (e.g. Xanax, Plushie)')}" value="${esc(t.q)}">
@@ -734,6 +743,7 @@ function renderTravelResults() {
       ${rows.slice(0, 60).map((r) => `<tr class="${r.watched ? 'watched' : ''}"><td>${star(r)}</td><td><span lang="en">${esc(r.c.name)}</span><div class="sub-text">${mins(r.oneWay)}</div></td><td><b>${esc(r.it.name)}</b> <span class="sub-text">${esc(r.it.type)}</span></td><td class="num">${money(r.it.cost)}<div class="sub-text">${money(r.it.market)}</div></td><td class="num ${(r.it.profit || 0) > 0 ? 'pos' : 'neg'}">${money(r.it.profit || 0)}</td><td class="num">${stockCell(r)}</td><td>${restockCell(r)}</td><td>${statusChip(r.st)}</td><td class="num">${money(r.trip)} <span class="sub-text">×${r.units}</span></td><td class="num tq-text"><b>${cmoney(r.perHour)}</b></td></tr>`).join('')}
       </tbody></table></div>` : emptyBox(tr('Filtreye uyan ürün yok', 'No items match the filters'), tr('Stok filtresini "Hepsi" yapmayı ya da ülke seçimini genişletmeyi dene.', 'Try setting Stock to "All" or selecting more countries.'))}
     </article>`;
+  window.renderDeparturePlanner?.();
 }
 
 /* Filtre olayları (tek sefer bağlanır; #travel-body kalıcı) */

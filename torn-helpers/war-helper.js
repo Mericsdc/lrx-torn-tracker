@@ -66,7 +66,7 @@
     if (!id) return null;
     btn = document.createElement('a');
     btn.className = 'lrx-atk';
-    btn.href = `https://www.torn.com/loader.php?sid=attack&user2ID=${id}`;
+    btn.href = `https://www.torn.com/page.php?sid=attack&user2ID=${id}`;
     btn.target = '_blank';
     btn.rel = 'noopener';
     btn.textContent = 'Attack';
