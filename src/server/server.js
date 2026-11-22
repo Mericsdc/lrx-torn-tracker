@@ -26,6 +26,8 @@ const levelling = require('../../public/levelling');
 const travelPlanner = require('../../public/travel-planner');
 const factionTools = require('../../public/faction-tools');
 const travelRadar = require('../../public/travel-radar');
+const travelWorkspace = require('../../public/travel-workspace');
+const factionWorkspace = require('../../public/faction-workspace');
 const companyAdvisor = require('../../public/company-advisor');
 const stocksMath = require('../../public/stocks-math');
 const rosterCacheMod = require('./roster-cache');
@@ -180,7 +182,7 @@ const rosterCache = rosterCacheMod.createRosterCache({
   fetchMembers: () => tornRaw('v2/faction/members'),
   getFactionId: () => Number(history.lastOverview?.player?.faction?.faction_id) || null,
   getKeyGen: () => keyGen,
-  onSnapshot: (entry) => recordFactionActivity(entry.members, entry.observedAtMs, entry.factionId),
+  onSnapshot: (entry) => recordFactionActivity(entry.members, entry.observedAtMs, entry.factionId, entry.radar),
 });
 function resetRosterState() {
   rosterCache.reset();
@@ -476,12 +478,14 @@ const QUARTER = 900; // Torn yurt dışı stokları çeyrek saatlerde yenilenir
 const pushMax = (arr, v, max) => { if (arr[arr.length - 1] !== v) arr.push(v); while (arr.length > max) arr.shift(); };
 const median = (a) => { if (!a.length) return null; const b = [...a].sort((x, y) => x - y); return b[Math.floor(b.length / 2)]; };
 
-function recordStock(code, update, list) {
+function recordStock(code, update, list, sourceName = 'YATA') {
   if (!update) return;
   for (const it of list) {
     const k = `${code}:${it.id}`;
     const q = Number(it.quantity) || 0;
-    const e = stockLog[k] ||= { q, t: update, restocks: [], empties: [], samples: [] };
+    const cost = Number(it.cost) || 0;
+    const e = stockLog[k] ||= { q, t: update, restocks: [], empties: [], samples: [], history: [] };
+    e.history ||= [];
     if (update <= e.t && e.samples.length) continue;
     if (q > e.q) {
       // Alımlar stoğu yalnızca azaltır: artış = restock. Gözlem aralığındaki son çeyreğe yuvarla.
@@ -490,6 +494,10 @@ function recordStock(code, update, list) {
     } else if (q === 0 && e.q > 0) pushMax(e.empties, update, 12);
     e.samples.push([update, q]);
     if (e.samples.length > 30) e.samples.shift();
+    if (!e.history.length || update > e.history[e.history.length - 1][0]) {
+      e.history.push([update, q, cost, sourceName]);
+      while (e.history.length > 96) e.history.shift();
+    }
     e.q = q; e.t = update; stockDirty = true;
   }
 }
@@ -520,7 +528,16 @@ function stockStats(code, id, q, update) {
     if (base) estRestock = Math.ceil((base + gap) / QUARTER) * QUARTER;
   }
   const iv = e.restocks.slice(1).map((r, i) => r - e.restocks[i]).filter((x) => x > 0);
-  return { rate, emptyAt, estRestock, lastRestock: e.restocks[e.restocks.length - 1] || null, interval: median(iv), samples: e.samples.length };
+  return {
+    rate,
+    emptyAt,
+    estRestock,
+    lastRestock: e.restocks[e.restocks.length - 1] || null,
+    interval: median(iv),
+    samples: e.samples.length,
+    restocks: e.restocks || [],
+    history: (e.history && e.history.length ? e.history : e.samples) || [],
+  };
 }
 
 /* YATA + Prometheus: miktar için en taze kaynak, restock tahmini Prometheus'tan */
@@ -551,14 +568,15 @@ async function fetchStocks() {
     for (const code of new Set([...Object.keys(yata?.stocks || {}), ...Object.keys(prom?.stocks || {})])) {
       const yc = yata?.stocks?.[code], pc = prom?.stocks?.[code];
       const src = !pc || (yc && (yc.update || 0) >= (pc.update || 0)) ? yc : pc;
+      const sourceName = src === yc ? 'YATA' : 'Prometheus';
       const next = {};
       for (const it of pc?.stocks || []) {
         const t = it.nextRestock ? Math.round(Date.parse(it.nextRestock) / 1000) : null;
         if (t) next[it.id] = t;
       }
       const list = Array.isArray(src?.stocks) ? src.stocks : [];
-      recordStock(code, Number(src?.update) || 0, list);
-      out[code] = { update: Number(src?.update) || 0, source: src === yc ? 'YATA' : 'Prometheus', stocks: list, next };
+      recordStock(code, Number(src?.update) || 0, list, sourceName);
+      out[code] = { update: Number(src?.update) || 0, source: sourceName, stocks: list, next };
     }
     return { countries: out, sources: { yata: !!yata, prom: !!prom } };
   });
@@ -573,9 +591,11 @@ async function getTravelProfit() {
   const market = items.items || {};
   const nowS = Math.floor(Date.now() / 1000);
   const profile = travelPlanner.detectTravelProfile(me, me.travel);
+  const abroadItemCountries = new Map();
   const countries = Object.entries(st.countries).map(([code, c]) => ({
     code, name: COUNTRIES[code]?.[0] || code, minutes: COUNTRIES[code]?.[1] || null, update: c.update, source: c.source,
     items: c.stocks.map((s) => {
+      abroadItemCountries.set(Number(s.id), code);
       const mv = Number(market[s.id]?.market_value) || 0;
       const sp = Number(market[s.id]?.sell_price) || 0;
       const q = Number(s.quantity) || 0;
@@ -590,6 +610,8 @@ async function getTravelProfit() {
         nextRestock, restockSrc: nextRestock ? (nextRestock === promOk ? 'Prometheus' : 'tahmin') : null,
         emptyAt: stats.emptyAt || null, rate: stats.rate ? Math.round(stats.rate * 10) / 10 : null,
         lastRestock: stats.lastRestock || null, interval: stats.interval || null,
+        restocks: stats.restocks || [],
+        history: stats.history || [],
       };
     }),
   }));
@@ -600,6 +622,54 @@ async function getTravelProfit() {
     arrival: Number(me.travel.timestamp) || 0,
     departed: Number(me.travel.departed) || 0,
   } : null;
+
+  ensureLogHistory();
+  const flightEntries = [];
+  for (const [idStr, buys] of Object.entries(history.purchases || {})) {
+    const id = Number(idStr);
+    const code = abroadItemCountries.get(id) || null;
+    for (const b of Array.isArray(buys) ? buys : []) {
+      if (b.src !== 'abroad' && !code) continue;
+      const mv = Number(market[id]?.market_value) || 0;
+      const each = Number(b.each) || 0;
+      const qty = Number(b.qty) || 1;
+      flightEntries.push({
+        itemId: id,
+        name: market[id]?.name || `#${id}`,
+        countryCode: code,
+        ts: Number(b.ts) || 0,
+        qty,
+        each,
+        market: mv,
+        modeledUnitProfit: mv > 0 ? Math.round(mv * 0.95) - each : null,
+        modeledTotalProfit: mv > 0 ? (Math.round(mv * 0.95) - each) * qty : null,
+        source: b.src === 'abroad' ? 'log_abroad' : 'log_purchase',
+        profitKind: 'modeled_reference',
+      });
+    }
+  }
+  for (const [idStr, m] of Object.entries(history.manualCosts || {})) {
+    const id = Number(idStr);
+    const code = abroadItemCountries.get(id) || null;
+    if (!code || !(m?.cost > 0)) continue;
+    const mv = Number(market[id]?.market_value) || 0;
+    flightEntries.push({
+      itemId: id,
+      name: market[id]?.name || `#${id}`,
+      countryCode: code,
+      ts: Number(m.at) || 0,
+      qty: 1,
+      each: Number(m.cost),
+      market: mv,
+      modeledUnitProfit: mv > 0 ? Math.round(mv * 0.95) - Number(m.cost) : null,
+      modeledTotalProfit: mv > 0 ? Math.round(mv * 0.95) - Number(m.cost) : null,
+      source: 'manual_cost',
+      profitKind: 'modeled_reference',
+    });
+  }
+  flightEntries.sort((a, b) => b.ts - a.ts);
+
+  const facAct = facStore().activity || {};
   return {
     countries,
     method: me.travel?.method || profile.detectedMethod || null,
@@ -610,6 +680,12 @@ async function getTravelProfit() {
     fetchedAt: Date.now(),
     serverNow: nowS,
     sources: st.sources,
+    factionTraffic: Array.isArray(facAct.traffic) ? facAct.traffic : [],
+    flightHistory: {
+      logAccess: Boolean(logStatus.ok),
+      logError: logStatus.error || null,
+      entries: flightEntries.slice(0, 30),
+    },
   };
 }
 
@@ -1925,17 +2001,20 @@ async function getFactionReport(start = false, windowDays = 7) {
   };
 }
 
-/* Faction Activity (members + hourly heatmap snapshots + 24h timeline + Travel Radar), Armory History, Chains, Upgrade Simulator */
-function recordFactionActivity(members, nowMs = Date.now(), factionId = null) {
+/* Faction Activity (members + hourly heatmap snapshots + 24h timeline + Travel Radar + Traffic + Transfers), Armory History, Chains, Upgrade Simulator */
+function recordFactionActivity(members, nowMs = Date.now(), factionId = null, radar = null) {
   if (!Array.isArray(members) || !members.length) return;
   const st = facStore();
-  st.activity ||= { factionId: null, lastAt: 0, lastTimelineAt: 0, buckets: {}, timeline: [] };
+  st.activity ||= { factionId: null, lastAt: 0, lastTimelineAt: 0, lastTrafficAt: 0, buckets: {}, timeline: [], traffic: [], transfers: [], lastMembers: null, lastMembersAt: null, memberTravel: {} };
   if (factionId && st.activity.factionId && st.activity.factionId !== factionId) {
-    st.activity = { factionId, lastAt: 0, lastTimelineAt: 0, buckets: {}, timeline: [] };
+    st.activity = { factionId, lastAt: 0, lastTimelineAt: 0, lastTrafficAt: 0, buckets: {}, timeline: [], traffic: [], transfers: [], lastMembers: null, lastMembersAt: null, memberTravel: {} };
   }
   if (factionId) st.activity.factionId = factionId;
   st.activity.buckets ||= {};
   st.activity.timeline ||= [];
+  st.activity.traffic ||= [];
+  st.activity.transfers ||= [];
+  st.activity.memberTravel ||= {};
 
   let online = 0, idle = 0, offline = 0;
   for (const m of members) {
@@ -1945,11 +2024,68 @@ function recordFactionActivity(members, nowMs = Date.now(), factionId = null) {
   }
 
   let dirty = false;
+  const obsIso = travelRadar.isoUtc(nowMs);
+
+  // N4 Roster Transfer detection: records observation interval [seenFrom, seenTo], never fake exact transfer timestamp
+  if (Array.isArray(st.activity.lastMembers) && st.activity.lastMembers.length) {
+    const detected = factionWorkspace.detectRosterTransfers(st.activity.lastMembers, members, {
+      prevObservedAt: st.activity.lastMembersAt || obsIso,
+      currObservedAt: obsIso,
+      factionId: factionId || st.activity.factionId,
+    });
+    if (detected.length) {
+      const existingIds = new Set(st.activity.transfers.map((t) => t.id));
+      for (const tr of detected) {
+        if (!existingIds.has(tr.id)) {
+          st.activity.transfers.unshift(tr);
+          existingIds.add(tr.id);
+        }
+      }
+      if (st.activity.transfers.length > 100) st.activity.transfers.length = 100;
+      dirty = true;
+    }
+  }
+  st.activity.lastMembers = members.map((m) => ({ id: m.id, name: m.name, level: m.level, position: m.position, days: m.days }));
+  st.activity.lastMembersAt = obsIso;
+
+  // N3 Member Travel transition log
+  if (Array.isArray(radar?.transitions) && radar.transitions.length) {
+    for (const tr of radar.transitions) {
+      const pid = Number(tr.playerId);
+      if (!pid) continue;
+      const arr = (st.activity.memberTravel[pid] ||= []);
+      if (!arr.some((x) => x.id === tr.id)) {
+        arr.unshift({
+          id: tr.id,
+          fromState: tr.fromState,
+          toState: tr.toState,
+          countryCode: tr.countryCode,
+          country: tr.country,
+          seenFrom: tr.seenFrom,
+          seenTo: tr.seenTo,
+          expiresAtMs: tr.expiresAtMs,
+        });
+        if (arr.length > 30) arr.length = 30;
+        dirty = true;
+      }
+    }
+  }
+
+  // N2 Faction Travel Traffic snapshot (deduplicated per player, at most 1 every 5m, 48h rolling)
+  if (radar && Array.isArray(radar.travel) && nowMs - (st.activity.lastTrafficAt || 0) >= 5 * 60_000) {
+    const snap = travelWorkspace.buildTrafficSnapshot(radar.travel, nowMs);
+    st.activity.traffic.push(snap);
+    const cutoff48 = nowMs - 48 * 3600_000;
+    while (st.activity.traffic.length && st.activity.traffic[0].at < cutoff48) st.activity.traffic.shift();
+    st.activity.lastTrafficAt = nowMs;
+    dirty = true;
+  }
+
   // 24h TCT activity step-line samples (at most 1 sample every 5 minutes, keep 72h rolling)
   if (nowMs - (st.activity.lastTimelineAt || 0) >= 5 * 60_000) {
     st.activity.timeline.push({
       at: nowMs,
-      observedAt: travelRadar.isoUtc(nowMs),
+      observedAt: obsIso,
       online,
       idle,
       offline,
@@ -2123,6 +2259,468 @@ async function getFactionUpgrades(force = false) {
     hasUpgradesAccess,
     at: Date.now(),
   };
+}
+
+/* N3 & N4: Personal Member Series + Detailed Faction Workspace (Members, Stats, Gym, Bank, Recruitment, Transfers, Alliance & Graffiti) */
+function computeSpanDiffs(members, st, spanDays) {
+  const days = Object.keys(st.snaps || {}).filter((d) => Object.keys(st.snaps[d]).length).sort();
+  const to = days[days.length - 1] || null;
+  const targetFrom = to ? utcDay(dayTs(to) - spanDays * 86400) : null;
+  const from = to ? (st.snaps[targetFrom] ? targetFrom : (days.filter((d) => d <= targetFrom).pop() || (days[0] !== to ? days[0] : null))) : null;
+  const A = from && st.snaps[from], B = to && st.snaps[to];
+  const gymDays = Object.keys(st.gym || {}).sort();
+  const gTo = gymDays[gymDays.length - 1] || null;
+  const gFrom = gTo ? (gymDays.filter((d) => d <= utcDay(dayTs(gTo) - spanDays * 86400)).pop() || gymDays[0]) : null;
+  const G1 = gFrom && st.gym[gFrom], G2 = gTo && st.gym[gTo];
+  const diff = (a, b, k) => (a && b && a[k] != null && b[k] != null ? b[k] - a[k] : null);
+  const byId = new Map();
+  for (const m of members) {
+    const a = A?.[m.id], b = B?.[m.id];
+    byId.set(m.id, {
+      id: m.id,
+      name: m.name,
+      activity: diff(a, b, 'timeplayed'),
+      xanax: diff(a, b, 'xantaken'),
+      crimes: diff(a, b, 'criminaloffenses'),
+      blood: diff(a, b, 'bloodwithdrawn'),
+      oc: diff(a, b, 'organizedcrimes'),
+      gym: gFrom && gFrom !== gTo && G1?.[m.id] != null && G2?.[m.id] != null ? G2[m.id] - G1[m.id] : null,
+    });
+  }
+  return {
+    from,
+    to,
+    complete: Boolean(A && B),
+    actualDays: from && to ? Math.round((dayTs(to) - dayTs(from)) / 86400) : 0,
+    byId,
+    rows: [...byId.values()],
+  };
+}
+
+async function getLocalMemberSeries(playerId, searchParams) {
+  const pid = Number(playerId);
+  if (!Number.isInteger(pid) || pid <= 0) {
+    throw Object.assign(new ApiError(T('Geçersiz üye kimliği.', 'Invalid player ID.'), 'BAD_PLAYER_ID'), { status: 400 });
+  }
+  const metric = String(searchParams.get('metric') || 'battlestats').toLowerCase();
+  const mode = searchParams.get('mode') === 'gain' ? 'gain' : 'value';
+  const rangeKey = String(searchParams.get('range') || '30d').toLowerCase();
+  const statKey = String(searchParams.get('stat') || 'total').toLowerCase();
+  const parseTs = (v) => {
+    if (!v) return null;
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) return n < 1e11 ? n * 1000 : n;
+    const p = Date.parse(String(v));
+    return Number.isFinite(p) ? p : null;
+  };
+  const fromMs = parseTs(searchParams.get('from'));
+  const toMs = parseTs(searchParams.get('to'));
+  const st = facStore();
+  const meId = Number(myPlayerId()) || 0;
+
+  if (metric === 'travel') {
+    const localTr = Array.isArray(st.activity?.memberTravel?.[pid]) ? st.activity.memberTravel[pid] : [];
+    return {
+      playerId: pid,
+      metric: 'travel',
+      transitions: localTr,
+      points: localTr,
+      at: Date.now(),
+    };
+  }
+
+  let rawPoints = [];
+  if (metric === 'battlestats') {
+    if (pid === meId) {
+      for (const d of dailyList(history.stats)) {
+        const at = Number(d.at) || dayTs(d.date) * 1000;
+        rawPoints.push({
+          at,
+          observedAt: new Date(at).toISOString(),
+          source: 'torn_self',
+          verified: true,
+          total: d.total,
+          str: d.str,
+          def: d.def,
+          spd: d.spd,
+          dex: d.dex,
+        });
+      }
+    } else {
+      const savedBs = Array.isArray(st.memberBs?.[pid]) ? st.memberBs[pid] : [];
+      for (const pt of savedBs) rawPoints.push(pt);
+      const ff = ffCache.get(pid);
+      if (ff?.data?.bs > 0) {
+        const at = ff.data.updated ? Number(ff.data.updated) * 1000 : ff.t;
+        rawPoints.push({
+          at,
+          observedAt: new Date(at).toISOString(),
+          source: 'ffscouter',
+          verified: false,
+          total: Number(ff.data.bs),
+        });
+      }
+      const est = estCache.get(pid);
+      if (!rawPoints.length && est?.data?.mid > 0) {
+        rawPoints.push({
+          at: est.t,
+          observedAt: new Date(est.t).toISOString(),
+          source: 'rank_estimate',
+          verified: false,
+          total: Number(est.data.mid),
+        });
+      }
+    }
+  } else if (metric === 'contribution') {
+    for (const day of Object.keys(st.gym || {}).sort()) {
+      const val = st.gym[day]?.[pid];
+      if (val != null && Number.isFinite(Number(val))) {
+        const at = dayTs(day) * 1000;
+        rawPoints.push({
+          at,
+          observedAt: `${day}T00:00:00.000Z`,
+          source: 'torn_contributors',
+          value: Number(val),
+        });
+      }
+    }
+  } else {
+    // activity (timeplayed in minutes, xanax, crimes, oc, blood)
+    for (const day of Object.keys(st.snaps || {}).sort()) {
+      const snap = st.snaps[day]?.[pid];
+      if (!snap) continue;
+      let val = null;
+      if (statKey === 'xanax') val = snap.xantaken;
+      else if (statKey === 'crimes') val = snap.criminaloffenses;
+      else if (statKey === 'oc') val = snap.organizedcrimes;
+      else if (statKey === 'blood') val = snap.bloodwithdrawn;
+      else val = snap.timeplayed != null ? Math.round((Number(snap.timeplayed) || 0) / 60) : null;
+      if (val != null && Number.isFinite(Number(val))) {
+        const at = dayTs(day) * 1000;
+        rawPoints.push({
+          at,
+          observedAt: `${day}T00:00:00.000Z`,
+          source: 'torn_personalstats',
+          value: Number(val),
+        });
+      }
+    }
+  }
+
+  const series = factionWorkspace.buildMemberSeries(rawPoints, {
+    metric: metric === 'battlestats' ? 'battlestats' : metric,
+    mode,
+    rangeKey,
+    fromMs,
+    toMs,
+    statKey,
+    nowMs: Date.now(),
+  });
+  return {
+    playerId: pid,
+    ...series,
+    at: Date.now(),
+  };
+}
+
+async function getFactionWorkspace(force = false, searchParams = new URLSearchParams()) {
+  const span = [7, 30, 90].includes(Number(searchParams.get('days'))) ? Number(searchParams.get('days')) : 7;
+  const tenureFilter = searchParams.get('tenure') !== 'all';
+  const section = String(searchParams.get('section') || 'all');
+  const [access, roster] = await Promise.all([
+    factionAccess(force).catch((e) => ({ inFaction: false, allowed: false, error: e.message })),
+    rosterCache.load({ force }),
+  ]);
+  const factionId = roster.factionId || access?.faction?.id || Number(history.lastOverview?.player?.faction?.faction_id) || null;
+  const members = roster.members || [];
+  const st = facStore();
+  const meId = Number(myPlayerId()) || 0;
+
+  const diff7 = computeSpanDiffs(members, st, 7);
+  const diff30 = computeSpanDiffs(members, st, 30);
+  const diffSpan = span === 7 ? diff7 : span === 30 ? diff30 : computeSpanDiffs(members, st, span);
+
+  const travelByPlayer = new Map((roster.travel || []).map((t) => [Number(t.playerId), t]));
+  const enriched = members.map((m) => {
+    const r7 = diff7.byId.get(m.id);
+    const r30 = diff30.byId.get(m.id);
+    const tr = travelByPlayer.get(m.id);
+    let battleStats = null;
+    if (m.id === meId && history.lastOverview?.battle?.totals) {
+      const b = history.lastOverview.battle;
+      battleStats = {
+        source: 'torn_self',
+        verified: true,
+        total: b.totals.base,
+        str: b.stats?.strength?.base ?? null,
+        spd: b.stats?.speed?.base ?? null,
+        dex: b.stats?.dexterity?.base ?? null,
+        def: b.stats?.defense?.base ?? null,
+      };
+    } else if (ffCache.get(m.id)?.data?.bs > 0) {
+      const f = ffCache.get(m.id).data;
+      battleStats = {
+        source: 'ffscouter',
+        verified: false,
+        total: Number(f.bs),
+        str: null,
+        spd: null,
+        dex: null,
+        def: null,
+      };
+    } else if (estCache.get(m.id)?.data?.mid > 0) {
+      const e = estCache.get(m.id).data;
+      battleStats = {
+        source: 'rank_estimate',
+        verified: false,
+        total: Number(e.mid),
+        str: null,
+        spd: null,
+        dex: null,
+        def: null,
+      };
+    }
+    return {
+      ...m,
+      countryCode: tr?.countryCode || null,
+      country: tr?.country || null,
+      travelState: tr?.state || null,
+      etaSec: tr?.etaSec ?? null,
+      etaSource: tr?.etaSource || 'none',
+      battleStats,
+      activity7d: r7?.activity ?? null,
+      xanax7d: r7?.xanax ?? null,
+      crimes7d: r7?.crimes ?? null,
+      oc7d: r7?.oc ?? null,
+      gym7d: r7?.gym ?? null,
+      activity30d: r30?.activity ?? null,
+      xanax30d: r30?.xanax ?? null,
+      gym30d: r30?.gym ?? null,
+    };
+  });
+
+  const membersTable = factionWorkspace.buildMembersTable({
+    members: enriched,
+    freshness: roster.freshness,
+    hasOfficerAccess: Boolean(access.allowed),
+  });
+  const statsView = factionWorkspace.buildFactionStatsView({
+    members: enriched,
+    reportRows: diffSpan.rows,
+    windowDays: span,
+    tenureFilter,
+    range: { from: diffSpan.from, to: diffSpan.to, complete: diffSpan.complete, actualDays: diffSpan.actualDays },
+  });
+  const gymView = factionWorkspace.buildFactionGymView({
+    members: enriched,
+    gymSnaps: st.gym || {},
+    windowDays: span,
+  });
+
+  // Bank & Recruitment: only queried from Torn when requested and permitted, otherwise explicit status
+  let bank = {
+    allowed: Boolean(access.allowed),
+    status: access.allowed ? 'idle' : 'permission_required',
+    source: 'torn_donations',
+    rows: [],
+    totals: { money: 0, points: 0, debtors: 0 },
+    tornBankUrl: 'https://www.torn.com/factions.php?step=your#/tab=controls&option=give-to-user',
+  };
+  if (access.allowed && (section === 'bank' || section === 'all')) {
+    const ttl = force ? 0 : 60_000;
+    try {
+      const dRes = await torn('faction/?selections=donations', ttl);
+      const donations = dRes.donations || {};
+      const byMember = new Map(enriched.map((m) => [Number(m.id), m]));
+      const rows = Object.entries(donations).map(([idStr, d]) => {
+        const id = Number(idStr);
+        const mem = byMember.get(id);
+        const money = Number(d.money_balance) || 0;
+        const points = Number(d.points_balance) || 0;
+        return {
+          id,
+          name: String(d.name || mem?.name || `#${id}`),
+          inFaction: byMember.has(id),
+          position: mem?.position || '',
+          money,
+          points,
+        };
+      }).filter((r) => r.inFaction || r.money !== 0 || r.points !== 0)
+        .sort((a, b) => Math.abs(b.money) - Math.abs(a.money) || b.points - a.points);
+      const totals = rows.reduce((acc, r) => {
+        if (r.money > 0) acc.money += r.money;
+        if (r.money < 0) acc.debtors++;
+        if (r.points > 0) acc.points += r.points;
+        return acc;
+      }, { money: 0, points: 0, debtors: 0 });
+      bank = { ...bank, status: 'ok', rows, totals };
+    } catch (e) {
+      if (FAC_NO_ACCESS.has(Number(e.code))) {
+        bank = { ...bank, allowed: false, status: 'permission_required' };
+      } else {
+        bank = { ...bank, status: 'error', error: e.message };
+      }
+    }
+  }
+
+  st.notes ||= {};
+  const facKey = String(factionId || 'default');
+  const facNotes = st.notes[facKey] ||= { watchlist: [], alliances: [], graffiti: [] };
+  facNotes.watchlist ||= [];
+  facNotes.alliances ||= [];
+  facNotes.graffiti ||= [];
+
+  let recruitment = {
+    allowed: Boolean(access.allowed),
+    status: access.allowed ? 'idle' : 'permission_required',
+    source: 'torn_applications',
+    applications: [],
+    watchlist: facNotes.watchlist,
+    watchlistSource: 'lrx_local',
+  };
+  if (access.allowed && (section === 'recruitment' || section === 'all')) {
+    const ttl = force ? 0 : 60_000;
+    try {
+      const appRes = await torn('v2/faction/applications', ttl);
+      const rawApps = Array.isArray(appRes.applications) ? appRes.applications : Object.values(appRes.applications || {});
+      const applications = rawApps.map((a) => ({
+        id: Number(a.id || a.user?.id) || 0,
+        playerId: Number(a.user?.id ?? a.player_id ?? a.id) || 0,
+        name: String(a.user?.name ?? a.name ?? `#${a.id || 0}`),
+        level: Number(a.user?.level ?? a.level) || 0,
+        stats: a.stats || a.user?.stats || null,
+        message: String(a.message || ''),
+        status: String(a.status || 'active'),
+        validUntil: Number(a.valid_until || a.expires) || null,
+      }));
+      recruitment = { ...recruitment, status: 'ok', applications };
+    } catch (e) {
+      if (FAC_NO_ACCESS.has(Number(e.code))) {
+        recruitment = { ...recruitment, allowed: false, status: 'permission_required' };
+      } else {
+        recruitment = { ...recruitment, status: 'error', error: e.message };
+      }
+    }
+  }
+
+  return {
+    factionId,
+    access,
+    freshness: roster.freshness,
+    reportJob: { ...facJob },
+    membersTable,
+    statsView,
+    gymView,
+    bank,
+    recruitment,
+    transfers: {
+      source: 'roster_observation',
+      entries: Array.isArray(st.activity?.transfers) ? st.activity.transfers : [],
+    },
+    alliance: {
+      source: 'lrx_local',
+      alliances: facNotes.alliances,
+      graffiti: facNotes.graffiti,
+    },
+    at: Date.now(),
+  };
+}
+
+function mutateFactionWorkspace(body = {}) {
+  const st = facStore();
+  st.notes ||= {};
+  const factionId = Number(body.factionId) || Number(history.lastOverview?.player?.faction?.faction_id) || 0;
+  const facKey = String(factionId || 'default');
+  const facNotes = st.notes[facKey] ||= { watchlist: [], alliances: [], graffiti: [] };
+  facNotes.watchlist ||= [];
+  facNotes.alliances ||= [];
+  facNotes.graffiti ||= [];
+  const authorName = String(history.lastOverview?.player?.name || 'Officer');
+  const authorId = Number(myPlayerId()) || 0;
+  const nowIso = travelRadar.isoUtc(Date.now());
+  const action = String(body.action || '');
+
+  if (action === 'watchlist_add') {
+    const playerId = Number(body.playerId);
+    const name = String(body.name || `#${playerId || ''}`).trim().slice(0, 60);
+    const note = String(body.note || '').trim().slice(0, 280);
+    const tag = String(body.tag || 'Takip').trim().slice(0, 32);
+    if (!playerId && !name) throw Object.assign(new ApiError(T('Oyuncu ID veya isim gerekli.', 'Player ID or name required.'), 'BAD_INPUT'), { status: 400 });
+    const entry = {
+      id: `wl_${playerId || Date.now()}`,
+      playerId: playerId > 0 ? playerId : null,
+      name,
+      level: Number(body.level) || null,
+      tag,
+      note,
+      authorId,
+      authorName,
+      updatedAt: nowIso,
+      source: 'lrx_local',
+    };
+    facNotes.watchlist = [entry, ...facNotes.watchlist.filter((x) => x.id !== entry.id && (!playerId || x.playerId !== playerId))].slice(0, 60);
+    saveHistory();
+    return { ok: true, watchlist: facNotes.watchlist };
+  }
+  if (action === 'watchlist_remove') {
+    const id = String(body.id || '');
+    facNotes.watchlist = facNotes.watchlist.filter((x) => x.id !== id);
+    saveHistory();
+    return { ok: true, watchlist: facNotes.watchlist };
+  }
+  if (action === 'alliance_add') {
+    const targetFactionId = Number(body.targetFactionId) || null;
+    const name = String(body.name || '').trim().slice(0, 80);
+    const tag = String(body.tag || '').trim().slice(0, 16);
+    const relation = ['ally', 'family', 'nap', 'rival'].includes(body.relation) ? body.relation : 'ally';
+    const note = String(body.note || '').trim().slice(0, 280);
+    if (!name && !targetFactionId) throw Object.assign(new ApiError(T('Faction adı veya ID gerekli.', 'Faction name or ID required.'), 'BAD_INPUT'), { status: 400 });
+    const entry = {
+      id: `al_${targetFactionId || Date.now()}`,
+      factionId: targetFactionId,
+      name: name || `Faction #${targetFactionId}`,
+      tag,
+      relation,
+      note,
+      authorId,
+      authorName,
+      updatedAt: nowIso,
+      source: 'lrx_local',
+    };
+    facNotes.alliances = [entry, ...facNotes.alliances.filter((x) => x.id !== entry.id)].slice(0, 50);
+    saveHistory();
+    return { ok: true, alliances: facNotes.alliances };
+  }
+  if (action === 'alliance_remove') {
+    const id = String(body.id || '');
+    facNotes.alliances = facNotes.alliances.filter((x) => x.id !== id);
+    saveHistory();
+    return { ok: true, alliances: facNotes.alliances };
+  }
+  if (action === 'graffiti_add') {
+    const text = String(body.text || '').trim().slice(0, 500);
+    const category = String(body.category || 'Genel').trim().slice(0, 32);
+    if (!text) throw Object.assign(new ApiError(T('Graffiti metni boş olamaz.', 'Graffiti text cannot be empty.'), 'BAD_INPUT'), { status: 400 });
+    const entry = {
+      id: `gf_${Date.now()}`,
+      text,
+      category,
+      authorId,
+      authorName,
+      createdAt: nowIso,
+      source: 'lrx_local',
+    };
+    facNotes.graffiti = [entry, ...facNotes.graffiti].slice(0, 80);
+    saveHistory();
+    return { ok: true, graffiti: facNotes.graffiti };
+  }
+  if (action === 'graffiti_remove') {
+    const id = String(body.id || '');
+    facNotes.graffiti = facNotes.graffiti.filter((x) => x.id !== id);
+    saveHistory();
+    return { ok: true, graffiti: facNotes.graffiti };
+  }
+  throw Object.assign(new ApiError(T('Geçersiz işlem.', 'Invalid action.'), 'BAD_ACTION'), { status: 400 });
 }
 
 /* Stock Market Tracker: live prices, benefit block ROI, holdings P/L and local 30-day observed range */
@@ -2622,6 +3220,16 @@ async function handleApi(req, res, url) {
     if (p === '/api/faction/armory') return send(res, 200, await getFactionArmory(url.searchParams.get('force') === '1'));
     if (p === '/api/faction/chains') return send(res, 200, await getFactionChains(url.searchParams.get('force') === '1'));
     if (p === '/api/faction/upgrades') return send(res, 200, await getFactionUpgrades(url.searchParams.get('force') === '1'));
+    if (p === '/api/faction/workspace' && req.method === 'GET') {
+      return send(res, 200, await getFactionWorkspace(url.searchParams.get('force') === '1', url.searchParams));
+    }
+    if (p === '/api/faction/workspace' && req.method === 'POST') {
+      return send(res, 200, mutateFactionWorkspace(await readBody(req)));
+    }
+    const memberSeriesMatch = p.match(/^\/api\/faction\/members\/(\d+)\/series$/);
+    if (memberSeriesMatch && req.method === 'GET') {
+      return send(res, 200, await getLocalMemberSeries(memberSeriesMatch[1], url.searchParams));
+    }
     if (p === '/api/alerts/price' && req.method === 'GET') return send(res, 200, managePriceAlerts({ action: 'list' }));
     if (p === '/api/alerts/price' && req.method === 'POST') return send(res, 200, managePriceAlerts(await readBody(req)));
     if (p === '/api/ops/status' && req.method === 'GET') return send(res, 200, await getOpsStatus(url.searchParams.get('check') === '1'));

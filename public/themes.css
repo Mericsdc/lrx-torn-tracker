@@ -253,3 +253,6 @@ input,textarea { user-select:text; }
 }
 @media (prefers-reduced-motion:reduce) { .ws-quick { transition:none; } }
 .no-anim .ws-quick { transition:none; }
+html[data-theme="light"] .dp-dial-ring { fill:rgba(15,23,42,.04); }
+html[data-theme="light"] .fac-ser-svg { background:rgba(15,23,42,.03); }
+html[data-theme="light"] .dp-chron-row { background:rgba(15,23,42,.02); }

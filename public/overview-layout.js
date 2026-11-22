@@ -13,6 +13,11 @@
     row('job', 'premium', 'SM', 'S'), row('crimes', 'premium', 'SML', 'M'), row('jail', 'premium', 'SM', 'S'),
     row('awards', 'premium', 'SM', 'S'), row('oc', 'premium', 'SM', 'S'), row('war', 'premium', 'SML', 'M'),
     row('events', 'premium', 'SM', 'S'), row('orders', 'premium', 'ML', 'M'),
+    row('faction_member', 'premium', 'SM', 'M'), row('faction_activity', 'premium', 'SML', 'M'),
+    row('faction_stats', 'premium', 'ML', 'M'), row('faction_radar', 'premium', 'SML', 'M'),
+    row('travel_routes', 'premium', 'SML', 'M'), row('travel_stock', 'premium', 'ML', 'M'),
+    row('travel_traffic', 'premium', 'ML', 'M'), row('travel_planner', 'premium', 'SML', 'M'),
+    row('travel_history', 'premium', 'ML', 'M'),
   ]);
   const byId = Object.freeze(Object.fromEntries(WIDGETS.map((w) => [w.id, w])));
   // Columns per size. The profile is the exception: always 1 column, its size sets its height (overview.css).

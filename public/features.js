@@ -25,9 +25,16 @@ const FEATURE_DEFS = [
   { group: 'pages', parent: 'page.crimes', key: 'crimes.value', def: true, tr: ["Nerve başına kazanç tablosu", "Bütün suçların $/N değerleri (Emforus tablosu)"], en: ["Money per nerve table", "$/N for every crime (Emforus sheet)"] },
   { group: 'pages', parent: 'page.crimes', key: 'crimes.burglary', def: true, tr: ["Burglary hedefleri", "34 hedefin keşif sayısı, nerve ve $/N tablosu"], en: ["Burglary targets", "Casings, nerve and $/N for all 34 targets"] },
   { group: 'pages', parent: 'page.crimes', key: 'crimes.jail', def: true, tr: ["Jail bust takibi", "Son 24 / 72 saatteki bustlar ve tahmini ceza puanı"], en: ["Jail bust tracker", "Busts in the last 24 / 72 hours and estimated penalty score"] },
-  { group: 'pages', key: 'page.faction', def: true, tr: ['Faction', "Kendi OC durumun · OC'ye girmeyenler, geciken OC'ler ve üye raporu (yetkililer) · aktivite, armory, chain ve yükseltmeler"], en: ['Faction', 'Your OC status · missing/delayed OCs and member reports (officers) · activity, armory, chains and upgrades'] },
+  { group: 'pages', key: 'page.faction', def: true, tr: ['Faction', "Kendi OC durumun · OC'ye girmeyenler, geciken OC'ler ve üye raporu (yetkililer) · aktivite, üyeler, stats, gym, banka, başvurular, transferler ve yükseltmeler"], en: ['Faction', 'Your OC status · missing/delayed OCs and member reports (officers) · activity, members, stats, gym, bank, recruitment, transfers and upgrades'] },
   { group: 'pages', parent: 'page.faction', key: 'faction.activity', def: true, tr: ['Aktivite & ısı haritası', 'Canlı çevrimiçi dağılımı, 7×24 TCT ısı haritası, tam liste ve üye karşılaştırma'], en: ['Activity & heatmap', 'Live online distribution, 7×24 TCT heatmap, full roster and member comparison'] },
   { group: 'pages', parent: 'page.faction', key: 'faction.travelRadar', def: true, tr: ['Travel Radar (uçuş takibi)', 'Yurt dışına giden, yurt dışındaki ve Torn\'a dönen faction üyeleri, rota ve tahmini varış'], en: ['Travel Radar (flight watch)', 'Faction members flying abroad, abroad or returning to Torn with route and ETA'] },
+  { group: 'pages', parent: 'page.faction', key: 'faction.members', def: true, tr: ['Üyeler & kişisel grafikler', 'Tam üye tablosu, sütun seçici, satır içi üye detay çekmecesi ve Battle Stats / Aktivite / Katkı grafikleri'], en: ['Members & personal charts', 'Full members table, column picker, inline member detail drawer and Battle Stats / Activity / Contribution charts'] },
+  { group: 'pages', parent: 'page.faction', key: 'faction.stats', def: true, tr: ['Faction Stats', '7g / 30g / 90g üye değişimleri, üyelik süresi filtresi ve aktiflik oranı'], en: ['Faction Stats', '7d / 30d / 90d member deltas, membership tenure filter and active rate'] },
+  { group: 'pages', parent: 'page.faction', key: 'faction.gym', def: true, tr: ['Faction Gym katkısı', 'Doğrulanmış contributors kaynağından üye bazlı gym enerjisi katkısı ve pay %'], en: ['Faction Gym contribution', 'Per-member gym energy contribution and share % from verified contributors'] },
+  { group: 'pages', parent: 'page.faction', key: 'faction.bank', def: true, tr: ['Faction Banka', 'Salt okunur üye nakit ve puan bakiyeleri (yetkililer) ve Torn Faction Bank kısayolu'], en: ['Faction Bank', 'Read-only member money and point balances (officers) and Torn Faction Bank shortcut'] },
+  { group: 'pages', parent: 'page.faction', key: 'faction.recruitment', def: true, tr: ['Başvurular & Recruitment', 'Faction başvuruları (yetkililer) ve ekip içi aday izleme listesi'], en: ['Applications & Recruitment', 'Faction applications (officers) and team recruitment watchlist'] },
+  { group: 'pages', parent: 'page.faction', key: 'faction.transfers', def: true, tr: ['Transfers (Katılan / Ayrılan)', 'Roster gözlem aralığına göre katılan ve ayrılan üyeler'], en: ['Transfers (Joined / Left)', 'Joined and left members detected with explicit observation intervals'] },
+  { group: 'pages', parent: 'page.faction', key: 'faction.alliance', def: true, tr: ['Alliance, Family & Graffiti', 'Ekip içi müttefik / aile ilişkileri ve ortak Faction Graffiti duvarı'], en: ['Alliance, Family & Graffiti', 'Team-managed alliance / family relations and shared Faction Graffiti wall'] },
   { group: 'pages', parent: 'page.faction', key: 'faction.armory', def: true, tr: ['Armory geçmişi', 'Son 100 armory hareketi, kategori filtresi ve en çok kullananlar'], en: ['Armory history', 'Last 100 armory events, category filters and top actors'] },
   { group: 'pages', parent: 'page.faction', key: 'faction.chains', def: true, tr: ['Chain raporları', 'Aktif chain ve son 25 chain bonus / respect özeti'], en: ['Chain reports', 'Active chain and last 25 chains milestone / respect summary'] },
   { group: 'pages', parent: 'page.faction', key: 'faction.upgrades', def: true, tr: ['Yükseltme simülatörü', 'Dal sırası (1×→32×) çarpanlarıyla respect harcama simülasyonu'], en: ['Upgrade simulator', 'Respect cost simulation with branch-order multipliers (1×→32×)'] },
@@ -550,7 +557,7 @@ const travelState = {
   data: null, at: 0, q: '',
   cap: Number(lsGet('tt.travel.cap', 15)) || 15,
   method: lsGet('tt.travel.method', ''),
-  stock: lsGet('tt.travel.stock', 'arrival'), // all | now | arrival
+  stock: lsGet('tt.travel.stock', 'arrival'), // all | now | arrival | restock_soon
   type: lsGet('tt.travel.type', 'all'),
   sort: lsGet('tt.travel.sort', 'perHour'),
   minProfit: Number(lsGet('tt.travel.minProfit', 0)) || 0, // saatlik $
@@ -558,6 +565,15 @@ const travelState = {
   countries: new Set(lsList('tt.travel.countries')), // boş = hepsi
   watch: new Set(lsList('tt.travel.watch')),
   watchOnly: lsGet('tt.travel.watchOnly', '0') === '1',
+  viewMode: lsGet('tt.travel.viewMode', 'roi'), // item | country | roi
+  selectedItemId: Number(lsGet('tt.travel.itemId', 0)) || 0,
+  histMetric: lsGet('tt.travel.histMetric', 'stock'), // stock | price | profit | forecast
+  histHours: Number(lsGet('tt.travel.histHours', 24)) || 24,
+  trafficHours: Number(lsGet('tt.travel.trafficHours', 24)) || 24,
+  blocks: (() => {
+    const raw = lsList('tt.travel.blocks');
+    return new Set(raw.length ? raw : ['summary', 'countries', 'traffic', 'history', 'planner', 'destinations']);
+  })(),
 };
 function saveTravelPrefs() {
   const t = travelState;
@@ -565,6 +581,9 @@ function saveTravelPrefs() {
   lsSet('tt.travel.type', t.type); lsSet('tt.travel.sort', t.sort); lsSet('tt.travel.minProfit', String(t.minProfit));
   lsSet('tt.travel.maxFlight', String(t.maxFlight)); lsSet('tt.travel.countries', JSON.stringify([...t.countries]));
   lsSet('tt.travel.watch', JSON.stringify([...t.watch])); lsSet('tt.travel.watchOnly', t.watchOnly ? '1' : '0');
+  lsSet('tt.travel.viewMode', t.viewMode); lsSet('tt.travel.itemId', String(t.selectedItemId || 0));
+  lsSet('tt.travel.histMetric', t.histMetric); lsSet('tt.travel.histHours', String(t.histHours));
+  lsSet('tt.travel.trafficHours', String(t.trafficHours)); lsSet('tt.travel.blocks', JSON.stringify([...t.blocks]));
 }
 const travelMethod = () => {
   const d = travelState.data;
@@ -643,19 +662,22 @@ function travelRows({ ignoreStock = false } = {}) {
     if (t.maxFlight && oneWay > t.maxFlight) continue;
     if (t.countries.size && !t.countries.has(c.code)) continue;
     const arrive = now + oneWay * 60;
+    const staleObs = c.update && (now - c.update) > 30 * 60;
     for (const it of c.items) {
+      if (t.viewMode === 'item' && t.selectedItemId && Number(it.id) !== Number(t.selectedItemId)) continue;
       const key = `${c.code}:${it.id}`;
       const watched = t.watch.has(key);
       if (t.watchOnly && !watched) continue;
-      if (!watched && (it.profit == null || it.profit <= 0)) continue;
+      if (!watched && t.viewMode !== 'item' && (it.profit == null || it.profit <= 0)) continue;
       if (t.type !== 'all' && it.type !== t.type) continue;
       if (q && !it.name.toLowerCase().includes(q)) continue;
       const st = stockStatus(it, now, arrive);
       if (!ignoreStock && t.stock === 'now' && it.qty <= 0) continue;
       if (!ignoreStock && t.stock === 'arrival' && (st === 'no' || st === 'later' || st === 'stale')) continue;
+      if (!ignoreStock && t.stock === 'restock_soon' && !(it.qty <= 0 && it.nextRestock && it.nextRestock > now - 15 * 60 && it.nextRestock <= now + 3 * 3600)) continue;
       const { units, trip, round, perHour } = LRXTravelMath.tripMetrics(it.profit || 0, cap, it.qty, oneWay);
       if (t.minProfit && perHour < t.minProfit) continue;
-      rows.push({ c, it, key, watched, st, units, trip, round, oneWay, perHour, arrive });
+      rows.push({ c, it, key, watched, st, staleObs, units, trip, round, oneWay, perHour, arrive });
     }
   }
   const sorters = {
@@ -669,26 +691,164 @@ function travelRows({ ignoreStock = false } = {}) {
   return rows;
 }
 
+function renderTravelHistorySvg(hist) {
+  const W = 680, H = 175, padL = 48, padR = 14, padT = 16, padB = 26;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const minT = hist.nowSec - hist.windowHours * 3600;
+  const maxT = hist.metric === 'forecast' ? hist.nowSec + 2 * 3600 : hist.nowSec;
+  const spanT = Math.max(1, maxT - minT);
+  const allPts = [...(hist.points || []), ...(hist.metric === 'forecast' ? (hist.forecastPoints || []) : [])];
+  if (!allPts.length) {
+    return `<div class="sub-text">${tr('Bu pencere için henüz stok/fiyat geçmişi birikmedi (3 dakikada bir örneklenir).', 'No stock/price history collected for this window yet (sampled every 3 min).')}</div>`;
+  }
+  const vals = allPts.map((p) => Number(p.v) || 0);
+  const maxV = Math.max(10, ...vals);
+  const minV = hist.metric === 'price' || hist.metric === 'profit' ? Math.min(0, ...vals) : 0;
+  const spanV = Math.max(1, maxV - minV);
+  const xOf = (t) => Math.max(padL, Math.min(padL + plotW, padL + ((t - minT) / spanT) * plotW));
+  const yOf = (v) => padT + plotH - ((Math.max(minV, Math.min(maxV, v)) - minV) / spanV) * plotH;
+
+  let stepPath = '';
+  const pts = hist.points || [];
+  for (let i = 0; i < pts.length; i++) {
+    const x = xOf(pts[i].t).toFixed(1);
+    const y = yOf(pts[i].v).toFixed(1);
+    if (i === 0) stepPath += `M${x},${y}`;
+    else {
+      const prevY = yOf(pts[i - 1].v).toFixed(1);
+      stepPath += ` L${x},${prevY} L${x},${y}`;
+    }
+  }
+  if (pts.length === 1) {
+    const y = yOf(pts[0].v).toFixed(1);
+    stepPath = `M${padL},${y} L${(padL + plotW).toFixed(1)},${y}`;
+  }
+
+  let forecastPath = '';
+  if ((hist.forecastPoints || []).length >= 2) {
+    const fp = hist.forecastPoints;
+    forecastPath = fp.map((p, idx) => `${idx === 0 ? 'M' : 'L'}${xOf(p.t).toFixed(1)},${yOf(p.v).toFixed(1)}`).join(' ');
+  }
+
+  const restockMarks = (hist.restockEvents || []).map((ev) => {
+    const x = xOf(ev.t).toFixed(1);
+    const y = (yOf(ev.v) - 6).toFixed(1);
+    return `<text x="${x}" y="${y}" text-anchor="middle" class="tv-hist-restock-mark"><title>Restock · ${hhmm(ev.t)} TCT · ${n0(ev.v)}</title>▲</text>`;
+  }).join('');
+
+  const srcMarks = (hist.sourceChanges || []).map((sc) => {
+    const x = xOf(sc.t).toFixed(1);
+    return `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" class="tv-hist-src-line"><title>${esc(sc.from)} → ${esc(sc.to)} (${hhmm(sc.t)} TCT)</title></line>`;
+  }).join('');
+
+  const fmtVal = (v) => (hist.metric === 'price' || hist.metric === 'profit') ? cmoney(v) : n0(v);
+  const dots = pts.slice(-24).map((p) => {
+    const x = xOf(p.t).toFixed(1);
+    const y = yOf(p.v).toFixed(1);
+    const tip = `${p.source} · ${hhmm(p.t)} TCT · ${fmtVal(p.v)}${p.isRestock ? ' (Restock ▲)' : ''}`;
+    return `<circle cx="${x}" cy="${y}" r="3.2" tabindex="0" class="tv-hist-dot" aria-label="${esc(tip)}"><title>${esc(tip)}</title></circle>`;
+  }).join('');
+
+  return `<svg class="tv-hist-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${tr('Seyahat geçmiş grafiği', 'Travel history chart')}">
+    <line x1="${padL}" y1="${padT}" x2="${padL + plotW}" y2="${padT}" class="tv-hist-grid"/>
+    <line x1="${padL}" y1="${padT + plotH / 2}" x2="${padL + plotW}" y2="${padT + plotH / 2}" class="tv-hist-grid"/>
+    <line x1="${padL}" y1="${padT + plotH}" x2="${padL + plotW}" y2="${padT + plotH}" class="tv-hist-grid"/>
+    <text x="${padL - 6}" y="${padT + 4}" text-anchor="end" class="tv-hist-axis">${esc(fmtVal(maxV))}</text>
+    <text x="${padL - 6}" y="${padT + plotH}" text-anchor="end" class="tv-hist-axis">${esc(fmtVal(minV))}</text>
+    <text x="${padL}" y="${H - 6}" class="tv-hist-axis">-${hist.windowHours}s</text>
+    <text x="${padL + plotW}" y="${H - 6}" text-anchor="end" class="tv-hist-axis">${tr('Şimdi (TCT)', 'Now (TCT)')}</text>
+    ${srcMarks}
+    ${stepPath ? `<path d="${stepPath}" class="tv-hist-line"/>` : ''}
+    ${forecastPath ? `<path d="${forecastPath}" class="tv-hist-forecast"/>` : ''}
+    ${restockMarks}
+    ${dots}
+  </svg>`;
+}
+
+function renderTrafficSvg(tf) {
+  const W = 680, H = 140, padL = 34, padR = 12, padT = 12, padB = 22;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  if (!tf.series || !tf.series.length) {
+    return `<div class="sub-text">${tr('Henüz faction seyahat trafiği örneği birikmedi. Faction sayfası veya arka plan yoklaması çalıştıkça otomatik birikir.', 'No faction travel traffic samples collected yet. Automatically accumulates as Faction polls run.')}</div>`;
+  }
+  const minT = tf.fromMs, maxT = tf.toMs, spanT = Math.max(1, maxT - minT);
+  const maxV = Math.max(4, ...tf.series.map((s) => s.active || 0));
+  const xOf = (ms) => Math.max(padL, Math.min(padL + plotW, padL + ((ms - minT) / spanT) * plotW));
+  const yOf = (v) => padT + plotH - (Math.min(maxV, Math.max(0, v)) / maxV) * plotH;
+  const segPaths = (tf.segments || []).map((seg) => {
+    let d = '';
+    for (let i = 0; i < seg.length; i++) {
+      const x = xOf(seg[i].at).toFixed(1), y = yOf(seg[i].active).toFixed(1);
+      if (i === 0) d += `M${x},${y}`;
+      else d += ` L${x},${yOf(seg[i - 1].active).toFixed(1)} L${x},${y}`;
+    }
+    return `<path d="${d}" class="tv-traffic-line"/>`;
+  }).join('');
+  return `<svg class="tv-hist-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${tr('Faction seyahat trafiği grafiği', 'Faction travel traffic chart')}">
+    <line x1="${padL}" y1="${padT}" x2="${padL + plotW}" y2="${padT}" class="tv-hist-grid"/>
+    <line x1="${padL}" y1="${padT + plotH}" x2="${padL + plotW}" y2="${padT + plotH}" class="tv-hist-grid"/>
+    <text x="${padL - 5}" y="${padT + 4}" text-anchor="end" class="tv-hist-axis">${maxV}</text>
+    <text x="${padL - 5}" y="${padT + plotH}" text-anchor="end" class="tv-hist-axis">0</text>
+    <text x="${padL}" y="${H - 5}" class="tv-hist-axis">-${tf.windowHours}s</text>
+    <text x="${padL + plotW}" y="${H - 5}" text-anchor="end" class="tv-hist-axis">TCT</text>
+    ${segPaths}
+  </svg>`;
+}
+
 function renderTravel() {
   const d = travelState.data; if (!d) return;
   const t = travelState;
   const method = travelMethod();
   const mult = TRAVEL_METHODS[method] || 1;
   const types = [...new Set(d.countries.flatMap((c) => c.items.map((i) => i.type)).filter(Boolean))].sort();
+  const allItems = [];
+  const seenItems = new Set();
+  for (const c of d.countries) {
+    for (const it of c.items || []) {
+      const id = Number(it.id);
+      if (id && !seenItems.has(id)) { seenItems.add(id); allItems.push({ id, name: it.name, profit: it.profit || 0 }); }
+    }
+  }
+  allItems.sort((a, b) => b.profit - a.profit || a.name.localeCompare(b.name));
+  if (!t.selectedItemId && allItems.length) t.selectedItemId = allItems[0].id;
+
   const opt = (v, label, cur) => `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${label}</option>`;
   const countryChips = d.countries.filter((c) => c.minutes).map((c) => `<button class="tv-cbtn ${t.countries.has(c.code) ? 'active' : ''}" data-country="${c.code}" title="${esc(c.name)}"><span lang="en">${esc(c.name)}</span> <small>${mins(c.minutes * mult)}</small></button>`).join('');
+  const blockBtn = (id, labelTr, labelEn) => `<button type="button" class="pill sm ${t.blocks.has(id) ? 'active' : ''}" data-tv-block="${id}">${tr(labelTr, labelEn)}</button>`;
+
   $('#travel-body').innerHTML = `
-    <div id="tv-planner"></div>
+    <article class="glass card tv-ws-head">
+      <div class="tv-ws-bar">
+        <div class="tv-ws-views" role="tablist" aria-label="${tr('Seyahat görünümü', 'Travel view')}">
+          <button type="button" class="pill ${t.viewMode === 'item' ? 'active' : ''}" data-tv-view="item">📦 ${tr('Eşyaya göre', 'By Item')}</button>
+          <button type="button" class="pill ${t.viewMode === 'country' ? 'active' : ''}" data-tv-view="country">🌍 ${tr('Ülkeye göre', 'By Country')}</button>
+          <button type="button" class="pill ${t.viewMode === 'roi' ? 'active' : ''}" data-tv-view="roi">📈 ${tr('Seyahat ROI', 'Travel ROI')}</button>
+        </div>
+        <div class="tv-ws-blocks">
+          <span class="muted">${tr('Bloklar:', 'Blocks:')}</span>
+          ${blockBtn('summary', 'Özet', 'Summary')}
+          ${blockBtn('countries', 'Ülke Kartları', 'Countries')}
+          ${blockBtn('traffic', 'Faction Trafiği', 'Traffic')}
+          ${blockBtn('history', 'Geçmiş Grafiği', 'History')}
+          ${blockBtn('planner', '24s Planlayıcı', '24h Planner')}
+          ${blockBtn('destinations', 'Destinasyonlar', 'Destinations')}
+        </div>
+      </div>
+    </article>
+    <div id="tv-planner" ${t.blocks.has('planner') ? '' : 'hidden'}></div>
     <article class="glass card tv-controls">
       <div class="tv-row">
         <input class="input" id="tv-q" placeholder="${tr('Ürün ara… (ör. Xanax, Plushie)', 'Search items… (e.g. Xanax, Plushie)')}" value="${esc(t.q)}">
+        <label class="tv-item-pick">${tr('Odak eşya', 'Focus item')}
+          <select id="tv-item-sel">${allItems.map((it) => opt(it.id, `${esc(it.name)} (${cmoney(it.profit)})`, t.selectedItemId)).join('')}</select>
+        </label>
         <div class="tv-countries"><button class="tv-cbtn ${t.countries.size ? '' : 'active'}" data-country="*">${tr('Tüm ülkeler', 'All countries')}</button>${countryChips}</div>
       </div>
       <div class="tv-row tv-filters">
         <label>${tr('Kapasite', 'Capacity')} <input class="input mono" id="tv-cap" type="number" min="1" max="100" value="${t.cap}"></label>
         <label>${tr('Uçuş', 'Travel method')} <select id="tv-method">${Object.keys(TRAVEL_METHODS).map((m) => opt(m, `${m} (×${TRAVEL_METHODS[m]})`, method)).join('')}</select></label>
         <label>${tr('Tür', 'Type')} <select id="tv-type">${opt('all', tr('Hepsi', 'All'), t.type)}${types.map((x) => opt(esc(x), esc(x), t.type)).join('')}</select></label>
-        <label>${tr('Stok', 'Stock')} <select id="tv-stock">${opt('arrival', tr('Varışta stokta olacak', 'In stock on arrival'), t.stock)}${opt('now', tr('Şu an stokta', 'In stock now'), t.stock)}${opt('all', tr('Hepsi', 'All'), t.stock)}</select></label>
+        <label>${tr('Ulaşılabilirlik', 'Availability')} <select id="tv-stock">${opt('arrival', tr('Ulaşılabilir (varışta)', 'Reachable (on arrival)'), t.stock)}${opt('now', tr('Şu an stokta', 'In stock now'), t.stock)}${opt('restock_soon', tr('Restock yaklaşanlar', 'Restock soon'), t.stock)}${opt('all', tr('Hepsi', 'All'), t.stock)}</select></label>
         <label>${tr('Uçuş süresi', 'Flight time')} <select id="tv-maxflight">${opt(0, tr('Hepsi', 'Any'), t.maxFlight)}${[60, 120, 180, 240].map((m) => opt(m, `≤ ${mins(m)}`, t.maxFlight)).join('')}</select></label>
         <label>${tr('Min. saatlik', 'Min. per hour')} <select id="tv-min">${[0, 50e3, 100e3, 250e3, 500e3, 1e6].map((v) => opt(v, v ? cmoney(v) : tr('Hepsi', 'Any'), t.minProfit)).join('')}</select></label>
         <label>${tr('Sırala', 'Sort')} <select id="tv-sort">${opt('perHour', tr('Saatlik kâr', 'Profit / hour'), t.sort)}${opt('trip', tr('Sefer kârı', 'Profit / trip'), t.sort)}${opt('unit', tr('Adet kârı', 'Profit / unit'), t.sort)}${opt('restock', tr('Restock zamanı', 'Restock time'), t.sort)}${opt('flight', tr('Uçuş süresi', 'Flight time'), t.sort)}</select></label>
@@ -703,10 +863,219 @@ function renderTravel() {
 function renderTravelResults() {
   const d = travelState.data, box = $('#tv-results');
   if (!d || !box) return;
+  const t = travelState;
+  const ws = window.LRXTravelWorkspace;
   const now = nowTct() / 1000;
+  const method = travelMethod();
+  const mult = TRAVEL_METHODS[method] || 1;
   const rows = travelRows();
   const best = [];
   for (const r of [...rows].sort((a, b) => b.perHour - a.perHour)) if (!best.some((b) => b.c.code === r.c.code)) best.push(r);
+
+  // N1 Item Summary Card
+  const itemSummary = ws && t.blocks.has('summary')
+    ? ws.buildItemSummary(d.countries, t.selectedItemId, { nowSec: now })
+    : null;
+  const summaryHtml = itemSummary ? `
+    <article class="glass card tv-ws-summary">
+      <div class="card-head wrap">
+        <div>
+          <h3>📦 ${esc(itemSummary.name)} <span class="chip">${esc(itemSummary.type || 'Item')}</span></h3>
+          <span class="muted">${tr('En iyi birim net kâr', 'Highest unit net profit')}: <b class="pos mono">${money(itemSummary.bestUnitNet)}</b> · ${tr('Birim alış', 'Unit cost')}: <span class="mono">${money(itemSummary.bestOffer.cost)}</span> (<span lang="en">${esc(itemSummary.bestOffer.countryName)}</span>) · ${tr('Gözlem', 'Observed')}: ${itemSummary.observedAtSec ? hhmm(itemSummary.observedAtSec) + ' TCT' : '—'}</span>
+        </div>
+        <span class="chip dim" title="${tr('Torn piyasa ortalaması saatlik referanstır; canlı ilan veya garanti satış fiyatı değildir', 'Torn market average is an hourly reference, never a live listing or guaranteed sale')}">ℹ ${tr('Piyasa referansı (canlı ilan değil)', 'Market reference (not live listing)')}</span>
+      </div>
+      <div class="grid tv-channel-grid">
+        ${itemSummary.channels.map((ch) => `<div class="glass kpi">
+          <div class="label">${esc(tr(ch.label[0], ch.label[1]))}</div>
+          <div class="value ${ch.netProfit > 0 ? 'pos' : 'neg'} mono">${money(ch.netProfit)}</div>
+          <div class="hint">${tr('Brüt', 'Gross')}: ${money(ch.grossPrice)} · ${tr('Kesinti', 'Fee')}: ${money(ch.feeAmount)}</div>
+        </div>`).join('')}
+        <div class="glass kpi">
+          <div class="label">${tr('24s Fiyat / Stok Aralığı', '24h Price / Stock Range')}</div>
+          <div class="value mono">${itemSummary.range24h ? `${money(itemSummary.range24h.minCost)} – ${money(itemSummary.range24h.maxCost)}` : money(itemSummary.bestOffer.cost)}</div>
+          <div class="hint">${tr('Toplam yurt dışı stok', 'Total abroad stock')}: <b>${n0(itemSummary.totalStock)}</b></div>
+        </div>
+      </div>
+    </article>` : '';
+
+  // N1 Country Cards (11 countries)
+  const countryCards = ws && t.blocks.has('countries')
+    ? ws.buildCountryCards(d.countries, {
+        selectedCountries: t.countries,
+        itemId: t.viewMode === 'item' ? t.selectedItemId : null,
+        itemType: t.type,
+        query: t.q,
+        capacity: t.cap,
+        flightMultiplier: mult,
+        nowSec: now,
+      })
+    : [];
+  const countryCardsHtml = countryCards.length ? `
+    <article class="glass card tv-ws-countries">
+      <div class="card-head wrap">
+        <div>
+          <h3>🌍 ${tr('Ülke Kartları', 'Country Cards')} <span class="chip">${countryCards.length}</span></h3>
+          <span class="muted">${tr('Karta tıklayarak geçmiş grafiği, destinasyon tablosu ve faction trafiğini o ülkeye odakla (çoklu seçim desteklenir)', 'Click any country card to focus History, Destinations and Faction Traffic (supports multi-country comparison)')}</span>
+        </div>
+        ${t.countries.size ? `<button type="button" class="btn sm ghost" data-country="*">${tr('Tüm ülkeleri göster', 'Show all countries')}</button>` : ''}
+      </div>
+      <div class="tv-cgrid">
+        ${countryCards.map((c) => {
+          const stockBadge = c.stockState === 'sold_out'
+            ? `<span class="chip danger">${tr('Tükendi (0)', 'Sold out (0)')}</span>`
+            : c.stockState === 'unknown'
+              ? `<span class="chip dim">${tr('Bilinmiyor', 'Unknown')}</span>`
+              : `<span class="chip green">${n0(c.stockQty)} ${tr('stok', 'in stock')}</span>`;
+          const staleBadge = c.stale ? `<span class="chip warn" title="${tr('Son stok gözlemi 30 dakikadan eski', 'Last stock reading is older than 30 min')}">⚠ ${tr('Veri eski', 'Stale data')}</span>` : '';
+          const restockLine = c.nextRestockSec
+            ? `${tr('Restock', 'Restock')}: ${tvAt(c.nextRestockSec)} (${hhmm(c.nextRestockSec)} TCT)`
+            : `${tr('Gözlem yaşı', 'Obs. age')}: ${c.ageSec != null ? Math.round(c.ageSec / 60) + ' ' + tr('dk', 'm') : '—'}`;
+          return `<button type="button" class="tv-ccard ${c.selected ? 'active' : ''}" data-country="${esc(c.code)}" style="--cc-color:${c.color}">
+            <div class="tv-ccard-top">
+              <span class="tv-ccard-title"><i class="tv-ccard-dot" style="background:${c.color}"></i> ${c.flag} <b lang="en">${esc(c.name)}</b> <small class="mono">${esc(c.short)}</small></span>
+              <span class="mono sub-text">${mins(c.oneWayMin)}</span>
+            </div>
+            <div class="tv-ccard-mid">
+              <div class="tv-ccard-profit">${c.bestTripProfit > 0 ? cmoney(c.bestTripProfit) : '—'} <small>/${tr('sefer', 'trip')}</small></div>
+              <div class="tv-ccard-badges">${stockBadge}${staleBadge}</div>
+            </div>
+            <div class="tv-ccard-foot">
+              <span class="sub-text">${c.bestItem ? esc(c.bestItem.name) : tr('Eşya yok', 'No item')}</span>
+              <span class="sub-text">${restockLine}</span>
+            </div>
+          </button>`;
+        }).join('')}
+      </div>
+    </article>` : '';
+
+  // Focus country & item for History Chart and Traffic
+  const focusCode = t.countries.size === 1 ? [...t.countries][0] : (best[0]?.c?.code || d.countries[0]?.code || 'mex');
+  const focusCountry = d.countries.find((c) => c.code === focusCode) || d.countries[0];
+  const focusItem = focusCountry?.items?.find((i) => Number(i.id) === Number(t.selectedItemId))
+    || [...(focusCountry?.items || [])].sort((a, b) => (b.profit || 0) - (a.profit || 0))[0]
+    || null;
+
+  // N1 History Chart (6/12/24/48h + Stock/Price/Profit/Forecast)
+  let historyHtml = '';
+  if (ws && t.blocks.has('history') && focusCountry && focusItem) {
+    const hist = ws.buildHistorySeries(focusItem, {
+      countryCode: focusCountry.code,
+      metric: t.histMetric,
+      windowHours: t.histHours,
+      nowSec: now,
+    });
+    historyHtml = `
+      <article class="glass card tv-ws-history">
+        <div class="card-head wrap">
+          <div>
+            <h3>📈 ${tr('Stok, Fiyat & Kâr Geçmişi', 'Stock, Price & Profit History')} · <span lang="en">${esc(focusCountry.name)}</span> — ${esc(focusItem.name)}</h3>
+            <span class="muted">${tr('Adım çizgisi = stok gözlemleri · ▲ = doğrulanmış restock · kesikli çizgi = tükenme/restock tahmini', 'Step-line = stock readings · ▲ = verified restock · dashed = depletion/restock forecast')}${hist.sourceChanges.length ? ` · <span class="warn">⇄ ${tr('Kaynak geçişi', 'Source switch')}: ${hist.sourceChanges.length}</span>` : ''}</span>
+          </div>
+          <div class="tv-hist-controls">
+            <div class="btn-group">
+              ${[['stock', 'Stok', 'Stock'], ['price', 'Fiyat', 'Price'], ['profit', 'Kâr', 'Profit'], ['forecast', 'Tahmin', 'Forecast']].map(([m, trL, enL]) => `<button type="button" class="pill sm ${t.histMetric === m ? 'active' : ''}" data-tv-hmetric="${m}">${tr(trL, enL)}</button>`).join('')}
+            </div>
+            <div class="btn-group">
+              ${[6, 12, 24, 48].map((h) => `<button type="button" class="pill sm ${t.histHours === h ? 'active' : ''}" data-tv-hhours="${h}">${h}${tr('s', 'h')}</button>`).join('')}
+            </div>
+          </div>
+        </div>
+        ${renderTravelHistorySvg(hist)}
+      </article>`;
+  }
+
+  // N2 Faction Travel Traffic Card
+  let trafficHtml = '';
+  if (ws && t.blocks.has('traffic')) {
+    const tfCode = t.countries.size === 1 ? [...t.countries][0] : '*';
+    const tfCountryObj = tfCode !== '*' ? d.countries.find((c) => c.code === tfCode) : null;
+    const restockEvents = tfCountryObj
+      ? tfCountryObj.items.flatMap((it) => (it.restocks || []).map((ts) => ({ t: ts, source: tfCountryObj.source })))
+      : d.countries.flatMap((c) => (c.items || []).flatMap((it) => (it.restocks || []).map((ts) => ({ t: ts, source: c.source }))));
+    const tf = ws.summarizeTraffic(d.factionTraffic || [], {
+      countryCode: tfCode,
+      windowHours: t.trafficHours,
+      nowMs: Date.now(),
+      restockEvents,
+    });
+    const deltaText = tf.periodDelta == null
+      ? `<span class="muted" title="${tr('En az 2 örnek gerekir', 'Needs at least 2 samples')}">—</span>`
+      : `<span class="${tf.periodDelta >= 0 ? 'pos' : 'neg'} mono">${tf.periodDelta >= 0 ? '+' : ''}${tf.periodDelta}</span>`;
+    trafficHtml = `
+      <article class="glass card tv-ws-traffic">
+        <div class="card-head wrap">
+          <div>
+            <h3>🛫 ${tr('Faction Seyahat Trafiği', 'Faction Travel Traffic')} · ${tfCountryObj ? `<span lang="en">${esc(tfCountryObj.name)}</span>` : tr('Tüm Rotalar', 'All Routes')}</h3>
+            <span class="muted">${tr('Snapshot başına tekil üye sayımı · bilinmeyen rota ülke paydasına karıştırılmaz', 'Deduplicated per member per snapshot · unknown route kept separate from country denominator')}</span>
+          </div>
+          <div class="btn-group">
+            ${[6, 12, 24].map((h) => `<button type="button" class="pill sm ${t.trafficHours === h ? 'active' : ''}" data-tv-thours="${h}">${h}${tr('s', 'h')}</button>`).join('')}
+          </div>
+        </div>
+        <div class="tv-traffic-kpis">
+          <span class="chip blue">${tr('Giden', 'Outbound')}: <b>${tf.latest.outbound}</b></span>
+          <span class="chip green">${tr('Orada', 'Abroad')}: <b>${tf.latest.abroad}</b></span>
+          <span class="chip tq">${tr('Dönen', 'Inbound')}: <b>${tf.latest.inbound}</b></span>
+          <span class="chip dim" title="${tr('Ülkesi doğrulanamayan uçuşlar ayrı gösterilir', 'Flights without a verified country are counted separately')}">${tr('Bilinmeyen rota', 'Unknown route')}: <b>${tf.latest.unknown}</b></span>
+          <span class="chip">${tr('Dönem değişimi', 'Period delta')}: ${deltaText}</span>
+          <span class="chip">${tr('Ortalama', 'Average')}: <b class="mono">${tf.average}</b></span>
+          <span class="chip">${tr('Zirve', 'Peak')}: <b class="mono">${tf.peak.value}</b>${tf.peak.tct ? ` (${tf.peak.tct} TCT)` : ''}</span>
+          <span class="chip dim">${tr('Örnek / Kapsama', 'Samples / Coverage')}: <b class="mono">${tf.sampleCount}</b> (%${tf.coveragePct})</span>
+          <span class="chip dim">${tr('Gözlenen Restock', 'Observed Restocks')}: <b class="mono">${tf.restockCount}</b></span>
+        </div>
+        ${renderTrafficSvg(tf)}
+      </article>`;
+  }
+
+  // N1 Destinations Table
+  let destinationsHtml = '';
+  if (ws && t.blocks.has('destinations')) {
+    const destRows = ws.buildDestinationsTable(d.countries, {
+      selectedCountries: t.countries,
+      itemId: t.viewMode === 'item' ? t.selectedItemId : null,
+      itemType: t.type,
+      query: t.q,
+      availability: t.stock,
+      capacity: t.cap,
+      flightMultiplier: mult,
+      nowSec: now,
+    });
+    destinationsHtml = `
+      <article class="glass card tv-ws-destinations">
+        <div class="card-head wrap">
+          <div>
+            <h3>🧭 ${tr('Destinasyonlar & En İyi Kalkış Penceresi', 'Destinations & Best Departure Window')} <span class="chip">${destRows.length}</span></h3>
+            <span class="muted">${tr('Modellenmiş kâr = Piyasa −%5 referansı üzerinden tam kapasite tahmini · Planıma ekle ile 24s kadranı o rotaya kur', 'Modeled profit = full-capacity estimate using Market −5% reference · Click Add to plan to target that route in the 24h dial')}</span>
+          </div>
+        </div>
+        ${destRows.length ? `<div class="tbl-wrap"><table class="tbl compact">
+          <thead><tr>
+            <th>${tr('Ülke', 'Country')}</th>
+            <th>${tr('En Kârlı Eşya', 'Top Item')}</th>
+            <th class="num">${tr('Tek Yön', 'One-Way')}</th>
+            <th>${tr('Tahmini Restock', 'Est. Restock')}</th>
+            <th>${tr('En İyi Kalkış Penceresi', 'Best Departure Window')}</th>
+            <th class="num">${tr('Birim Net Kâr', 'Unit Net Profit')}</th>
+            <th class="num">${tr('Modellenmiş Sefer Kârı', 'Modeled Trip Profit')}</th>
+            <th></th>
+          </tr></thead>
+          <tbody>
+            ${destRows.slice(0, 22).map((r) => `<tr>
+              <td>${r.flag} <b lang="en">${esc(r.countryName)}</b> ${r.stale ? `<span class="chip warn">⚠ ${tr('Eski', 'Stale')}</span>` : ''}</td>
+              <td><b>${esc(r.itemName)}</b> <span class="sub-text">(${n0(r.qty)} ${tr('stok', 'stock')})</span></td>
+              <td class="num mono">${mins(r.oneWayMin)}</td>
+              <td>${r.restockWindowSec ? `${tvAt(r.restockWindowSec)} <span class="sub-text">(${hhmm(r.restockWindowSec)})</span>` : `<span class="muted">${r.qty > 0 ? tr('Şu an stokta', 'In stock now') : '—'}</span>`}</td>
+              <td>${r.bestDepartureSec <= now ? `<b class="pos">${tr('Şimdi kalk', 'Fly now')}</b>` : `<b class="mono">${hhmm(r.bestDepartureSec)} TCT</b> · ${tvAt(r.bestDepartureSec)}`}</td>
+              <td class="num pos mono">${money(r.unitNetProfit)}</td>
+              <td class="num tq-text mono"><b>${cmoney(r.modeledTripProfit)}</b> <span class="sub-text">(${cmoney(r.perHour)}/${tr('sa', 'h')})</span></td>
+              <td class="num"><button type="button" class="btn sm ghost" data-tv-addplan="${esc(r.countryCode)}" data-tv-item="${r.itemId}">+ ${tr('Planıma ekle', 'Add to plan')}</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>` : emptyBox(tr('Filtreye uyan destinasyon yok', 'No destinations match the filters'), '')}
+      </article>`;
+  }
+
   // Yaklaşan restocklar: stok filtresinden bağımsız, şu an stokta olmayan kârlı ürünler
   const upcoming = travelRows({ ignoreStock: true })
     .filter((r) => r.it.qty <= 0 && r.it.nextRestock && r.it.nextRestock > now - 15 * 60 && r.it.nextRestock < now + 6 * 3600)
@@ -719,7 +1088,8 @@ function renderTravelResults() {
   const stockCell = (r) => {
     const it = r.it;
     const sub = it.qty > 0 && it.emptyAt ? `<div class="sub-text">≈ ${tvAt(it.emptyAt)} ${tr('sonra biter', 'until empty')}${it.rate ? ` · −${n0(it.rate)}/${tr('dk', 'min')}` : ''}</div>` : '';
-    return `<span class="${it.qty <= 0 ? 'neg' : ''}">${n0(it.qty)}</span>${sub}`;
+    const staleTag = r.staleObs ? `<div class="sub-text warn">⚠ ${tr('Veri eski (>30dk)', 'Stale data (>30m)')}</div>` : '';
+    return `<span class="${it.qty <= 0 ? 'neg' : ''}">${it.qty <= 0 ? tr('Tükendi (0)', 'Sold out (0)') : n0(it.qty)}</span>${sub}${staleTag}`;
   };
   const restockCell = (r) => {
     const it = r.it;
@@ -728,6 +1098,11 @@ function renderTravelResults() {
     return '<span class="muted">—</span>';
   };
   box.innerHTML = `
+    ${summaryHtml}
+    ${countryCardsHtml}
+    ${trafficHtml}
+    ${historyHtml}
+    ${destinationsHtml}
     <div class="grid travel-best">${best.slice(0, 6).map((r) => `<div class="glass kpi"><div class="label"><span lang="en">${esc(r.c.name)}</span> · ${mins(r.oneWay)}</div><div class="value tq">${cmoney(r.perHour)}<span class="sub-text">/${tr('sa', 'h')}</span></div><div class="hint">${esc(r.it.name)} · ${cmoney(r.trip)} ${tr('sefer başı', 'per trip')}</div></div>`).join('') || emptyBox(tr('Filtreye uyan kârlı ürün yok', 'No profitable items match the filters'), '')}</div>
     <article class="glass card">
       <div class="card-head"><div><h3>⟳ ${tr('Yaklaşan restocklar', 'Upcoming restocks')}</h3><span class="muted">${tr('Kalkış saati = restock anında inecek şekilde · ★ ile takip edersen kalkış ve stok bildirimi gelir', 'Departure times are set so you land right at the restock · star (★) an item to get departure and restock alerts')}</span></div></div>
@@ -748,24 +1123,35 @@ function renderTravelResults() {
     <article class="glass card">
       <div class="card-head wrap"><div><h3>${tr('Ürünler', 'Items')} <span class="chip">${rows.length}</span></h3><span class="muted">${tr('Kaynak', 'Source')}: ${src}${age != null ? ` · ${tr('en eski veri', 'oldest data')} <span data-tv-age="${oldest}">${age}</span> ${tr('dk', 'min')}` : ''} · ${tr('market = Torn ortalama değeri (saatlik), satış garantisi değil', "market = Torn's average value (hourly), not a guaranteed sale price")} · ${tr('uçak bileti hariç', 'excludes ticket cost')}</span>${travelState.error ? `<div class="sub-text neg">⚠ ${tr('Son yenileme başarısız', 'The last refresh failed')}: ${esc(travelState.error)}</div>` : ''}</div></div>
       ${rows.length ? `<div class="tbl-wrap"><table class="tbl compact tv-table"><thead><tr><th></th><th>${tr('Ülke', 'Country')}</th><th>${tr('Ürün', 'Item')}</th><th class="num">${tr('Alış → Market', 'Cost → Market')}</th><th class="num">${tr('Adet kârı', 'Profit/unit')}</th><th class="num">${tr('Stok', 'Stock')}</th><th>${tr('Restock', 'Restock')}</th><th>${tr('Varışta', 'On arrival')}</th><th class="num">${tr('Sefer kârı', 'Per trip')}</th><th class="num">${tr('Saatlik', 'Per hour')}</th></tr></thead><tbody>
-      ${rows.slice(0, 60).map((r) => `<tr class="${r.watched ? 'watched' : ''}"><td>${star(r)}</td><td><span lang="en">${esc(r.c.name)}</span><div class="sub-text">${mins(r.oneWay)}</div></td><td><b>${esc(r.it.name)}</b> <span class="sub-text">${esc(r.it.type)}</span></td><td class="num">${money(r.it.cost)}<div class="sub-text">${money(r.it.market)}</div></td><td class="num ${(r.it.profit || 0) > 0 ? 'pos' : 'neg'}">${money(r.it.profit || 0)}</td><td class="num">${stockCell(r)}</td><td>${restockCell(r)}</td><td>${statusChip(r.st)}</td><td class="num">${money(r.trip)} <span class="sub-text">×${r.units}</span></td><td class="num tq-text"><b>${cmoney(r.perHour)}</b></td></tr>`).join('')}
+      ${rows.slice(0, 60).map((r) => `<tr class="${r.watched ? 'watched' : ''}"><td>${star(r)}</td><td><span lang="en">${esc(r.c.name)}</span><div class="sub-text">${mins(r.oneWay)}</div></td><td><button type="button" class="link-btn" data-tv-focus-item="${r.it.id}"><b>${esc(r.it.name)}</b></button> <span class="sub-text">${esc(r.it.type)}</span></td><td class="num">${money(r.it.cost)}<div class="sub-text">${money(r.it.market)}</div></td><td class="num ${(r.it.profit || 0) > 0 ? 'pos' : 'neg'}">${money(r.it.profit || 0)}</td><td class="num">${stockCell(r)}</td><td>${restockCell(r)}</td><td>${statusChip(r.st)}</td><td class="num">${money(r.trip)} <span class="sub-text">×${r.units}</span></td><td class="num tq-text"><b>${cmoney(r.perHour)}</b></td></tr>`).join('')}
       </tbody></table></div>` : emptyBox(tr('Filtreye uyan ürün yok', 'No items match the filters'), tr('Stok filtresini "Hepsi" yapmayı ya da ülke seçimini genişletmeyi dene.', 'Try setting Stock to "All" or selecting more countries.'))}
     </article>`;
+  const plannerEl = $('#tv-planner');
+  if (plannerEl) plannerEl.hidden = !t.blocks.has('planner');
   window.renderDeparturePlanner?.();
 }
 
-/* Travel Radar → Travel Profit cross-link: filter by destination/origin country code */
-window.openTravelCountry = function openTravelCountry(code) {
+/* Travel Radar & Overview Widget → Travel Workspace deep-linking */
+window.openTravelView = function openTravelView(mode = 'roi', opts = {}) {
   if (!feat('page.travel') || viewHidden('travel')) {
     toast(tr('Seyahat Kârı sayfası şu an kapalı veya seviye 15 altında.', 'Travel Profit is currently disabled or below level 15.'));
     return;
   }
-  const clean = String(code || '').trim().toLowerCase();
-  travelState.countries = clean && clean !== 'torn' ? new Set([clean]) : new Set();
-  travelState.stock = 'all';
+  if (['item', 'country', 'roi'].includes(mode)) travelState.viewMode = mode;
+  if (opts.country) {
+    const clean = String(opts.country).trim().toLowerCase();
+    travelState.countries = clean && clean !== 'torn' && clean !== '*' ? new Set([clean]) : new Set();
+  }
+  if (opts.itemId) travelState.selectedItemId = Number(opts.itemId) || travelState.selectedItemId;
+  if (opts.block) travelState.blocks.add(opts.block);
+  if (opts.stock) travelState.stock = opts.stock;
   saveTravelPrefs();
   showView('travel');
   if (travelState.data) renderTravel();
+};
+
+window.openTravelCountry = function openTravelCountry(code) {
+  window.openTravelView('country', { country: code, stock: 'all', block: 'countries' });
 };
 
 /* Filtre olayları (tek sefer bağlanır; #travel-body kalıcı) */
@@ -784,11 +1170,62 @@ window.openTravelCountry = function openTravelCountry(code) {
       case 'tv-min': t.minProfit = Number(v) || 0; break;
       case 'tv-sort': t.sort = v; break;
       case 'tv-watchonly': t.watchOnly = e.target.checked; break;
+      case 'tv-item-sel': t.selectedItemId = Number(v) || 0; break;
       default: return;
     }
     changed();
   });
   body.addEventListener('click', (e) => {
+    const viewBtn = e.target.closest('[data-tv-view]');
+    if (viewBtn) {
+      travelState.viewMode = viewBtn.dataset.tvView;
+      saveTravelPrefs();
+      return renderTravel();
+    }
+    const blockBtn = e.target.closest('[data-tv-block]');
+    if (blockBtn) {
+      const b = blockBtn.dataset.tvBlock;
+      if (travelState.blocks.has(b)) travelState.blocks.delete(b);
+      else travelState.blocks.add(b);
+      saveTravelPrefs();
+      return renderTravel();
+    }
+    const hmBtn = e.target.closest('[data-tv-hmetric]');
+    if (hmBtn) {
+      travelState.histMetric = hmBtn.dataset.tvHmetric;
+      return changed();
+    }
+    const hhBtn = e.target.closest('[data-tv-hhours]');
+    if (hhBtn) {
+      travelState.histHours = Number(hhBtn.dataset.tvHhours) || 24;
+      return changed();
+    }
+    const thBtn = e.target.closest('[data-tv-thours]');
+    if (thBtn) {
+      travelState.trafficHours = Number(thBtn.dataset.tvThours) || 24;
+      return changed();
+    }
+    const focusIt = e.target.closest('[data-tv-focus-item]');
+    if (focusIt) {
+      travelState.selectedItemId = Number(focusIt.dataset.tvFocusItem) || 0;
+      const sel = $('#tv-item-sel', body);
+      if (sel) sel.value = String(travelState.selectedItemId);
+      return changed();
+    }
+    const addPlan = e.target.closest('[data-tv-addplan]');
+    if (addPlan) {
+      const code = addPlan.dataset.tvAddplan;
+      const itemId = Number(addPlan.dataset.tvItem) || 0;
+      if (code) {
+        travelState.countries = new Set([code]);
+        if (itemId) travelState.selectedItemId = itemId;
+        travelState.blocks.add('planner');
+        saveTravelPrefs();
+        renderTravel();
+        toast(tr('Rota 24 saatlik kalkış planlayıcıya aktarıldı', 'Route focused in 24h departure planner'));
+      }
+      return;
+    }
     const cb = e.target.closest('[data-country]');
     if (cb) {
       const code = cb.dataset.country, set = travelState.countries;

@@ -42,9 +42,13 @@ function createHttpServer(config, dependencies = {}) {
       if (prefix && url.pathname === prefix) url.pathname = '/';
       else if (prefix && url.pathname.startsWith(prefix + '/')) url.pathname = url.pathname.slice(prefix.length);
       const isFactionHistory = /^\/v1\/factions\/\d+\/history$/.test(url.pathname);
-      if (url.search && !isFactionHistory) fail('QUERY_NOT_ALLOWED');
+      const isMemberSeries = /^\/v1\/factions\/\d+\/members\/\d+\/series$/.test(url.pathname);
+      if (url.search && !isFactionHistory && !isMemberSeries) fail('QUERY_NOT_ALLOWED');
       if (isFactionHistory && url.search) {
         for (const k of url.searchParams.keys()) if (!['from', 'to', 'grain'].includes(k)) fail('QUERY_NOT_ALLOWED');
+      }
+      if (isMemberSeries && url.search) {
+        for (const k of url.searchParams.keys()) if (!['metric', 'from', 'to'].includes(k)) fail('QUERY_NOT_ALLOWED');
       }
       if (req.headers.origin) {
         const expected = config.publicUrl ? new URL(config.publicUrl).origin : 'http://' + req.headers.host;
@@ -94,7 +98,16 @@ function createHttpServer(config, dependencies = {}) {
       if (url.pathname === '/v1/me/erasure-request' && req.method === 'POST') return send(res, 200, service.store.requestErasure(actor));
       if (url.pathname === '/v1/premium/receipt-export' && req.method === 'GET') return send(res, 200, service.exportReceipts(actor));
       if (url.pathname === '/v1/premium/access-check' && req.method === 'GET') { service.requirePremium(actor); return send(res, 200, { entitled: true }); }
-      // Shared Faction Hub endpoints (P1.3 / P3.1) — verified session + Torn faction role on every call
+      // Shared Faction Hub endpoints (P1.3 / P3.1 / N3) — verified session + Torn faction role on every call
+      const memSeriesMatch = /^\/v1\/factions\/(\d+)\/members\/(\d+)\/series$/.exec(url.pathname);
+      if (memSeriesMatch) {
+        if (req.method !== 'GET') fail('METHOD_NOT_ALLOWED', 405);
+        return send(res, 200, await service.factionHub.getMemberSeries(actor, Number(memSeriesMatch[1]), Number(memSeriesMatch[2]), {
+          metric: url.searchParams.get('metric') || 'activity',
+          from: url.searchParams.get('from'),
+          to: url.searchParams.get('to'),
+        }));
+      }
       const facMatch = /^\/v1\/factions\/(\d+)\/(status|history|settings|report)$/.exec(url.pathname);
       if (facMatch) {
         const fid = Number(facMatch[1]);

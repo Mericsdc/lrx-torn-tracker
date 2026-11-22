@@ -943,7 +943,7 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   assert.equal(await fp.locator('#ow-add').getAttribute('aria-expanded'), 'true');
   assert.deepEqual(await drawer.locator('[data-add]:not([disabled])').evaluateAll((els) => els.map((el) => el.dataset.add)), ['day', 'timers', 'chips'], 'the free widgets not in the layout');
   const locked = drawer.locator('[data-add][disabled]');
-  assert.equal(await locked.count(), 11, 'every Premium widget is listed');
+  assert.equal(await locked.count(), 20, 'every Premium widget is listed');
   assert.equal(await locked.evaluateAll((els) => els.every((el) => el.textContent.includes('🔒') && el.textContent.includes('Premium'))), true, 'Premium items carry a lock and the note');
   assert.ok((await drawer.textContent()).includes('Premium 👑'));
   await drawer.locator('[data-add="gym"]').click({ force: true });

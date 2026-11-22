@@ -384,6 +384,18 @@ test('P3.1 & P1.3 HTTP: faction team plan enforces faction scope, extends max(no
   assert.equal(histRes.status, 200);
   assert.ok(Array.isArray(histRes.data.series));
 
+  // N3 Hub Member Series endpoint works for faction member 1 and returns 404 for non-member 777
+  const memSer = await req('GET', `/v1/factions/700/members/1/series?metric=activity&from=${clock.now - 3600}&to=${clock.now + 3600}`, undefined, memberTok);
+  assert.equal(memSer.status, 200);
+  assert.equal(memSer.data.playerId, 1);
+  assert.ok(Array.isArray(memSer.data.points));
+
+  const memTrSer = await req('GET', '/v1/factions/700/members/1/series?metric=travel', undefined, memberTok);
+  assert.equal(memTrSer.status, 200);
+  assert.equal(memTrSer.data.metric, 'travel');
+
+  assert.equal((await req('GET', '/v1/factions/700/members/777/series?metric=activity', undefined, memberTok)).status, 404);
+
   // Unrecognized query param on history still rejected
   assert.equal((await req('GET', '/v1/factions/700/history?evil=1', undefined, memberTok)).status, 400);
 

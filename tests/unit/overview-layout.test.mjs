@@ -5,7 +5,11 @@ const { defaultSet, normalize, view, move, remove, add, resize, select, duplicat
 
 const DEFAULT_IDS = ['profile', 'timers', 'bars', 'chips', 'battle', 'company'];
 const FREE_IDS = ['profile', 'drug', 'edu', 'day', 'timers', 'bars', 'chips', 'battle', 'company'];
-const PREMIUM_IDS = ['gym', 'networth', 'travel', 'job', 'crimes', 'jail', 'awards', 'oc', 'war', 'events', 'orders'];
+const PREMIUM_IDS = [
+  'gym', 'networth', 'travel', 'job', 'crimes', 'jail', 'awards', 'oc', 'war', 'events', 'orders',
+  'faction_member', 'faction_activity', 'faction_stats', 'faction_radar',
+  'travel_routes', 'travel_stock', 'travel_traffic', 'travel_planner', 'travel_history',
+];
 const ids = (widgets) => widgets.map((w) => w.id);
 const find = (widgets, id) => widgets.find((w) => w.id === id);
 const deepFreeze = (value) => {
@@ -55,9 +59,14 @@ describe('defaults and the widget catalogue', () => {
     expect(row('chips')).toEqual({ tier: 'free', sizes: ['S', 'M', 'L'], size: 'S' });
     expect(row('battle')).toEqual({ tier: 'free', sizes: ['M', 'L'], size: 'L' });
     expect(row('company')).toEqual({ tier: 'free', sizes: ['W'], size: 'W' });
-    for (const id of ['gym', 'travel', 'crimes', 'war']) expect(row(id)).toEqual({ tier: 'premium', sizes: ['S', 'M', 'L'], size: 'M' });
+    for (const id of ['gym', 'travel', 'crimes', 'war', 'faction_activity', 'faction_radar', 'travel_routes', 'travel_planner']) {
+      expect(row(id)).toEqual({ tier: 'premium', sizes: ['S', 'M', 'L'], size: 'M' });
+    }
     for (const id of ['networth', 'job', 'jail', 'awards', 'oc', 'events']) expect(row(id)).toEqual({ tier: 'premium', sizes: ['S', 'M'], size: 'S' });
-    expect(row('orders')).toEqual({ tier: 'premium', sizes: ['M', 'L'], size: 'M' });
+    expect(row('faction_member')).toEqual({ tier: 'premium', sizes: ['S', 'M'], size: 'M' });
+    for (const id of ['orders', 'faction_stats', 'travel_stock', 'travel_traffic', 'travel_history']) {
+      expect(row(id)).toEqual({ tier: 'premium', sizes: ['M', 'L'], size: 'M' });
+    }
     expect(layout.SPAN).toEqual({ S: 1, M: 2, L: 3, W: 4 });
     expect(layout.MAX_LAYOUTS).toBe(5);
     expect(layout.MAX_NAME).toBe(24);

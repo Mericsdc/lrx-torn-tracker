@@ -138,7 +138,7 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
       }
     }
   }
-  const FACTION_HUB_PATH_RE = /^(?:\/v1\/factions\/\d+\/(?:status|settings|report|history(?:\?(?:from=\d+|to=\d+|grain=(?:hour|day))(?:&(?:from=\d+|to=\d+|grain=(?:hour|day)))*)?)|\/v1\/admin\/faction-collector(?:\/jobs)?)$/;
+  const FACTION_HUB_PATH_RE = /^(?:\/v1\/factions\/\d+\/(?:status|settings|report|history(?:\?(?:from=\d+|to=\d+|grain=(?:hour|day))(?:&(?:from=\d+|to=\d+|grain=(?:hour|day)))*)?|members\/\d+\/series(?:\?(?:metric=(?:battlestats|activity|contribution|travel)|from=\d+|to=\d+)(?:&(?:metric=(?:battlestats|activity|contribution|travel)|from=\d+|to=\d+))*)?)|\/v1\/admin\/faction-collector(?:\/jobs)?)$/;
   async function factionHub(path, { method = 'GET', body } = {}) {
     if (!['GET', 'POST', 'PATCH'].includes(method) || !FACTION_HUB_PATH_RE.test(String(path || ''))) {
       throw bridgeError('NOT_FOUND', 404);

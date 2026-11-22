@@ -792,6 +792,70 @@ function createFactionHub(config, dependencies = {}) {
     };
   }
 
+  async function getMemberSeries(actor, factionId, playerId, { metric = 'activity', from = null, to = null } = {}) {
+    const role = await requireMember(actor, factionId);
+    const pid = Number(playerId);
+    if (!positiveId(pid)) fail('INVALID_PLAYER_ID', 400);
+    const allowedMetrics = new Set(['battlestats', 'activity', 'contribution', 'travel']);
+    if (!allowedMetrics.has(String(metric))) fail('INVALID_METRIC', 400);
+
+    const ts = now();
+    const toTs = to != null && to !== '' ? Math.floor(Number(to)) : ts;
+    const fromTs = from != null && from !== '' ? Math.floor(Number(from)) : toTs - 30 * DAY;
+    if (!Number.isFinite(fromTs) || !Number.isFinite(toTs) || fromTs < 0 || toTs < fromTs) fail('INVALID_TIME_RANGE', 400);
+    const plan = getPlan(factionId);
+    if (toTs - fromTs > 7 * DAY && !plan.active) fail('FACTION_PLAN_REQUIRED', 403);
+
+    const memberRow = db.prepare('SELECT player_id, display_name, level, position, in_oc, activity, health, travel_state, observed_at FROM roster_latest WHERE faction_id=? AND player_id=?').get(factionId, pid);
+    if (!memberRow) fail('MEMBER_NOT_IN_FACTION', 404);
+
+    const observations = db.prepare(
+      'SELECT slot_at, observed_at, state, travel_state, destination, origin, activity, health FROM roster_observations WHERE faction_id=? AND player_id=? AND observed_at>=? AND observed_at<=? ORDER BY observed_at ASC LIMIT 2000',
+    ).all(factionId, pid, fromTs, toTs);
+
+    const transitions = db.prepare(
+      'SELECT transition_id, from_state, to_state, destination, origin, seen_from, seen_to, eta_from, eta_to FROM travel_transitions WHERE faction_id=? AND player_id=? AND seen_to>=? AND seen_to<=? ORDER BY seen_to DESC LIMIT 200',
+    ).all(factionId, pid, fromTs, toTs);
+
+    const obsList = observations.map((o) => ({
+      ts: o.observed_at,
+      at: o.observed_at * 1000,
+      observedAt: travelRadar.isoUtc(o.observed_at * 1000),
+      source: 'shared_hub',
+      activity: o.activity,
+      health: o.health,
+      travelState: o.travel_state,
+      destination: o.destination,
+      origin: o.origin,
+      value: o.activity === 'online' ? 1 : o.activity === 'idle' ? 0.5 : 0,
+    }));
+
+    return {
+      factionId,
+      playerId: pid,
+      displayName: memberRow.display_name,
+      role: role.role,
+      metric,
+      source: 'shared_hub',
+      from: travelRadar.isoUtc(fromTs * 1000),
+      to: travelRadar.isoUtc(toTs * 1000),
+      points: obsList,
+      observations: obsList,
+      transitions: transitions.map((t) => ({
+        transitionId: t.transition_id,
+        fromState: t.from_state,
+        toState: t.to_state,
+        destination: t.destination,
+        origin: t.origin,
+        seenFrom: travelRadar.isoUtc(t.seen_from * 1000),
+        seenTo: travelRadar.isoUtc(t.seen_to * 1000),
+        seenToSec: t.seen_to,
+        etaFrom: t.eta_from,
+        etaTo: t.eta_to,
+      })),
+    };
+  }
+
   /* ---------- Operator Control Screen & Idempotent Jobs (P1.3) ---------- */
   function operatorSummary() {
     const collectors = db.prepare('SELECT faction_id, linked_by_torn_id, key_ref, mode, paused, interval_sec, next_run_at, lease_owner, lease_until, backoff_sec, consecutive_failures, last_run_at, last_success_at, last_latency_ms, last_error_code, last_error_at, planned_slots, observed_slots, planned_calls, manual_calls, retry_calls, version, updated_at FROM faction_collectors ORDER BY faction_id ASC').all();
@@ -929,6 +993,7 @@ function createFactionHub(config, dependencies = {}) {
     getStatus,
     getHistory,
     getSharedReport,
+    getMemberSeries,
     operatorSummary,
     operatorJob,
     start,

@@ -372,6 +372,8 @@ function runUiSmoke(lang) {
   ctx.globalThis = ctx;
   ctx.LRXTravelRadar = travelRadar;
   ctx.LRXFactionTools = require('../public/faction-tools');
+  ctx.LRXTravelWorkspace = require('../public/travel-workspace');
+  ctx.LRXFactionWorkspace = require('../public/faction-workspace');
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'public/faction.js'), 'utf8'), ctx);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'public/ops-ui.js'), 'utf8'), ctx);
@@ -405,4 +407,176 @@ test('P0.3 & P1.3 UI smoke: Travel Radar, 24h step-line outage gap, XSS escaping
     assert.ok(opsHtml.includes('Torn API') && opsHtml.includes('YATA') && opsHtml.includes('Prometheus'), `${lang}: all 3 sources shown`);
     assert.ok(opsHtml.includes('ops-check-sources'), `${lang}: check sources button rendered`);
   }
+});
+
+/* =========================================================
+   5. N1 & N2 — Travel Workspace, Traffic Deduplication & 24h Clock Dial Tests
+   ========================================================= */
+test('N1: channelBreakdown, buildCountryCards, and buildHistorySeries enforce reference fees, sold_out vs unknown stock, and source switch markers', () => {
+  const tw = require('../public/travel-workspace');
+
+  // Channel fees: Market -5%, Bazaar 0%, NPC only when sellPrice > 0
+  const chNoNpc = tw.channelBreakdown(1000, 10000, 0);
+  assert.equal(chNoNpc.length, 2);
+  assert.equal(chNoNpc[0].id, 'market_tax');
+  assert.equal(chNoNpc[0].feeAmount, 500);
+  assert.equal(chNoNpc[0].netProfit, 8500);
+  assert.equal(chNoNpc[1].id, 'bazaar');
+  assert.equal(chNoNpc[1].netProfit, 9000);
+
+  const chWithNpc = tw.channelBreakdown(1000, 10000, 1200);
+  assert.equal(chWithNpc.length, 3);
+  assert.equal(chWithNpc[2].id, 'npc');
+  assert.equal(chWithNpc[2].netProfit, 200);
+
+  // Country cards: verified 0 -> sold_out, >30m -> stale, missing -> unknown
+  const nowSec = 1800000000;
+  const cards = tw.buildCountryCards([
+    { code: 'mex', name: 'Mexico', minutes: 26, update: nowSec - 120, source: 'YATA', items: [{ id: 258, name: 'Jaguar Plushie', type: 'Plushie', cost: 10000, market: 18000, profit: 8000, qty: 0, nextRestock: nowSec + 1800 }] },
+    { code: 'jap', name: 'Japan', minutes: 225, update: nowSec - 2400, source: 'Prometheus', items: [{ id: 206, name: 'Xanax', type: 'Drug', cost: 700000, market: 840000, profit: 140000, qty: 45 }] },
+  ], { nowSec, capacity: 10 });
+  const mex = cards.find((c) => c.code === 'mex');
+  const jap = cards.find((c) => c.code === 'jap');
+  const arg = cards.find((c) => c.code === 'arg');
+  assert.equal(mex.stockState, 'sold_out', 'verified 0 stock must be sold_out');
+  assert.equal(mex.stale, false);
+  assert.equal(jap.stockState, 'in_stock');
+  assert.equal(jap.stale, true, 'observation older than 30 min must be marked stale');
+  assert.equal(arg.stockState, 'unknown', 'unobserved country must be unknown');
+
+  // History series: restock events + source switch detection
+  const hist = tw.buildHistorySeries({
+    id: 206, name: 'Xanax', cost: 700000, market: 840000, profit: 140000, qty: 120, rate: 4, emptyAt: nowSec + 1800,
+    history: [
+      [nowSec - 3600, 10, 700000, 'YATA'],
+      [nowSec - 1800, 0, 700000, 'YATA'],
+      [nowSec - 900, 200, 700000, 'Prometheus'], // restock + source switch!
+      [nowSec - 300, 120, 700000, 'Prometheus'],
+    ],
+  }, { countryCode: 'jap', metric: 'forecast', windowHours: 6, nowSec });
+  assert.equal(hist.restockEvents.length, 1);
+  assert.equal(hist.sourceChanges.length, 1);
+  assert.equal(hist.sourceChanges[0].from, 'YATA');
+  assert.equal(hist.sourceChanges[0].to, 'Prometheus');
+  assert.ok(hist.forecastPoints.length >= 2);
+});
+
+test('N2: buildTrafficSnapshot deduplicates players, separates unknown route, and buildClockDial/evaluatePinnedPlan flag missed windows', () => {
+  const tw = require('../public/travel-workspace');
+  const t0 = 1800000000000;
+
+  // Duplicate entries for playerId 7 in the same snapshot must be counted only once
+  const snap1 = tw.buildTrafficSnapshot([
+    { playerId: 7, travelState: 'outbound', countryCode: 'jap' },
+    { playerId: 7, travelState: 'abroad', countryCode: 'jap' }, // duplicate player in same snapshot
+    { playerId: 8, travelState: 'abroad', countryCode: 'jap' },
+    { playerId: 9, travelState: 'unknown', countryCode: null },
+  ], t0 - 3600_000);
+  assert.equal(snap1.total.outbound, 1);
+  assert.equal(snap1.total.abroad, 1);
+  assert.equal(snap1.total.unknown, 1, 'unknown route counted separately');
+  assert.equal(snap1.byCountry.jap.outbound + snap1.byCountry.jap.abroad, 2);
+
+  // Single sample: periodDelta must be null
+  const sum1 = tw.summarizeTraffic([snap1], { countryCode: 'jap', windowHours: 6, nowMs: t0 });
+  assert.equal(sum1.periodDelta, null, 'periodDelta must be null when < 2 samples');
+
+  const snap2 = tw.buildTrafficSnapshot([
+    { playerId: 7, travelState: 'inbound', countryCode: 'jap' },
+    { playerId: 8, travelState: 'abroad', countryCode: 'jap' },
+    { playerId: 10, travelState: 'outbound', countryCode: 'jap' },
+  ], t0);
+  const sum2 = tw.summarizeTraffic([snap1, snap2], {
+    countryCode: 'jap',
+    windowHours: 6,
+    nowMs: t0,
+    restockEvents: [
+      { t: Math.floor((t0 - 1800_000) / 1000), source: 'YATA' },
+      { t: Math.floor((t0 - 1750_000) / 1000), source: 'YATA' }, // same 15m slot & source -> deduplicated!
+    ],
+  });
+  assert.equal(sum2.periodDelta, 1); // from 2 active to 3 active
+  assert.equal(sum2.restockCount, 1, 'duplicate restock in same quarter slot from same source must be counted once');
+
+  // 24h Clock Dial & Pinned Plan evaluation
+  const nowSec = Math.floor(1800000000 / 86400) * 86400 + 12 * 3600; // exact 12:00 TCT
+  const plan = {
+    nowSec,
+    stops: [
+      { key: 'mex:258', countryCode: 'mex', countryName: 'Mexico', itemId: 258, itemName: 'Jaguar Plushie', departAt: nowSec - 600, arriveAt: nowSec + 900, returnAt: nowSec + 2400, profit: 150000, carry: 100000, units: 15 },
+    ],
+  };
+  const dial = tw.buildClockDial(plan, { nowSec, selectedIndex: 0 });
+  assert.equal(dial.nowDeg, 180, '12:00 TCT must map to 180 deg on 24h dial');
+  assert.equal(dial.arcs.length, 1);
+  assert.equal(dial.arcs[0].selected, true);
+
+  const pinEval = tw.evaluatePinnedPlan(plan, [
+    { code: 'mex', update: nowSec - 60, items: [{ id: 258, qty: 0, nextRestock: null }] },
+  ], { nowSec });
+  assert.equal(pinEval.hasWarnings, true);
+  assert.ok(pinEval.stops[0].warnings.some((w) => w.code === 'missed_departure'));
+  assert.ok(pinEval.stops[0].warnings.some((w) => w.code === 'stock_depleted'));
+});
+
+/* =========================================================
+   6. N3 & N4 — Faction Member Series, No Synthetic Sub-Stat Split, Tenure Filter & Transfer Observation Windows
+   ========================================================= */
+test('N3 & N4: LRXFactionWorkspace never splits FFScouter total estimate into sub-stats, enforces same-source daily average, filters stats by tenure, and labels transfer observation intervals', () => {
+  const fw = require('../public/faction-workspace');
+  const nowMs = Date.UTC(2026, 10, 23, 12, 0, 0);
+
+  // Strict Rule: FFScouter total estimate must NEVER be synthetically split into STR/SPD/DEX/DEF
+  const ffSeriesSub = fw.buildMemberSeries([
+    { at: nowMs - 5 * 86400_000, source: 'ffscouter', verified: false, total: 50_000_000 },
+    { at: nowMs, source: 'ffscouter', verified: false, total: 52_000_000 },
+  ], { metric: 'battlestats', statKey: 'str', rangeKey: '30d', nowMs });
+  assert.equal(ffSeriesSub.totalOnlyRestricted, true, 'requesting STR on total-only estimate must return totalOnlyRestricted');
+  assert.equal(ffSeriesSub.points.length, 0, 'must never fabricate synthetic STR points from total estimate');
+
+  // Single-point series: no trend line, no daily average
+  const singlePt = fw.buildMemberSeries([
+    { at: nowMs, source: 'ffscouter', verified: false, total: 52_000_000 },
+  ], { metric: 'battlestats', statKey: 'total', rangeKey: '30d', nowMs });
+  assert.equal(singlePt.singlePoint, true);
+  assert.equal(singlePt.dailyAverage, null);
+
+  // Mixed-source series: dailyAverage is null and segments are split when source changes
+  const mixedSrc = fw.buildMemberSeries([
+    { at: nowMs - 3 * 86400_000, source: 'rank_estimate', verified: false, total: 40_000_000 },
+    { at: nowMs, source: 'ffscouter', verified: false, total: 52_000_000 },
+  ], { metric: 'battlestats', statKey: 'total', rangeKey: '30d', nowMs });
+  assert.equal(mixedSrc.dailyAverage, null, 'daily average must not be computed across different sources');
+  assert.equal(mixedSrc.segments.length, 2, 'source switch must split chart segments');
+
+  // N4 Tenure filter: new member (days=2 < 7d window) excluded from faction 7d totals and active rate denominator
+  const statsView = fw.buildFactionStatsView({
+    members: [
+      { id: 1, name: 'Veteran', level: 80, position: 'Member', days: 100 },
+      { id: 2, name: 'Newcomer', level: 60, position: 'Recruit', days: 2 },
+    ],
+    reportRows: [
+      { id: 1, activity: 3600, xanax: 14, gym: 8000, crimes: 100, oc: 2 },
+      { id: 2, activity: 7200, xanax: 20, gym: 12000, crimes: 200, oc: 1 },
+    ],
+    windowDays: 7,
+    tenureFilter: true,
+  });
+  assert.equal(statsView.activeRate.totalMembers, 2);
+  assert.equal(statsView.activeRate.excludedNewMembers, 1);
+  assert.equal(statsView.activeRate.denominator, 1);
+  assert.equal(statsView.totals.xanax, 14, 'new member prior-faction window stats must not inflate tenure-filtered faction total');
+
+  // N4 Transfers: observation interval [seenFrom, seenTo] explicitly recorded
+  const transfers = fw.detectRosterTransfers(
+    [{ id: 1, name: 'Stay' }, { id: 2, name: 'Leaver', level: 45, position: 'Member', days: 12 }],
+    [{ id: 1, name: 'Stay' }, { id: 3, name: 'Joiner', level: 50, position: 'Recruit', days: 0 }],
+    { prevObservedAt: '2026-11-23T11:50:00.000Z', currObservedAt: '2026-11-23T11:55:00.000Z', factionId: 500 },
+  );
+  assert.equal(transfers.length, 2);
+  const joined = transfers.find((t) => t.type === 'joined');
+  const left = transfers.find((t) => t.type === 'left');
+  assert.equal(joined.playerId, 3);
+  assert.deepEqual(joined.observation_interval, { seenFrom: '2026-11-23T11:50:00.000Z', seenTo: '2026-11-23T11:55:00.000Z' });
+  assert.equal(left.playerId, 2);
 });

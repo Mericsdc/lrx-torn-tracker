@@ -27,7 +27,7 @@
   const fac = {
     tab: lsGet('tt.fac.tab', 'oc'),
     scopeKey: '',
-    facSeq: 0, actSeq: 0, repSeq: 0, armSeq: 0, chSeq: 0, upgSeq: 0,
+    facSeq: 0, actSeq: 0, repSeq: 0, armSeq: 0, chSeq: 0, upgSeq: 0, wsSeq: 0, memberSeq: 0,
     d: null, err: null,
     rep: null, repErr: null, repTimer: null, repDays: Number(lsGet('tt.fac.repDays', '7')) === 30 ? 30 : 7,
     act: null, actErr: null, actQ: '', actFilter: 'all', actSort: 'last', cmpA: 0, cmpB: 0,
@@ -35,6 +35,17 @@
     arm: null, armErr: null, armCat: 'all', armQ: '',
     ch: null, chErr: null,
     upg: null, upgErr: null, upgSel: null, upgRespectOverride: null, upgBranch: 'all',
+    ws: null, wsErr: null, wsDays: [7, 30, 90].includes(Number(lsGet('tt.fac.wsDays', '7'))) ? Number(lsGet('tt.fac.wsDays', '7')) : 7,
+    wsTenure: lsGet('tt.fac.wsTenure', '1') !== '0',
+    wsMetric: lsGet('tt.fac.wsMetric', 'activity'),
+    memQ: '', memFilter: 'all', memSort: 'last',
+    memCols: new Set((() => { const l = typeof lsList === 'function' ? lsList('tt.fac.memCols') : []; return l.length ? l : ['battlestats', 'oc', 'activity7d', 'xanax7d', 'gym7d']; })()),
+    openMemberId: 0,
+    memMetric: lsGet('tt.fac.memMetric', 'battlestats'),
+    memStat: lsGet('tt.fac.memStat', 'total'),
+    memMode: lsGet('tt.fac.memMode', 'value') === 'gain' ? 'gain' : 'value',
+    memRange: lsGet('tt.fac.memRange', '30d'),
+    memberSeries: null,
   };
 
   function currentScopeKey() {
@@ -50,7 +61,8 @@
       fac.arm = null; fac.armErr = null;
       fac.ch = null; fac.chErr = null;
       fac.upg = null; fac.upgErr = null; fac.upgSel = null;
-      fac.facSeq++; fac.actSeq++; fac.repSeq++; fac.armSeq++; fac.chSeq++; fac.upgSeq++;
+      fac.ws = null; fac.wsErr = null; fac.openMemberId = 0; fac.memberSeries = null;
+      fac.facSeq++; fac.actSeq++; fac.repSeq++; fac.armSeq++; fac.chSeq++; fac.upgSeq++; fac.wsSeq++; fac.memberSeq++;
     }
     if (k !== '0:0') fac.scopeKey = k;
   }
@@ -92,8 +104,15 @@
 
   function visibleTabs() {
     const out = [['oc', '🕵️', tr('OC & Özet', 'OC & Overview')]];
+    if (feat('faction.members')) out.push(['members', '👥', tr('Üyeler', 'Members')]);
     if (feat('faction.activity')) out.push(['activity', '📊', tr('Aktivite', 'Activity')]);
     if (feat('faction.travelRadar')) out.push(['radar', '🛰️', tr('Travel Radar', 'Travel Radar')]);
+    if (feat('faction.stats')) out.push(['stats', '📈', tr('Stats', 'Stats')]);
+    if (feat('faction.gym')) out.push(['gym', '🏋️', tr('Faction Gym', 'Faction Gym')]);
+    if (feat('faction.bank')) out.push(['bank', '🏦', tr('Banka', 'Bank')]);
+    if (feat('faction.recruitment')) out.push(['recruitment', '📋', tr('Başvurular', 'Recruitment')]);
+    if (feat('faction.transfers')) out.push(['transfers', '⇄', tr('Transfers', 'Transfers')]);
+    if (feat('faction.alliance')) out.push(['alliance', '🤝', tr('Alliance & Graffiti', 'Alliance & Graffiti')]);
     if (feat('faction.armory')) out.push(['armory', '🧰', tr('Armory', 'Armory')]);
     if (feat('faction.chains')) out.push(['chains', '⛓', tr('Chain', 'Chains')]);
     if (feat('faction.upgrades')) out.push(['upgrades', '🌳', tr('Yükseltmeler', 'Upgrades')]);
@@ -154,6 +173,39 @@
     }
     return fac.act;
   }
+  async function fetchWorkspace(force = false, section = 'all') {
+    syncScope();
+    const seq = ++fac.wsSeq;
+    const qs = [`days=${fac.wsDays}`, `tenure=${fac.wsTenure ? 'tenure' : 'all'}`, `section=${encodeURIComponent(section)}`];
+    if (force) qs.push('force=1');
+    try {
+      const res = await api(`/api/faction/workspace?${qs.join('&')}`);
+      if (seq !== fac.wsSeq) return fac.ws;
+      fac.ws = res; fac.wsErr = null;
+    } catch (e) {
+      if (seq !== fac.wsSeq) return fac.ws;
+      fac.wsErr = e;
+      if (e?.status === 401 || e?.status === 403 || e?.code === 'NO_KEY' || e?.code === 'KEY_ACCESS') fac.ws = null;
+    }
+    return fac.ws;
+  }
+  async function fetchMemberSeries(playerId) {
+    const pid = Number(playerId);
+    if (!pid) return;
+    const seq = ++fac.memberSeq;
+    fac.memberSeries = { loading: true, playerId: pid, metric: fac.memMetric, mode: fac.memMode, range: fac.memRange, stat: fac.memStat, data: null, error: null };
+    render();
+    try {
+      const qs = `metric=${encodeURIComponent(fac.memMetric)}&mode=${encodeURIComponent(fac.memMode)}&range=${encodeURIComponent(fac.memRange)}&stat=${encodeURIComponent(fac.memStat)}`;
+      const res = await api(`/api/faction/members/${pid}/series?${qs}`);
+      if (seq !== fac.memberSeq || fac.openMemberId !== pid) return;
+      fac.memberSeries = { loading: false, playerId: pid, metric: fac.memMetric, mode: fac.memMode, range: fac.memRange, stat: fac.memStat, data: res, error: null };
+    } catch (e) {
+      if (seq !== fac.memberSeq || fac.openMemberId !== pid) return;
+      fac.memberSeries = { loading: false, playerId: pid, metric: fac.memMetric, mode: fac.memMode, range: fac.memRange, stat: fac.memStat, data: null, error: e };
+    }
+    render();
+  }
   async function fetchArmory(force = false) {
     syncScope();
     const seq = ++fac.armSeq;
@@ -194,8 +246,20 @@
     }
     return fac.upg;
   }
+  const WS_TABS = new Set(['members', 'stats', 'gym', 'bank', 'recruitment', 'transfers', 'alliance']);
   async function loadTabData(tab, force = false) {
     if ((tab === 'activity' || tab === 'radar') && (force || !fac.act)) { await fetchActivity(force); render(); }
+    else if (WS_TABS.has(tab)) {
+      const needBank = tab === 'bank' && (!fac.ws || fac.ws.bank?.status === 'idle');
+      const needRec = tab === 'recruitment' && (!fac.ws || fac.ws.recruitment?.status === 'idle');
+      if (force || !fac.ws || needBank || needRec) {
+        await fetchWorkspace(force, tab);
+        render();
+      }
+      if (tab === 'members' && fac.openMemberId && (!fac.memberSeries || fac.memberSeries.playerId !== fac.openMemberId)) {
+        await fetchMemberSeries(fac.openMemberId);
+      }
+    }
     else if (tab === 'armory' && (force || !fac.arm)) { await fetchArmory(force); render(); }
     else if (tab === 'chains' && (force || !fac.ch)) { await fetchChains(force); render(); }
     else if (tab === 'upgrades' && (force || !fac.upg)) { await fetchUpgrades(force); render(); }
@@ -1068,6 +1132,596 @@
     }
   }
 
+  /* ---------- N3: Faction Üyeler Tablosu + Satır İçi Çekmece + Kişisel Grafikler ---------- */
+  function renderMemberSeriesSvg(ser) {
+    if (!ser) return '';
+    if (ser.metric === 'travel') {
+      const trs = Array.isArray(ser.transitions) ? ser.transitions : [];
+      if (!trs.length) {
+        return `<div class="sub-text">${tr('Bu üye için henüz kaydedilmiş seyahat geçişi yok. Travel Radar açıkken geçişler otomatik birikir.', 'No travel transitions recorded for this member yet. Transitions accumulate automatically while Travel Radar runs.')}</div>`;
+      }
+      return `<div class="tbl-wrap"><table class="tbl compact">
+        <thead><tr>
+          <th>${tr('Gözlem Aralığı (TCT)', 'Observation Window (TCT)')}</th>
+          <th>${tr('Geçiş', 'Transition')}</th>
+          <th>${tr('Rota / Ülke', 'Route / Country')}</th>
+        </tr></thead>
+        <tbody>
+          ${trs.slice(0, 12).map((t) => `<tr>
+            <td class="mono">${isoHm(t.seenFrom)} → ${isoHm(t.seenTo)} TCT</td>
+            <td><span class="chip blue">${esc(t.fromState || '—')} → ${esc(t.toState || '—')}</span></td>
+            <td>${esc(t.country || t.countryCode || 'Torn')}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>`;
+    }
+
+    if (ser.totalOnlyRestricted) {
+      return `<div class="alert warn">${tr(ser.notice[0], ser.notice[1])}</div>`;
+    }
+    const pts = Array.isArray(ser.points) ? ser.points : [];
+    if (!pts.length) {
+      return `<div class="sub-text">${tr('Bu metrik ve tarih aralığı için henüz veri noktası birikmedi.', 'No data points collected for this metric and date range yet.')}</div>`;
+    }
+    if (ser.singlePoint) {
+      const p0 = pts[0];
+      return `<div class="fac-single-pt">
+        <div class="fac-single-val mono">${n0(p0.rawValue ?? p0.value)}</div>
+        <div class="sub-text">${esc(tr(ser.notice[0], ser.notice[1]))} · ${tr('Kaynak', 'Source')}: <b>${esc(p0.source)}</b> · ${isoHm(p0.observedAt)} TCT</div>
+      </div>`;
+    }
+
+    const W = 640, H = 155, padL = 52, padR = 14, padT = 14, padB = 24;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const minT = pts[0].at, maxT = Math.max(minT + 1, pts[pts.length - 1].at);
+    const vals = pts.map((p) => Number(p.value) || 0);
+    const minV = Math.min(...vals, ser.mode === 'gain' ? 0 : Infinity);
+    const maxV = Math.max(...vals, minV + 1);
+    const spanV = Math.max(1, maxV - minV);
+    const xOf = (ms) => padL + ((ms - minT) / (maxT - minT)) * plotW;
+    const yOf = (v) => padT + plotH - ((v - minV) / spanV) * plotH;
+
+    const segPaths = (ser.segments || []).map((seg) => {
+      if (seg.length < 2) return '';
+      const d = seg.map((p, idx) => `${idx === 0 ? 'M' : 'L'}${xOf(p.at).toFixed(1)},${yOf(p.value).toFixed(1)}`).join(' ');
+      return `<path d="${d}" class="fac-ser-line" fill="none"/>`;
+    }).join('');
+
+    const dots = pts.slice(-36).map((p) => {
+      const x = xOf(p.at).toFixed(1), y = yOf(p.value).toFixed(1);
+      const tip = `${p.source} · ${new Date(p.at).toISOString().slice(0, 10)} · ${n0(p.value)}`;
+      return `<circle cx="${x}" cy="${y}" r="3" tabindex="0" class="fac-ser-dot" aria-label="${esc(tip)}"><title>${esc(tip)}</title></circle>`;
+    }).join('');
+
+    return `<svg class="fac-ser-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${tr('Üye kişisel gelişim grafiği', 'Member personal progression chart')}">
+      <line x1="${padL}" y1="${padT}" x2="${padL + plotW}" y2="${padT}" class="fac-step-grid"/>
+      <line x1="${padL}" y1="${padT + plotH}" x2="${padL + plotW}" y2="${padT + plotH}" class="fac-step-grid"/>
+      <text x="${padL - 6}" y="${padT + 4}" text-anchor="end" class="fac-step-lbl">${n0(maxV)}</text>
+      <text x="${padL - 6}" y="${padT + plotH}" text-anchor="end" class="fac-step-lbl">${n0(minV)}</text>
+      <text x="${padL}" y="${H - 5}" class="fac-step-lbl">${new Date(minT).toISOString().slice(0, 10)}</text>
+      <text x="${padL + plotW}" y="${H - 5}" text-anchor="end" class="fac-step-lbl">${new Date(maxT).toISOString().slice(0, 10)}</text>
+      ${segPaths}
+      ${dots}
+    </svg>`;
+  }
+
+  function renderMemberDrawer(row) {
+    const ms = fac.memberSeries && fac.memberSeries.playerId === row.playerId ? fac.memberSeries : null;
+    const ser = ms?.data || null;
+    const bs = row.battleStats || {};
+    const bsBadgeClass = bs.badge === 'verified' ? 'green' : bs.badge === 'estimate' ? 'blue' : 'dim';
+    const subStats = fac.memMetric === 'battlestats'
+      ? [['total', 'Total'], ['str', 'STR'], ['spd', 'SPD'], ['dex', 'DEX'], ['def', 'DEF']]
+      : fac.memMetric === 'activity'
+        ? [['timeplayed', tr('Oynama (dk)', 'Time (min)')], ['xanax', 'Xanax'], ['crimes', tr('Suç', 'Crimes')], ['oc', 'OC']]
+        : [];
+
+    return `<div class="fac-drawer" data-drawer-player="${row.playerId}">
+      <div class="fac-drawer-head">
+        <div>
+          <h4>${esc(row.name)} <small class="muted">#${row.playerId} · Lv ${row.level} · ${esc(row.position)} · ${row.days} ${tr('gün', 'days')}</small></h4>
+          <span class="sub-text">
+            <span class="chip ${bsBadgeClass}">${esc(tr(bs.label?.[0] || 'Geçmiş birikiyor', bs.label?.[1] || 'Accumulating history'))}</span>
+            ${bs.total != null ? ` · ${tr('Toplam BS', 'Total BS')}: <b class="mono">${n0(bs.total)}</b>` : ''}
+            ${bs.totalOnly ? ` · <span class="muted">${tr('Alt statlar (STR/SPD/DEX/DEF) tahminden bölünmez', 'Sub-stats are never split from an estimate')}</span>` : ''}
+          </span>
+        </div>
+        <div class="fac-drawer-actions">
+          <a class="btn sm ghost" href="${profile(row.playerId)}">↗ ${tr('Torn Profili', 'Torn Profile')}</a>
+          <button type="button" class="btn sm ghost" data-fac-close-drawer="${row.playerId}">✕ ${tr('Kapat', 'Close')}</button>
+        </div>
+      </div>
+      <div class="fac-drawer-controls">
+        <div class="btn-group" role="tablist">
+          ${[['battlestats', '⚔ Battle Stats', '⚔ Battle Stats'], ['activity', '📊 Aktivite', '📊 Activity'], ['contribution', '🏋️ Gym Katkısı', '🏋️ Gym Contribution'], ['travel', '✈ Seyahat Geçişleri', '✈ Travel Transitions']].map(([k, trL, enL]) => `<button type="button" class="pill sm ${fac.memMetric === k ? 'active' : ''}" data-mem-metric="${k}">${tr(trL, enL)}</button>`).join('')}
+        </div>
+        ${subStats.length ? `<div class="btn-group">
+          ${subStats.map(([k, lbl]) => `<button type="button" class="pill sm ${fac.memStat === k ? 'active' : ''}" data-mem-stat="${k}">${lbl}</button>`).join('')}
+        </div>` : ''}
+        ${fac.memMetric !== 'travel' ? `
+          <div class="btn-group">
+            <button type="button" class="pill sm ${fac.memMode === 'value' ? 'active' : ''}" data-mem-mode="value">${tr('Değer', 'Value')}</button>
+            <button type="button" class="pill sm ${fac.memMode === 'gain' ? 'active' : ''}" data-mem-mode="gain">${tr('Artış', 'Gain')}</button>
+          </div>
+          <div class="btn-group">
+            ${[['7d', '7g', '7d'], ['30d', '30g', '30d'], ['90d', '90g', '90d'], ['6m', '6a', '6m'], ['1y', '1y', '1y'], ['2y', '2y', '2y'], ['all', 'Tümü', 'All']].map(([k, trL, enL]) => `<button type="button" class="pill sm ${fac.memRange === k ? 'active' : ''}" data-mem-range="${k}">${tr(trL, enL)}</button>`).join('')}
+          </div>` : ''}
+      </div>
+      ${ms?.loading ? loadingBox() : ms?.error ? errorBox(ms.error) : ser ? `
+        ${ser.metric !== 'travel' ? `<div class="fac-drawer-kpis">
+          <span class="chip">${tr('Son değer', 'Latest')}: <b class="mono">${ser.latestValue != null ? n0(ser.latestValue) : '—'}</b></span>
+          <span class="chip">${tr('Dönem değişimi', 'Period change')}: <b class="mono ${(ser.totalGain || 0) >= 0 ? 'pos' : 'neg'}">${ser.totalGain != null ? `${ser.totalGain >= 0 ? '+' : ''}${n0(ser.totalGain)}` : '—'}</b></span>
+          <span class="chip" title="${tr('Yalnızca aynı kaynaktan karşılaştırılabilir iki nokta ve gerçek süre farkı varsa hesaplanır', 'Calculated only between two comparable points from the same source and real elapsed time')}">${tr('Günlük ort.', 'Daily avg')}: <b class="mono">${ser.dailyAverage != null ? `${ser.dailyAverage >= 0 ? '+' : ''}${n0(Math.round(ser.dailyAverage))}/g` : '—'}</b></span>
+          <span class="chip dim">${tr('Nokta / Segment', 'Points / Segments')}: <b class="mono">${ser.points?.length || 0} / ${ser.segments?.length || 0}</b></span>
+        </div>` : ''}
+        ${renderMemberSeriesSvg(ser)}
+      ` : ''}
+    </div>`;
+  }
+
+  function renderMembersTab() {
+    if (!fac.ws) return fac.wsErr ? errorBox(fac.wsErr) : loadingBox();
+    const mt = fac.ws.membersTable || { rows: [], columns: [] };
+    const cols = fac.memCols;
+    const q = fac.memQ.trim().toLowerCase();
+    let list = (mt.rows || []).filter((m) => {
+      if (q && !m.name.toLowerCase().includes(q) && !m.position.toLowerCase().includes(q) && !String(m.playerId).includes(q)) return false;
+      if (fac.memFilter === 'online' && m.activityStatus !== 'online') return false;
+      if (fac.memFilter === 'idle' && m.activityStatus !== 'idle') return false;
+      if (fac.memFilter === 'offline' && m.activityStatus !== 'offline') return false;
+      if (fac.memFilter === 'away' && m.gameState === 'Okay') return false;
+      return true;
+    });
+    const sorters = {
+      last: (a, b) => b.lastActionTs - a.lastActionTs,
+      level: (a, b) => b.level - a.level || b.days - a.days,
+      days: (a, b) => b.days - a.days || b.level - a.level,
+      bs: (a, b) => (b.battleStats?.total || 0) - (a.battleStats?.total || 0),
+      activity: (a, b) => (b.activity7d || 0) - (a.activity7d || 0),
+    };
+    list.sort(sorters[fac.memSort] || sorters.last);
+
+    const optCols = [
+      ['battlestats', tr('Battle Stats', 'Battle Stats')],
+      ['oc', 'OC'],
+      ['activity7d', tr('7g Aktivite', '7d Activity')],
+      ['xanax7d', tr('7g Xanax', '7d Xanax')],
+      ['gym7d', tr('7g Gym', '7d Gym')],
+    ];
+    const colCount = 7 + optCols.filter(([k]) => cols.has(k)).length;
+
+    const renderRestrictedOrVal = (field, fmt = n0) => {
+      if (!field) return '<span class="muted">—</span>';
+      if (field.status !== 'ok') {
+        const cls = field.status === 'permission_required' ? 'warn' : 'dim';
+        return `<span class="chip ${cls}">${esc(tr(field.label[0], field.label[1]))}</span>`;
+      }
+      return `<span class="mono">${fmt(field.value)}</span>`;
+    };
+
+    return `<article class="glass card">
+      ${renderFreshnessBar(fac.ws, 'fac-ws-refresh', false)}
+      <div class="card-head wrap">
+        <div>
+          <h3>👥 ${tr('Faction Üyeleri & Kişisel Grafikler', 'Faction Members & Personal Charts')} <span class="chip">${list.length}/${mt.rows?.length || 0}</span></h3>
+          <span class="muted">${tr('Paylaşılan roster önbelleğinden sıfır ek üye sorgusuyla yüklenir · Satıra tıklayarak veya Enter/Space ile kişisel grafik çekmecesini aç', 'Loaded from shared roster cache with zero extra per-member queries · Click any row or press Enter/Space to open personal charts')}</span>
+        </div>
+        <div class="fac-col-picker">
+          <span class="muted">${tr('Sütunlar:', 'Columns:')}</span>
+          ${optCols.map(([k, lbl]) => `<button type="button" class="pill sm ${cols.has(k) ? 'active' : ''}" data-fac-mcol="${k}">${lbl}</button>`).join('')}
+        </div>
+      </div>
+      <div class="fac-toolbar">
+        <input class="input sm" id="fac-mem-q" placeholder="${tr('Üye, pozisyon veya ID ara…', 'Search member, position or ID…')}" value="${esc(fac.memQ)}">
+        <div class="btn-group">
+          ${[['all', tr('Tümü', 'All')], ['online', tr('Çevrimiçi', 'Online')], ['idle', tr('Beklemede', 'Idle')], ['offline', tr('Çevrimdışı', 'Offline')], ['away', tr('Uzaktakiler', 'Away')]].map(([k, lbl]) => `<button type="button" class="btn sm ghost${fac.memFilter === k ? ' active' : ''}" data-fac-mf="${k}">${lbl}</button>`).join('')}
+        </div>
+        <select id="fac-mem-sort">
+          <option value="last"${fac.memSort === 'last' ? ' selected' : ''}>${tr('Son görülme', 'Last seen')}</option>
+          <option value="level"${fac.memSort === 'level' ? ' selected' : ''}>${tr('Seviye', 'Level')}</option>
+          <option value="days"${fac.memSort === 'days' ? ' selected' : ''}>${tr('Faction günü', 'Days in faction')}</option>
+          <option value="bs"${fac.memSort === 'bs' ? ' selected' : ''}>Battle Stats</option>
+          <option value="activity"${fac.memSort === 'activity' ? ' selected' : ''}>${tr('7g Aktivite', '7d Activity')}</option>
+        </select>
+      </div>
+      <div class="tbl-wrap"><table class="tbl compact fac-mem-tbl">
+        <thead><tr>
+          <th></th>
+          <th>${tr('Üye', 'Member')}</th>
+          <th class="num">Lv</th>
+          <th>${tr('Pozisyon', 'Position')}</th>
+          <th class="num">${tr('Gün', 'Days')}</th>
+          <th>${tr('Durum & Seyahat', 'Status & Travel')}</th>
+          <th class="num">${tr('Son Görülme', 'Last Seen')}</th>
+          ${cols.has('battlestats') ? `<th class="num">Battle Stats</th>` : ''}
+          ${cols.has('oc') ? `<th>OC</th>` : ''}
+          ${cols.has('activity7d') ? `<th class="num">${tr('7g Süre', '7d Time')}</th>` : ''}
+          ${cols.has('xanax7d') ? `<th class="num">7g Xanax</th>` : ''}
+          ${cols.has('gym7d') ? `<th class="num">7g Gym E</th>` : ''}
+        </tr></thead>
+        <tbody>
+          ${list.map((m) => {
+            const isOpen = fac.openMemberId === m.playerId;
+            const dotCls = m.activityStatus === 'online' ? 'pos' : m.activityStatus === 'idle' ? 'warn' : 'muted';
+            const bs = m.battleStats || {};
+            const bsCell = bs.total != null
+              ? `<span class="mono">${n0(bs.total)}</span> <span class="chip ${bs.badge === 'verified' ? 'green' : 'blue'}">${bs.badge === 'verified' ? '✓' : '~'}</span>`
+              : `<span class="chip dim">${esc(tr(bs.label?.[0] || 'Birikiyor', bs.label?.[1] || 'Accumulating'))}</span>`;
+            const travelTag = m.travel?.country
+              ? ` · <span class="chip blue">✈ ${esc(m.travel.country)}${m.travel.etaSec != null ? ` (${hms(m.travel.etaSec)})` : ''}</span>`
+              : '';
+            const mainTr = `<tr class="fac-mem-row ${isOpen ? 'is-open' : ''}" data-fac-member-row="${m.playerId}" tabindex="0" role="button" aria-expanded="${isOpen}">
+              <td class="fac-exp-cell"><button type="button" class="btn sm ghost fac-exp-btn" data-fac-member-btn="${m.playerId}" aria-expanded="${isOpen}" aria-label="${esc(m.name)}">${isOpen ? '▾' : '▸'}</button></td>
+              <td><span class="${dotCls}">●</span> <b>${esc(m.name)}</b> <a class="fac-prof-ext" href="${profile(m.playerId)}" title="${tr('Torn profilini aç', 'Open Torn profile')}">↗</a></td>
+              <td class="num mono">${m.level}</td>
+              <td>${esc(m.position)}</td>
+              <td class="num mono">${m.days}</td>
+              <td><span class="chip ${m.gameState === 'Okay' ? 'green' : m.gameState === 'Hospital' ? 'danger' : 'warn'}">${stateText(m.gameState)}</span>${travelTag}</td>
+              <td class="num muted">${esc(m.lastActionRel || '—')}</td>
+              ${cols.has('battlestats') ? `<td class="num">${bsCell}</td>` : ''}
+              ${cols.has('oc') ? `<td>${m.inOc ? `<span class="chip green">OC</span>` : `<span class="muted">—</span>`}</td>` : ''}
+              ${cols.has('activity7d') ? `<td class="num">${renderRestrictedOrVal(m.restricted?.activity, hms)}</td>` : ''}
+              ${cols.has('xanax7d') ? `<td class="num">${renderRestrictedOrVal(m.restricted?.xanax, n0)}</td>` : ''}
+              ${cols.has('gym7d') ? `<td class="num">${renderRestrictedOrVal(m.restricted?.gym, n0)}</td>` : ''}
+            </tr>`;
+            const drawerTr = isOpen ? `<tr class="fac-drawer-tr"><td colspan="${colCount}">${renderMemberDrawer(m)}</td></tr>` : '';
+            return mainTr + drawerTr;
+          }).join('')}
+        </tbody>
+      </table></div>
+    </article>`;
+  }
+
+  /* ---------- N4: Stats, Faction Gym, Banka, Recruitment, Transfers, Alliance & Graffiti ---------- */
+  function renderWorkspaceStatusBar(sourceLabelTr, sourceLabelEn) {
+    const a = fac.d?.access || {};
+    const role = a.role ? tr(...ROLE_TR[a.role]) : a.allowed ? tr('Yetkili', 'Officer') : tr('Üye', 'Member');
+    const age = fac.ws?.freshness?.ageSec != null ? ageText(fac.ws.freshness.ageSec) : '—';
+    return `<div class="fac-ws-status">
+      <span><b>${tr('Kaynak', 'Source')}:</b> ${tr(sourceLabelTr, sourceLabelEn)}</span>
+      <span><b>${tr('Veri yaşı', 'Data age')}:</b> ${age}</span>
+      <span><b>${tr('Rol', 'Role')}:</b> ${role}</span>
+      <button type="button" class="btn sm ghost" id="fac-ws-refresh">⟳ ${tr('Yenile', 'Refresh')}</button>
+    </div>`;
+  }
+
+  function renderStatsTab() {
+    if (!fac.ws) return fac.wsErr ? errorBox(fac.wsErr) : loadingBox();
+    const sv = fac.ws.statsView || {};
+    const ar = sv.activeRate || {};
+    const metric = fac.wsMetric || 'activity';
+    const rows = [...(sv.rows || [])].filter((r) => !fac.wsTenure || r.tenureEligible);
+    rows.sort((a, b) => (Number(b[metric]) || -1) - (Number(a[metric]) || -1));
+
+    return `<article class="glass card">
+      ${renderWorkspaceStatusBar('Torn API personalstats + roster önbelleği', 'Torn API personalstats + roster cache')}
+      <div class="card-head wrap">
+        <div>
+          <h3>📈 ${tr('Faction Stats & Dönem Değişimi', 'Faction Stats & Period Deltas')}</h3>
+          <span class="muted">${tr('Yeni katılan üyelerin önceki faction toplamları, üyelik süresi filtresi açıkken bu faction dönem artışına yazılmaz', 'Prior-faction totals of newly joined members are excluded from period gains when the tenure filter is active')}</span>
+        </div>
+        <div class="fac-drawer-controls">
+          <div class="btn-group">
+            ${[7, 30, 90].map((d) => `<button type="button" class="pill sm ${fac.wsDays === d ? 'active' : ''}" data-fac-ws-days="${d}">${d}${tr('g', 'd')}</button>`).join('')}
+          </div>
+          <button type="button" class="pill sm ${fac.wsTenure ? 'active' : ''}" id="fac-ws-tenure">
+            🛡 ${fac.wsTenure ? tr(`Üyelik ≥ ${fac.wsDays}g filtresi açık`, `Tenure ≥ ${fac.wsDays}d filter ON`) : tr('Tüm üyeler (filtre kapalı)', 'All members (filter OFF)')}
+          </button>
+          <button type="button" class="btn sm ghost" id="fac-rep-refresh">⟳ ${tr('Snapshot Topla', 'Collect Snapshots')}</button>
+        </div>
+      </div>
+      <div class="grid kpis">
+        <div class="glass kpi">
+          <div class="label">${tr('Aktiflik Oranı', 'Active Rate')} (${sv.windowDays || fac.wsDays}${tr('g', 'd')})</div>
+          <div class="value tq">${ar.pct != null ? `%${ar.pct}` : '—'}</div>
+          <div class="hint">${tr('Payda', 'Denominator')}: <b>${ar.numerator || 0} / ${ar.denominator || 0}</b> ${tr('ölçülen', 'measured')} (${tr('Toplam', 'Total')}: ${ar.totalMembers || 0}${ar.excludedNewMembers ? `, ${ar.excludedNewMembers} ${tr('yeni üye hariç', 'new excluded')}` : ''})</div>
+        </div>
+        <div class="glass kpi">
+          <div class="label">${tr('Toplam Oynama Süresi', 'Total Time Played')}</div>
+          <div class="value mono">${hms(sv.totals?.activity || 0)}</div>
+          <div class="hint">${sv.range?.from ? `${dayLabel(sv.range.from)} → ${dayLabel(sv.range.to)}` : tr('Snapshot bekleniyor', 'Waiting for snapshots')}</div>
+        </div>
+        <div class="glass kpi">
+          <div class="label">${tr('Toplam Xanax / Gym E', 'Total Xanax / Gym E')}</div>
+          <div class="value mono">${n0(sv.totals?.xanax || 0)} <small class="muted">/ ${n0(sv.totals?.gym || 0)}</small></div>
+          <div class="hint">${tr('Suç', 'Crimes')}: ${n0(sv.totals?.crimes || 0)} · OC: ${n0(sv.totals?.oc || 0)}</div>
+        </div>
+      </div>
+      <div class="fac-toolbar">
+        <span class="muted">${tr('Sıralama metriği:', 'Sort metric:')}</span>
+        <div class="btn-group">
+          ${[['activity', tr('Aktivite', 'Activity')], ['xanax', 'Xanax'], ['gym', 'Gym E'], ['crimes', tr('Suç', 'Crimes')], ['oc', 'OC']].map(([k, lbl]) => `<button type="button" class="pill sm ${metric === k ? 'active' : ''}" data-fac-ws-metric="${k}">${lbl}</button>`).join('')}
+        </div>
+      </div>
+      <div class="tbl-wrap"><table class="tbl compact">
+        <thead><tr>
+          <th>#</th>
+          <th>${tr('Üye (Tıkla → Kişisel Grafik)', 'Member (Click → Personal Chart)')}</th>
+          <th class="num">Lv</th>
+          <th class="num">${tr('Üyelik Günü', 'Tenure Days')}</th>
+          <th class="num">${tr('Oynama Süresi', 'Time Played')}</th>
+          <th class="num">Xanax</th>
+          <th class="num">Gym E</th>
+          <th class="num">${tr('Suç', 'Crimes')}</th>
+          <th class="num">OC</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map((r, i) => `<tr class="fac-stats-row" data-open-member="${r.id}" tabindex="0" role="button">
+            <td class="mono muted">${i + 1}</td>
+            <td><b>${esc(r.name)}</b> <a class="fac-prof-ext" href="${profile(r.id)}">↗</a></td>
+            <td class="num mono">${r.level}</td>
+            <td class="num mono">${r.days}</td>
+            <td class="num mono">${r.activity != null ? hms(r.activity) : '—'}</td>
+            <td class="num mono">${r.xanax != null ? n0(r.xanax) : '—'}</td>
+            <td class="num mono">${r.gym != null ? n0(r.gym) : '—'}</td>
+            <td class="num mono">${r.crimes != null ? n0(r.crimes) : '—'}</td>
+            <td class="num mono">${r.oc != null ? n0(r.oc) : '—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </article>`;
+  }
+
+  function renderGymTab() {
+    if (!fac.ws) return fac.wsErr ? errorBox(fac.wsErr) : loadingBox();
+    const gv = fac.ws.gymView || {};
+    const rows = gv.rows || [];
+    return `<article class="glass card">
+      ${renderWorkspaceStatusBar('Torn API v2/faction/contributors (stat=gymenergy)', 'Torn API v2/faction/contributors (stat=gymenergy)')}
+      <div class="card-head wrap">
+        <div>
+          <h3>🏋️ ${tr('Faction Gym Enerjisi Katkısı', 'Faction Gym Energy Contribution')}</h3>
+          <span class="muted">${gv.from && gv.to ? `${dayLabel(gv.from)} → ${dayLabel(gv.to)} (${gv.actualDays} ${tr('gün', 'days')})` : tr('Doğrulanmış contributors anlık görüntüsü', 'Verified contributors snapshot')}</span>
+        </div>
+        <div class="btn-group">
+          ${[7, 30, 90].map((d) => `<button type="button" class="pill sm ${fac.wsDays === d ? 'active' : ''}" data-fac-ws-days="${d}">${d}${tr('g', 'd')}</button>`).join('')}
+        </div>
+      </div>
+      <div class="grid kpis">
+        ${kpi(tr('Toplam Dönem Gym E', 'Total Period Gym E'), n0(gv.totalGain || 0), `${gv.contributorCount || 0} ${tr('katkı yapan üye', 'contributing members')}`, 'tq-text')}
+        ${kpi(tr('Mevcut Toplam Havuz', 'Current Total Pool'), n0(gv.totalCurrent || 0), tr('Doğrulanmış contributors toplamı', 'Verified contributors sum'))}
+      </div>
+      ${rows.length ? `<div class="tbl-wrap"><table class="tbl compact">
+        <thead><tr>
+          <th>#</th>
+          <th>${tr('Üye', 'Member')}</th>
+          <th>${tr('Pozisyon', 'Position')}</th>
+          <th class="num">${tr('Dönem Artışı', 'Period Gain')}</th>
+          <th class="num">${tr('Toplam Katkı', 'Total Contribution')}</th>
+          <th class="num">${tr('Pay %', 'Share %')}</th>
+        </tr></thead>
+        <tbody>
+          ${rows.slice(0, 100).map((r, idx) => `<tr class="fac-stats-row" data-open-member="${r.playerId}" data-open-metric="contribution" tabindex="0" role="button">
+            <td class="mono muted">${idx + 1}</td>
+            <td><b>${esc(r.name)}</b> <a class="fac-prof-ext" href="${profile(r.playerId)}">↗</a></td>
+            <td>${esc(r.position)}</td>
+            <td class="num mono pos">${r.periodGain != null ? `+${n0(r.periodGain)}` : '—'}</td>
+            <td class="num mono">${r.currentTotal != null ? n0(r.currentTotal) : '—'}</td>
+            <td class="num mono">%${r.sharePct}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>` : emptyBox(tr('Henüz Gym katkısı kaydı yok', 'No Gym contribution records yet'), tr('OC & Özet veya Stats sekmesinden Snapshot Topla düğmesine basarak ilk kaydı oluşturabilirsin.', 'Click Collect Snapshots on OC & Overview or Stats tab to record the initial snapshot.'))}
+    </article>`;
+  }
+
+  function renderBankTab() {
+    if (!fac.ws) return fac.wsErr ? errorBox(fac.wsErr) : loadingBox();
+    const b = fac.ws.bank || {};
+    return `<article class="glass card">
+      ${renderWorkspaceStatusBar('Torn API faction/donations (Salt Okunur)', 'Torn API faction/donations (Read-Only)')}
+      <div class="card-head wrap">
+        <div>
+          <h3>🏦 ${tr('Faction Banka & Üye Bakiyeleri', 'Faction Bank & Member Balances')}</h3>
+          <span class="muted">${tr('Salt okunur bakiye görünümü · Ödeme ve gönderim işlemleri yalnızca Torn Faction Bank sayfasında yapılır', 'Read-only balance view · Payouts and transfers are performed exclusively on Torn Faction Bank')}</span>
+        </div>
+        <button type="button" class="btn sm ghost" data-open-url="${esc(b.tornBankUrl || 'https://www.torn.com/factions.php?step=your#/tab=controls')}" data-tab-label="Faction Bank">↗ ${tr('Torn Faction Bank\'ta Aç', 'Open Torn Faction Bank')}</button>
+      </div>
+      ${!b.allowed || b.status === 'permission_required'
+        ? `<div class="alert warn">🔒 ${tr('İzin gerekli: Faction Banka bakiyelerini görmek için pozisyonunda "Faction API Access" yetkisi bulunmalıdır.', 'Permission required: Your faction position needs "Faction API Access" to view Faction Bank balances.')}</div>`
+        : b.status === 'error'
+          ? `<div class="alert danger">${esc(b.error || 'Error')}</div>`
+          : `
+            <div class="grid kpis">
+              ${kpi(tr('Toplam Nakit Bakiyesi', 'Total Money Balance'), money(b.totals?.money || 0), `${b.rows?.length || 0} ${tr('kayıtlı hesap', 'recorded accounts')}`, 'pos')}
+              ${kpi(tr('Toplam Puan Bakiyesi', 'Total Points Balance'), n0(b.totals?.points || 0))}
+              ${kpi(tr('Eksi Bakiyeli Üye', 'Negative Balance'), String(b.totals?.debtors || 0), '', (b.totals?.debtors || 0) > 0 ? 'neg' : '')}
+            </div>
+            <div class="tbl-wrap"><table class="tbl compact">
+              <thead><tr>
+                <th>${tr('Üye', 'Member')}</th>
+                <th>${tr('Pozisyon', 'Position')}</th>
+                <th class="num">${tr('Nakit Bakiyesi', 'Money Balance')}</th>
+                <th class="num">${tr('Puan Bakiyesi', 'Points Balance')}</th>
+              </tr></thead>
+              <tbody>
+                ${(b.rows || []).slice(0, 100).map((r) => `<tr>
+                  <td>${nameBtn(r.id, r.name)} ${!r.inFaction ? `<span class="chip dim">${tr('Ayrıldı', 'Former')}</span>` : ''}</td>
+                  <td>${esc(r.position || '—')}</td>
+                  <td class="num mono ${r.money > 0 ? 'pos' : r.money < 0 ? 'neg' : ''}">${money(r.money)}</td>
+                  <td class="num mono">${n0(r.points)}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table></div>`}
+    </article>`;
+  }
+
+  function renderRecruitmentTab() {
+    if (!fac.ws) return fac.wsErr ? errorBox(fac.wsErr) : loadingBox();
+    const rec = fac.ws.recruitment || {};
+    const apps = rec.applications || [];
+    const wl = rec.watchlist || [];
+    return `<article class="glass card">
+      ${renderWorkspaceStatusBar('Torn API v2/faction/applications + LRX Yerel Aday Listesi', 'Torn API v2/faction/applications + LRX Local Watchlist')}
+      <div class="card-head wrap">
+        <div>
+          <h3>📋 ${tr('Faction Başvuruları (Torn API)', 'Faction Applications (Torn API)')} <span class="chip">${apps.length}</span></h3>
+          <span class="muted">${tr('Aktif başvurular salt okunur listelenir; kabul/ret işlemi Torn üzerinden yapılır', 'Active applications are listed read-only; accept/decline on Torn')}</span>
+        </div>
+      </div>
+      ${!rec.allowed || rec.status === 'permission_required'
+        ? `<div class="alert warn">🔒 ${tr('İzin gerekli: Aktif başvuruları okumak için pozisyonunda "Faction API Access" yetkisi gerekir. Alt kısımdaki Aday İzleme Listesini yerel olarak kullanabilirsin.', 'Permission required: "Faction API Access" is required to read active applications. You can still use the local Recruitment Watchlist below.')}</div>`
+        : apps.length ? `<div class="tbl-wrap"><table class="tbl compact">
+          <thead><tr>
+            <th>${tr('Aday', 'Applicant')}</th>
+            <th class="num">Lv</th>
+            <th>${tr('Mesaj', 'Message')}</th>
+            <th>${tr('Durum', 'Status')}</th>
+          </tr></thead>
+          <tbody>
+            ${apps.map((a) => `<tr>
+              <td>${nameBtn(a.playerId, a.name)}</td>
+              <td class="num mono">${a.level}</td>
+              <td>${esc(a.message || '—')}</td>
+              <td><span class="chip blue">${esc(a.status)}</span></td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>` : `<div class="sub-text">${tr('Şu anda bekleyen faction başvurusu yok.', 'No pending faction applications right now.')}</div>`}
+    </article>
+    <article class="glass card">
+      <div class="card-head wrap">
+        <div>
+          <h3>🔭 ${tr('Recruitment Aday İzleme Listesi', 'Recruitment Candidate Watchlist')} <span class="chip">${wl.length}</span></h3>
+          <span class="muted">${tr('Kaynak: LRX Yerel Kayıt · Takip edilen adaylar ve yetkili notları', 'Source: LRX Local Record · Tracked candidates and officer notes')}</span>
+        </div>
+      </div>
+      <div class="fac-form-row">
+        <input class="input sm mono" id="fac-wl-id" type="number" placeholder="${tr('Oyuncu ID', 'Player ID')}">
+        <input class="input sm" id="fac-wl-name" placeholder="${tr('Oyuncu adı', 'Player name')}">
+        <input class="input sm" id="fac-wl-tag" placeholder="${tr('Durum (ör. Davet edildi)', 'Tag (e.g. Invited)')}">
+        <input class="input sm" id="fac-wl-note" placeholder="${tr('Not…', 'Note…')}">
+        <button type="button" class="btn sm primary" id="fac-wl-add">+ ${tr('Aday Ekle', 'Add Candidate')}</button>
+      </div>
+      ${wl.length ? `<div class="tbl-wrap"><table class="tbl compact">
+        <thead><tr>
+          <th>${tr('Oyuncu', 'Player')}</th>
+          <th>${tr('Etiket', 'Tag')}</th>
+          <th>${tr('Not', 'Note')}</th>
+          <th>${tr('Ekleyen / Zaman', 'Added By / Time')}</th>
+          <th></th>
+        </tr></thead>
+        <tbody>
+          ${wl.map((w) => `<tr>
+            <td>${w.playerId ? nameBtn(w.playerId, w.name) : `<b>${esc(w.name)}</b>`}</td>
+            <td><span class="chip blue">${esc(w.tag || 'Takip')}</span></td>
+            <td>${esc(w.note || '—')}</td>
+            <td class="sub-text">${esc(w.authorName || '—')} · ${isoHm(w.updatedAt)} TCT</td>
+            <td class="num"><button type="button" class="btn sm ghost" data-fac-wl-del="${esc(w.id)}">✕</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>` : `<div class="sub-text">${tr('İzleme listesinde henüz aday yok.', 'No candidates in the watchlist yet.')}</div>`}
+    </article>`;
+  }
+
+  function renderTransfersTab() {
+    if (!fac.ws) return fac.wsErr ? errorBox(fac.wsErr) : loadingBox();
+    const entries = fac.ws.transfers?.entries || [];
+    return `<article class="glass card">
+      ${renderWorkspaceStatusBar('Torn API Roster Gözlem Farkı', 'Torn API Roster Observation Diff')}
+      <div class="card-head wrap">
+        <div>
+          <h3>⇄ ${tr('Faction Transfers (Katılan & Ayrılan Üyeler)', 'Faction Transfers (Joined & Left Members)')} <span class="chip">${entries.length}</span></h3>
+          <span class="muted">${tr('Her kayıt olayın tespit edildiği gözlem aralığını [seenFrom – seenTo] gösterir; uydurma tam saniye damgası üretilmez', 'Each entry shows the observation interval [seenFrom – seenTo] in which the transfer was detected; never a fabricated exact timestamp')}</span>
+        </div>
+      </div>
+      ${entries.length ? `<div class="tbl-wrap"><table class="tbl compact">
+        <thead><tr>
+          <th>${tr('Tür', 'Type')}</th>
+          <th>${tr('Üye', 'Member')}</th>
+          <th class="num">Lv</th>
+          <th>${tr('Pozisyon', 'Position')}</th>
+          <th>${tr('Gözlem Aralığı [seenFrom → seenTo]', 'Observation Interval [seenFrom → seenTo]')}</th>
+        </tr></thead>
+        <tbody>
+          ${entries.map((t) => `<tr>
+            <td><span class="chip ${t.type === 'joined' ? 'green' : 'warn'}">${t.type === 'joined' ? tr('+ Katıldı', '+ Joined') : tr('− Ayrıldı', '− Left')}</span></td>
+            <td>${nameBtn(t.playerId, t.name)}</td>
+            <td class="num mono">${t.level || '—'}</td>
+            <td>${esc(t.position || '—')}</td>
+            <td class="mono">${isoHm(t.observation_interval?.seenFrom)} → ${isoHm(t.observation_interval?.seenTo)} TCT <span class="chip dim">${tr('Gözlem aralığı', 'Obs. window')}</span></td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>` : emptyBox(tr('Henüz katılan veya ayrılan üye gözlemlenmedi', 'No joined or left members observed yet'), tr('Roster yenilendikçe kadro değişimleri gözlem aralığıyla otomatik kaydedilir.', 'As the roster refreshes, membership changes are automatically recorded with their observation window.'))}
+    </article>`;
+  }
+
+  function renderAllianceTab() {
+    if (!fac.ws) return fac.wsErr ? errorBox(fac.wsErr) : loadingBox();
+    const al = fac.ws.alliance?.alliances || [];
+    const gf = fac.ws.alliance?.graffiti || [];
+    const relLabel = {
+      ally: ['green', tr('Müttefik', 'Ally')],
+      family: ['tq', tr('Aile / Alt Faction', 'Family / Sub-Faction')],
+      nap: ['blue', tr('Saldırmazlık (NAP)', 'Non-Aggression (NAP)')],
+      rival: ['danger', tr('Rakip / Hedef', 'Rival / Hostile')],
+    };
+    return `<article class="glass card">
+      ${renderWorkspaceStatusBar('LRX Yerel Ekip Kaydı (Torn API verisi değildir)', 'LRX Local Team Record (Not Torn API data)')}
+      <div class="card-head wrap">
+        <div>
+          <h3>🤝 ${tr('Alliance & Family İlişkileri', 'Alliance & Family Relations')} <span class="chip">${al.length}</span></h3>
+          <span class="muted">${tr('Müttefik, aile, NAP ve rakip faction kayıtları (Kaynak: LRX Yerel Kayıt)', 'Ally, family, NAP and rival faction directory (Source: LRX Local Record)')}</span>
+        </div>
+      </div>
+      <div class="fac-form-row">
+        <input class="input sm" id="fac-al-name" placeholder="${tr('Faction adı', 'Faction name')}">
+        <input class="input sm mono" id="fac-al-tag" placeholder="${tr('Tag', 'Tag')}">
+        <input class="input sm mono" id="fac-al-id" type="number" placeholder="${tr('Faction ID', 'Faction ID')}">
+        <select id="fac-al-rel">
+          <option value="ally">${tr('Müttefik', 'Ally')}</option>
+          <option value="family">${tr('Aile / Family', 'Family')}</option>
+          <option value="nap">${tr('NAP', 'NAP')}</option>
+          <option value="rival">${tr('Rakip', 'Rival')}</option>
+        </select>
+        <input class="input sm" id="fac-al-note" placeholder="${tr('Not…', 'Note…')}">
+        <button type="button" class="btn sm primary" id="fac-al-add">+ ${tr('İlişki Ekle', 'Add Relation')}</button>
+      </div>
+      ${al.length ? `<div class="tbl-wrap"><table class="tbl compact">
+        <thead><tr>
+          <th>Faction</th>
+          <th>${tr('İlişki', 'Relation')}</th>
+          <th>${tr('Not', 'Note')}</th>
+          <th>${tr('Kaydeden', 'Recorded By')}</th>
+          <th></th>
+        </tr></thead>
+        <tbody>
+          ${al.map((x) => {
+            const [cls, lbl] = relLabel[x.relation] || relLabel.ally;
+            return `<tr>
+              <td><b>${esc(x.name)}</b> ${x.tag ? `<span class="mono muted">[${esc(x.tag)}]</span>` : ''}</td>
+              <td><span class="chip ${cls}">${lbl}</span></td>
+              <td>${esc(x.note || '—')}</td>
+              <td class="sub-text">${esc(x.authorName || '—')} · ${isoHm(x.updatedAt)} TCT</td>
+              <td class="num"><button type="button" class="btn sm ghost" data-fac-al-del="${esc(x.id)}">✕</button></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table></div>` : `<div class="sub-text">${tr('Henüz kayıtlı alliance/family ilişkisi yok.', 'No alliance or family relations recorded yet.')}</div>`}
+    </article>
+    <article class="glass card">
+      <div class="card-head wrap">
+        <div>
+          <h3>🎨 ${tr('Faction Graffiti & Ortak Not Duvarı', 'Faction Graffiti & Shared Note Wall')} <span class="chip">${gf.length}</span></h3>
+          <span class="muted">${tr('Yazar ve zaman damgalı faction içi duyuru / strateji notları', 'Author- and timestamp-tagged internal faction notes and graffiti')}</span>
+        </div>
+      </div>
+      <div class="fac-form-row">
+        <input class="input sm" id="fac-gf-cat" placeholder="${tr('Kategori (ör. Chain, Savaş)', 'Category (e.g. Chain, War)')}">
+        <input class="input sm" id="fac-gf-text" placeholder="${tr('Graffiti veya faction notu yaz…', 'Write graffiti or faction note…')}">
+        <button type="button" class="btn sm primary" id="fac-gf-add">+ ${tr('Duvara Yaz', 'Post Note')}</button>
+      </div>
+      ${gf.length ? `<div class="fac-graffiti-grid">
+        ${gf.map((g) => `<div class="glass fac-graffiti-card">
+          <div class="fac-graffiti-top">
+            <span class="chip tq">${esc(g.category || 'Genel')}</span>
+            <button type="button" class="btn sm ghost" data-fac-gf-del="${esc(g.id)}">✕</button>
+          </div>
+          <p class="fac-graffiti-text">${esc(g.text)}</p>
+          <div class="sub-text">✍ <b>${esc(g.authorName || 'Officer')}</b> · ${isoHm(g.createdAt)} TCT</div>
+        </div>`).join('')}
+      </div>` : `<div class="sub-text">${tr('Graffiti duvarı henüz boş.', 'The Graffiti wall is empty.')}</div>`}
+    </article>`;
+  }
+
   /* ---------- Ana Render ---------- */
   function render() {
     const el = $('#faction-body'); if (!el) return;
@@ -1098,14 +1752,53 @@
         + (!a.allowed ? lockedCard(a)
           : d.oc?.error ? `<div class="alert danger">${esc(d.oc.error)}</div>`
             : `${notInOcCard(oc)}${crimesCard(oc)}${reportCard()}`);
-    } else if (tab === 'activity') content = renderActivityTab();
+    } else if (tab === 'members') content = renderMembersTab();
+    else if (tab === 'activity') content = renderActivityTab();
     else if (tab === 'radar') content = renderRadarTab();
+    else if (tab === 'stats') content = renderStatsTab();
+    else if (tab === 'gym') content = renderGymTab();
+    else if (tab === 'bank') content = renderBankTab();
+    else if (tab === 'recruitment') content = renderRecruitmentTab();
+    else if (tab === 'transfers') content = renderTransfersTab();
+    else if (tab === 'alliance') content = renderAllianceTab();
     else if (tab === 'armory') content = renderArmoryTab();
     else if (tab === 'chains') content = renderChainsTab();
     else if (tab === 'upgrades') content = renderUpgradesTab();
 
     preserveFocus(el, () => { el.innerHTML = kpis + tabBar + content; });
   }
+
+  async function openFactionTab(tabId = 'oc', opts = {}) {
+    if (!feat('page.faction')) return;
+    fac.tab = tabId;
+    lsSet('tt.fac.tab', tabId);
+    if (opts.days && [7, 30, 90].includes(Number(opts.days))) {
+      fac.wsDays = Number(opts.days);
+      lsSet('tt.fac.wsDays', String(fac.wsDays));
+    }
+    if (state.view !== 'faction') showView('faction');
+    else {
+      render();
+      await loadTabData(tabId);
+    }
+  }
+  window.openFactionTab = openFactionTab;
+
+  async function openFactionMember(playerId, opts = {}) {
+    if (!feat('page.faction') || !feat('faction.members')) return;
+    const pid = Number(playerId);
+    if (!pid) return;
+    fac.tab = 'members';
+    lsSet('tt.fac.tab', 'members');
+    fac.openMemberId = pid;
+    if (opts.metric) { fac.memMetric = opts.metric; lsSet('tt.fac.memMetric', opts.metric); }
+    if (opts.range) { fac.memRange = opts.range; lsSet('tt.fac.memRange', opts.range); }
+    if (state.view !== 'faction') showView('faction');
+    if (!fac.ws) await fetchWorkspace(false, 'members');
+    render();
+    await fetchMemberSeries(pid);
+  }
+  window.openFactionMember = openFactionMember;
 
   async function openFactionRadar({ state: radState = 'all', country = 'all', query = '' } = {}) {
     if (!feat('page.faction') || !feat('faction.travelRadar')) return;
@@ -1122,9 +1815,177 @@
   }
   window.openFactionRadar = openFactionRadar;
 
+  function toggleMemberDrawer(playerId) {
+    const pid = Number(playerId);
+    if (!pid) return;
+    if (fac.openMemberId === pid) {
+      fac.openMemberId = 0;
+      fac.memberSeq++;
+      fac.memberSeries = null;
+      render();
+    } else {
+      fac.openMemberId = pid;
+      fetchMemberSeries(pid);
+    }
+  }
+
   /* ---------- Olaylar ---------- */
   const host = $('#faction-body');
   host?.addEventListener('click', async (e) => {
+    if (e.target.closest('a.fac-prof-ext')) {
+      e.stopPropagation();
+      return;
+    }
+    const closeDr = e.target.closest('[data-fac-close-drawer]');
+    if (closeDr) {
+      e.stopPropagation();
+      fac.openMemberId = 0;
+      fac.memberSeq++;
+      fac.memberSeries = null;
+      render();
+      return;
+    }
+    const memBtn = e.target.closest('[data-fac-member-btn]');
+    if (memBtn) {
+      e.stopPropagation();
+      toggleMemberDrawer(memBtn.dataset.facMemberBtn);
+      return;
+    }
+    const memRow = e.target.closest('tr[data-fac-member-row]');
+    if (memRow && !e.target.closest('a')) {
+      toggleMemberDrawer(memRow.dataset.facMemberRow);
+      return;
+    }
+    const openMem = e.target.closest('[data-open-member]');
+    if (openMem && !e.target.closest('a')) {
+      const pid = Number(openMem.dataset.openMember);
+      const metric = openMem.dataset.openMetric || 'activity';
+      await openFactionMember(pid, { metric, range: `${fac.wsDays}d` });
+      return;
+    }
+    const mcol = e.target.closest('[data-fac-mcol]');
+    if (mcol) {
+      const k = mcol.dataset.facMcol;
+      if (fac.memCols.has(k)) fac.memCols.delete(k); else fac.memCols.add(k);
+      lsSet('tt.fac.memCols', JSON.stringify([...fac.memCols]));
+      render();
+      return;
+    }
+    const mf = e.target.closest('[data-fac-mf]');
+    if (mf) { fac.memFilter = mf.dataset.facMf; render(); return; }
+    const mm = e.target.closest('[data-mem-metric]');
+    if (mm) {
+      fac.memMetric = mm.dataset.memMetric;
+      fac.memStat = fac.memMetric === 'battlestats' ? 'total' : fac.memMetric === 'activity' ? 'timeplayed' : 'total';
+      lsSet('tt.fac.memMetric', fac.memMetric);
+      lsSet('tt.fac.memStat', fac.memStat);
+      if (fac.openMemberId) await fetchMemberSeries(fac.openMemberId);
+      return;
+    }
+    const msBtn = e.target.closest('[data-mem-stat]');
+    if (msBtn) {
+      fac.memStat = msBtn.dataset.memStat;
+      lsSet('tt.fac.memStat', fac.memStat);
+      if (fac.openMemberId) await fetchMemberSeries(fac.openMemberId);
+      return;
+    }
+    const mMode = e.target.closest('[data-mem-mode]');
+    if (mMode) {
+      fac.memMode = mMode.dataset.memMode === 'gain' ? 'gain' : 'value';
+      lsSet('tt.fac.memMode', fac.memMode);
+      if (fac.openMemberId) await fetchMemberSeries(fac.openMemberId);
+      return;
+    }
+    const mRange = e.target.closest('[data-mem-range]');
+    if (mRange) {
+      fac.memRange = mRange.dataset.memRange;
+      lsSet('tt.fac.memRange', fac.memRange);
+      if (fac.openMemberId) await fetchMemberSeries(fac.openMemberId);
+      return;
+    }
+    if (e.target.closest('#fac-ws-refresh')) {
+      await fetchWorkspace(true, activeTab());
+      render();
+      return;
+    }
+    const wsDaysBtn = e.target.closest('[data-fac-ws-days]');
+    if (wsDaysBtn) {
+      fac.wsDays = Number(wsDaysBtn.dataset.facWsDays) || 7;
+      lsSet('tt.fac.wsDays', String(fac.wsDays));
+      await fetchWorkspace(false, activeTab());
+      render();
+      return;
+    }
+    if (e.target.closest('#fac-ws-tenure')) {
+      fac.wsTenure = !fac.wsTenure;
+      lsSet('tt.fac.wsTenure', fac.wsTenure ? '1' : '0');
+      await fetchWorkspace(false, activeTab());
+      render();
+      return;
+    }
+    const wsMetricBtn = e.target.closest('[data-fac-ws-metric]');
+    if (wsMetricBtn) {
+      fac.wsMetric = wsMetricBtn.dataset.facWsMetric;
+      lsSet('tt.fac.wsMetric', fac.wsMetric);
+      render();
+      return;
+    }
+    if (e.target.closest('#fac-wl-add')) {
+      const playerId = Number($('#fac-wl-id')?.value) || 0;
+      const name = $('#fac-wl-name')?.value?.trim() || '';
+      const tag = $('#fac-wl-tag')?.value?.trim() || 'Takip';
+      const note = $('#fac-wl-note')?.value?.trim() || '';
+      try {
+        const res = await api('/api/faction/workspace', { method: 'POST', body: JSON.stringify({ action: 'watchlist_add', playerId, name, tag, note }) });
+        if (fac.ws?.recruitment) fac.ws.recruitment.watchlist = res.watchlist || [];
+        render();
+      } catch (err) { toast(err.message); }
+      return;
+    }
+    const wlDel = e.target.closest('[data-fac-wl-del]');
+    if (wlDel) {
+      const res = await api('/api/faction/workspace', { method: 'POST', body: JSON.stringify({ action: 'watchlist_remove', id: wlDel.dataset.facWlDel }) });
+      if (fac.ws?.recruitment) fac.ws.recruitment.watchlist = res.watchlist || [];
+      render();
+      return;
+    }
+    if (e.target.closest('#fac-al-add')) {
+      const name = $('#fac-al-name')?.value?.trim() || '';
+      const tag = $('#fac-al-tag')?.value?.trim() || '';
+      const targetFactionId = Number($('#fac-al-id')?.value) || null;
+      const relation = $('#fac-al-rel')?.value || 'ally';
+      const note = $('#fac-al-note')?.value?.trim() || '';
+      try {
+        const res = await api('/api/faction/workspace', { method: 'POST', body: JSON.stringify({ action: 'alliance_add', name, tag, targetFactionId, relation, note }) });
+        if (fac.ws?.alliance) fac.ws.alliance.alliances = res.alliances || [];
+        render();
+      } catch (err) { toast(err.message); }
+      return;
+    }
+    const alDel = e.target.closest('[data-fac-al-del]');
+    if (alDel) {
+      const res = await api('/api/faction/workspace', { method: 'POST', body: JSON.stringify({ action: 'alliance_remove', id: alDel.dataset.facAlDel }) });
+      if (fac.ws?.alliance) fac.ws.alliance.alliances = res.alliances || [];
+      render();
+      return;
+    }
+    if (e.target.closest('#fac-gf-add')) {
+      const category = $('#fac-gf-cat')?.value?.trim() || 'Genel';
+      const text = $('#fac-gf-text')?.value?.trim() || '';
+      try {
+        const res = await api('/api/faction/workspace', { method: 'POST', body: JSON.stringify({ action: 'graffiti_add', category, text }) });
+        if (fac.ws?.alliance) fac.ws.alliance.graffiti = res.graffiti || [];
+        render();
+      } catch (err) { toast(err.message); }
+      return;
+    }
+    const gfDel = e.target.closest('[data-fac-gf-del]');
+    if (gfDel) {
+      const res = await api('/api/faction/workspace', { method: 'POST', body: JSON.stringify({ action: 'graffiti_remove', id: gfDel.dataset.facGfDel }) });
+      if (fac.ws?.alliance) fac.ws.alliance.graffiti = res.graffiti || [];
+      render();
+      return;
+    }
     const radPlayer = e.target.closest('[data-open-radar-player]');
     if (radPlayer) {
       e.preventDefault();
@@ -1159,7 +2020,7 @@
       await loadTabData(fac.tab);
       return;
     }
-    if (e.target.closest('#fac-rep-refresh')) { await fetchReport(true); render(); return; }
+    if (e.target.closest('#fac-rep-refresh')) { await fetchReport(true); if (WS_TABS.has(activeTab())) await fetchWorkspace(true, activeTab()); render(); return; }
     const rd = e.target.closest('[data-fac-rep-days]');
     if (rd) { fac.repDays = Number(rd.dataset.facRepDays) === 30 ? 30 : 7; lsSet('tt.fac.repDays', String(fac.repDays)); await fetchReport(false); render(); return; }
     if (e.target.closest('#fac-act-refresh') || e.target.closest('#fac-rad-refresh')) { await fetchActivity(true); render(); return; }
@@ -1194,6 +2055,7 @@
     if (e.target.closest('#fac-upg-clear')) { fac.upgSel = {}; render(); return; }
   });
   host?.addEventListener('input', (e) => {
+    if (e.target.id === 'fac-mem-q') { fac.memQ = e.target.value; render(); return; }
     if (e.target.id === 'fac-act-q') { fac.actQ = e.target.value; render(); return; }
     if (e.target.id === 'fac-rad-q') { fac.radQ = e.target.value; render(); return; }
     if (e.target.id === 'fac-arm-q') { fac.armQ = e.target.value; render(); return; }
@@ -1210,7 +2072,8 @@
     }
   });
   host?.addEventListener('change', (e) => {
-    if (e.target.id === 'fac-act-sort') { fac.actSort = e.target.value; render(); }
+    if (e.target.id === 'fac-mem-sort') { fac.memSort = e.target.value; render(); }
+    else if (e.target.id === 'fac-act-sort') { fac.actSort = e.target.value; render(); }
     else if (e.target.id === 'fac-rad-country') { fac.radCountry = e.target.value || 'all'; render(); }
     else if (e.target.id === 'fac-rad-act') { fac.radAct = e.target.value || 'all'; render(); }
     else if (e.target.id === 'fac-cmp-a') { fac.cmpA = Number(e.target.value) || 0; render(); }
@@ -1218,6 +2081,18 @@
   });
   host?.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
+    const memRow = e.target.closest('tr[data-fac-member-row]');
+    if (memRow && !e.target.closest('a')) {
+      e.preventDefault();
+      toggleMemberDrawer(memRow.dataset.facMemberRow);
+      return;
+    }
+    const statRow = e.target.closest('tr[data-open-member]');
+    if (statRow && !e.target.closest('a')) {
+      e.preventDefault();
+      openFactionMember(Number(statRow.dataset.openMember), { metric: statRow.dataset.openMetric || 'activity', range: `${fac.wsDays}d` });
+      return;
+    }
     const row = e.target.closest('tr.fac-armory-row[data-open-url]');
     if (!row) return;
     e.preventDefault();
@@ -1228,7 +2103,7 @@
   setInterval(() => {
     if (state.view === 'faction' && trackerVisible()) {
       const t = activeTab();
-      if (t === 'oc' || t === 'radar' || t === 'activity') render();
+      if (t === 'oc' || t === 'radar' || t === 'activity' || WS_TABS.has(t)) render();
     }
   }, 60_000);
   setInterval(() => { if (state.view === 'faction' && trackerVisible()) loadFaction(); }, 2 * 60_000);

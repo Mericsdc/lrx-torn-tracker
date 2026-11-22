@@ -122,16 +122,21 @@
   function forget() { epoch++; slots = {}; }
 
   // A click on a tile with data (not on edit controls, a button or a link) opens its page; so does Enter on its body.
+  function openWidgetTarget(el) {
+    const def = W.premium[el?.dataset?.widget];
+    if (typeof def?.open === 'function') def.open();
+    else if (el?.dataset?.owView) showView(el.dataset.owView);
+  }
   grid.addEventListener('click', (e) => {
     const el = e.target.closest?.('#ow-grid > .ow-premium[data-ow-view]');
     if (!el || e.target.closest('.ow-ctl, button, a, input, select, [data-goto-view], [data-open-url]')) return;
-    showView(el.dataset.owView);
+    openWidgetTarget(el);
   });
   grid.addEventListener('keydown', (e) => {
     const body = e.target.closest?.('#ow-grid > .ow-premium[data-ow-view] > .ow-t');
     if (e.key !== 'Enter' || body !== e.target) return;
     e.preventDefault();
-    showView(body.parentElement.dataset.owView);
+    openWidgetTarget(body.parentElement);
   });
   // The daily order hint follows the company report app.js draws (it never fetches).
   const reportKpis = $('#report-kpis');

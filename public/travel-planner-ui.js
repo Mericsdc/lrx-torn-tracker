@@ -11,6 +11,10 @@
     priceMode: lsGet('tt.dp.price', 'market_tax'),
     category: lsGet('tt.dp.cat', 'all'),
     timelineMode: lsGet('tt.dp.tmode', 'profit') === 'cash' ? 'cash' : 'profit',
+    displayMode: lsGet('tt.dp.dmode', 'dial') === 'timeline' ? 'timeline' : 'dial',
+    selectedStopIndex: 0,
+    pinnedPlan: (() => { try { return JSON.parse(lsGet('tt.dp.pinnedPlan', 'null')); } catch { return null; } })(),
+    historyOpen: lsGet('tt.dp.histOpen', '0') === '1',
     includeCurrentFlight: lsGet('tt.dp.curFlight', '1') !== '0',
     watchOnly: lsGet('tt.dp.watchOnly', '0') === '1',
     optionsOpen: false,
@@ -193,6 +197,129 @@
   // Mono/sans web fonts can finish loading after the first layout and change label widths.
   document.fonts?.ready?.then(() => { const stage = document.querySelector('#tv-planner .dp-tl-stage'); if (stage) layoutTimeline(stage); });
 
+  function renderClockDialView(plan, pinEval) {
+    const ws = window.LRXTravelWorkspace;
+    if (!ws) return '';
+    const cash = plannerState.timelineMode === 'cash';
+    const activePlan = plannerState.pinnedPlan && Array.isArray(plannerState.pinnedPlan.stops)
+      ? { ...plan, stops: plannerState.pinnedPlan.stops }
+      : plan;
+    const dial = ws.buildClockDial(activePlan, {
+      nowSec: plan.nowSec,
+      selectedIndex: plannerState.selectedStopIndex,
+    });
+    const R = dial.radius;
+    const cx = dial.cx, cy = dial.cy;
+    const toXY = (deg, rad) => {
+      const a = ((deg - 90) * Math.PI) / 180;
+      return [cx + rad * Math.cos(a), cy + rad * Math.sin(a)];
+    };
+    const arcSvgPath = (startDeg, endDeg, rad) => {
+      let span = endDeg - startDeg;
+      if (span <= 0) span += 360;
+      span = Math.max(4, Math.min(358, span));
+      const [x0, y0] = toXY(startDeg, rad);
+      const [x1, y1] = toXY(startDeg + span, rad);
+      const large = span > 180 ? 1 : 0;
+      return `M ${x0.toFixed(1)} ${y0.toFixed(1)} A ${rad} ${rad} 0 ${large} 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`;
+    };
+
+    const ticksSvg = dial.hourMarks.map((hm) => {
+      const [x0, y0] = toXY(hm.deg, R - (hm.major ? 9 : 5));
+      const [x1, y1] = toXY(hm.deg, R);
+      const [lx, ly] = toXY(hm.deg, R + 15);
+      return `<line x1="${x0.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}" class="dp-dial-tick ${hm.major ? 'major' : ''}"/>`
+        + (hm.major ? `<text x="${lx.toFixed(1)}" y="${(ly + 3).toFixed(1)}" text-anchor="middle" class="dp-dial-hour mono">${hm.label}</text>` : '');
+    }).join('');
+
+    const arcsSvg = dial.arcs.map((a) => {
+      const rad = R - 16 - (a.index % 3) * 11;
+      const dPath = arcSvgPath(a.startDeg, a.endDeg, rad);
+      const [mx, my] = toXY(a.landDeg, rad);
+      return `<g class="dp-dial-arc-grp ${a.selected ? 'is-selected' : ''}" data-dp-stop-idx="${a.index}" tabindex="0" role="button" aria-label="${esc(`${a.countryName} · ${a.itemName} · ${hhmmUtc(a.departAt)}-${hhmmUtc(a.returnAt)}`)}">
+        <path d="${dPath}" stroke="${esc(a.color)}" stroke-width="${a.selected ? '7' : '4.5'}" fill="none" stroke-linecap="round" class="dp-dial-arc"/>
+        <circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="${a.selected ? '5' : '3.5'}" fill="${esc(a.color)}"/>
+        <title>${esc(`${a.countryName} (${a.itemName})\n${hhmmUtc(a.departAt)} → ${hhmmUtc(a.returnAt)} TCT\n+${money(a.profit)}`)}</title>
+      </g>`;
+    }).join('');
+
+    const [nx, ny] = toXY(dial.nowDeg, R - 10);
+    const warnByIdx = new Map();
+    for (const st of pinEval?.stops || []) warnByIdx.set(st.index, st.warnings || []);
+
+    const listRows = (activePlan.stops || []).map((s, idx) => {
+      const sel = idx === Number(plannerState.selectedStopIndex);
+      const warns = warnByIdx.get(idx) || [];
+      const valText = cash ? money(s.carry) : `+${money(s.profit)}`;
+      return `<div class="dp-chron-row ${sel ? 'is-selected' : ''}" data-dp-stop-idx="${idx}" tabindex="0" role="button">
+        <span class="dp-chron-time mono">${hhmmUtc(s.departAt)} → ${hhmmUtc(s.returnAt)}</span>
+        <span class="dp-chron-route"><i class="dp-chron-dot" style="background:${esc(s.meta?.color || '#38bdf8')}"></i><b>${esc(s.countryName)}</b> · ${esc(s.itemName)} <small class="mono">×${s.units}</small></span>
+        <span class="dp-chron-val mono ${cash ? '' : 'pos'}">${esc(valText)}</span>
+        ${warns.map((w) => `<span class="chip warn">${esc(tr(w.label[0], w.label[1]))}</span>`).join('')}
+        ${!plannerState.pinnedPlan ? `<button type="button" class="btn sm ghost" data-dp-exclude="${esc(s.key)}" title="${tr('Plandan çıkar', 'Remove from plan')}">✕</button>` : ''}
+      </div>`;
+    }).join('');
+
+    return `<div class="dp-dial-layout">
+      <div class="dp-dial-box">
+        <svg class="dp-dial-svg" viewBox="0 0 240 240" role="img" aria-label="${tr('24 saatlik TCT kalkış kadranı', '24-hour TCT departure clock dial')}">
+          <circle cx="${cx}" cy="${cy}" r="${R}" class="dp-dial-ring"/>
+          <circle cx="${cx}" cy="${cy}" r="${R - 38}" class="dp-dial-inner"/>
+          ${ticksSvg}
+          ${arcsSvg}
+          <line x1="${cx}" y1="${cy}" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}" class="dp-dial-hand"/>
+          <circle cx="${cx}" cy="${cy}" r="4" class="dp-dial-center"/>
+          <text x="${cx}" y="${cy + 24}" text-anchor="middle" class="dp-dial-tct mono">${hhmmUtc(plan.nowSec)} TCT</text>
+        </svg>
+      </div>
+      <div class="dp-chron-box">
+        <div class="dp-chron-head">
+          <b>${tr('Kronolojik Uçuş Listesi (24s)', 'Chronological Flight Schedule (24h)')}</b>
+          <span class="muted">${tr('Kadrandaki yaya veya satıra tıklayarak durağı odakla', 'Click any dial arc or row to highlight the stop')}</span>
+        </div>
+        ${listRows || `<div class="sub-text">${tr('Önümüzdeki 24 saat için planlanabilir uçuş yok.', 'No flights scheduled for the next 24 hours.')}</div>`}
+      </div>
+    </div>`;
+  }
+
+  function renderFlightHistory(fh) {
+    if (!fh) return '';
+    const entries = Array.isArray(fh.entries) ? fh.entries : [];
+    const statusBadge = fh.logAccess
+      ? `<span class="chip green">✓ ${tr('Log kaynağı açık', 'Log source active')}</span>`
+      : `<span class="chip dim">ℹ ${tr('Log kapalı — manuel alış kayıtları gösteriliyor', 'Log off — showing manual cost records')}</span>`;
+    return `<div class="dp-fhist">
+      <div class="dp-fhist-head">
+        <button type="button" class="btn sm ghost" id="dp-fhist-toggle" aria-expanded="${plannerState.historyOpen}">
+          📜 ${tr('Uçuş ve Alış Geçmişi', 'Flight & Purchase History')} (${entries.length})
+        </button>
+        ${statusBadge}
+      </div>
+      ${plannerState.historyOpen ? `<div class="dp-fhist-body">
+        ${entries.length ? `<div class="tbl-wrap"><table class="tbl compact">
+          <thead><tr>
+            <th>${tr('Zaman', 'Time')}</th>
+            <th>${tr('Eşya', 'Item')}</th>
+            <th>${tr('Kaynak', 'Source')}</th>
+            <th class="num">${tr('Adet', 'Qty')}</th>
+            <th class="num">${tr('Kayıtlı Birim Alış', 'Recorded Unit Cost')}</th>
+            <th class="num">${tr('Modellenmiş Kâr (Piyasa −%5)', 'Modeled Profit (Market −5%)')}</th>
+          </tr></thead>
+          <tbody>
+            ${entries.slice(0, 12).map((e) => `<tr>
+              <td class="mono">${e.ts ? hhmmUtc(Math.floor(e.ts / 1000)) + ' TCT' : '—'}</td>
+              <td><b>${esc(e.name)}</b></td>
+              <td><span class="chip ${e.source === 'manual_cost' ? 'dim' : 'blue'}">${e.source === 'manual_cost' ? tr('Manuel Kayıt', 'Manual Record') : tr('Torn Log', 'Torn Log')}</span></td>
+              <td class="num mono">×${n0(e.qty)}</td>
+              <td class="num mono">${money(e.each)}</td>
+              <td class="num mono ${(e.modeledTotalProfit || 0) >= 0 ? 'pos' : 'neg'}">${e.modeledTotalProfit != null ? money(e.modeledTotalProfit) : '—'} <small class="muted">(${tr('modellenmiş', 'modeled')})</small></td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>` : `<div class="sub-text">${tr('Henüz yurt dışı alış veya manuel maliyet kaydı bulunmuyor (Araçlar → Alış Fiyatı Kayıtları üzerinden ekleyebilir veya Log Key tanımlayabilirsin).', 'No abroad purchase or manual cost records yet (add via Tools → Purchase Price Records or configure a Log Key).')}</div>`}
+      </div>` : ''}
+    </div>`;
+  }
+
   function renderDeparturePlanner() {
     const host = $('#tv-planner');
     if (!host) return;
@@ -223,6 +350,15 @@
       excludedKeys: plannerState.excluded,
       includeCurrentFlight: plannerState.includeCurrentFlight,
     });
+    lastBuiltPlan = plan;
+
+    if (plannerState.selectedStopIndex >= (plan.stops?.length || 1)) {
+      plannerState.selectedStopIndex = 0;
+    }
+
+    const pinEval = plannerState.pinnedPlan && window.LRXTravelWorkspace
+      ? window.LRXTravelWorkspace.evaluatePinnedPlan(plannerState.pinnedPlan, d.countries || [], { nowSec })
+      : null;
 
     const opt = (v, label, cur) => `<option value="${v}"${v === cur ? ' selected' : ''}>${label}</option>`;
     const methodMatches = d.detectedMethod && d.detectedMethod === method;
@@ -231,11 +367,17 @@
 
     const head = `<div class="card-head dp-head">
       <div class="dp-head-text">
-        <h3><span class="dp-head-ico">${ICON.plane}</span>${tr('Kalkış planlayıcı', 'Departure planner')}</h3>
+        <h3><span class="dp-head-ico">${ICON.plane}</span>${tr('Kalkış planlayıcı (24s Kadran & Zaman Çizelgesi)', 'Departure planner (24h Dial & Timeline)')}</h3>
         <span class="muted" title="${esc(capHint)}">${tr('Önümüzdeki 24 saatin uçuşları', 'Your flights for the next 24 hours')} · ${tr('Bilet', 'Ticket')} <b>${esc(method)}</b> · ${tr('Kapasite', 'Carrying')} <b class="mono">${cap}</b>${methodMatches ? ` <span class="dp-match">${ICON.check}${tr('Torn ile aynı', 'matches Torn')}</span>` : ''}</span>
       </div>
       <div class="dp-head-actions">
-        ${plannerState.hidden ? '' : `<button class="btn sm ghost${plannerState.optionsOpen ? ' active' : ''}" type="button" id="dp-opts-btn" aria-expanded="${plannerState.optionsOpen}">${ICON.sliders} ${tr('Seçenekler', 'Options')}${optionCount ? ` <span class="dp-count">${optionCount}</span>` : ''}</button>`}
+        ${plannerState.hidden ? '' : `
+          <div class="btn-group">
+            <button type="button" class="pill sm ${plannerState.displayMode === 'dial' ? 'active' : ''}" data-dp-dmode="dial">🧭 ${tr('24s Kadran + Liste', '24h Dial + List')}</button>
+            <button type="button" class="pill sm ${plannerState.displayMode === 'timeline' ? 'active' : ''}" data-dp-dmode="timeline">📏 ${tr('Çizelge', 'Timeline')}</button>
+          </div>
+          <button class="btn sm ${plannerState.pinnedPlan ? 'primary' : 'ghost'}" type="button" id="dp-pin-btn">📌 ${plannerState.pinnedPlan ? tr('Sabit Planı Kaldır', 'Unpin Plan') : tr('Planı Sabitle', 'Pin Plan')}</button>
+          <button class="btn sm ghost${plannerState.optionsOpen ? ' active' : ''}" type="button" id="dp-opts-btn" aria-expanded="${plannerState.optionsOpen}">${ICON.sliders} ${tr('Seçenekler', 'Options')}${optionCount ? ` <span class="dp-count">${optionCount}</span>` : ''}</button>`}
         <button class="btn sm ghost" type="button" id="dp-hide">${plannerState.hidden ? tr('Göster', 'Show') : tr('Gizle', 'Hide')}</button>
       </div>
     </div>`;
@@ -274,10 +416,17 @@
       <span class="sub-text">${wallet != null ? `${tr('Cüzdan', 'Wallet')}: <b class="mono">${money(wallet)}</b>` : tr('Cüzdan bilgisi alınamadı', 'Wallet unavailable')}</span>
     </div>` : '';
 
+    const pinBanner = pinEval ? `<div class="dp-banner ${pinEval.hasWarnings ? 'is-warn' : ''}">
+      <span>📌 ${pinEval.hasWarnings
+        ? tr(`Sabitlenmiş planda ${pinEval.warningCount} durakta kalkış penceresi kaçırıldı veya stok/restock tahmini değişti.`, `Pinned plan has ${pinEval.warningCount} stop(s) with missed departure window or changed stock/restock estimate.`)
+        : tr('Plan sabitlendi — tüm duraklar güncel stok ve kalkış pencereleriyle uyumlu.', 'Plan is pinned — all stops match current stock and departure windows.')}</span>
+      <button class="btn sm ghost" type="button" id="dp-refresh-pin">⟳ ${tr('Güncel planla yenile', 'Update pinned plan')}</button>
+    </div>` : '';
+
     const flightBanner = plan.inFlight && plan.currentFlight ? `<div class="dp-banner">
       <span>${ICON.plane} ${plannerState.includeCurrentFlight
-        ? tr(`Şu an uçuştesin (${esc(plan.currentFlight.destination)}); plan Torn'a döndüğünde (~${hhmmUtc(plan.currentFlight.backHomeAt)} TCT) başlar.`, `You're in flight (${esc(plan.currentFlight.destination)}); the plan starts once you're back in Torn (~${hhmmUtc(plan.currentFlight.backHomeAt)} TCT).`)
-        : tr(`Şu an uçuştesin (${esc(plan.currentFlight.destination)}), ancak plan şimdiden hesaplanıyor.`, `You're in flight (${esc(plan.currentFlight.destination)}), showing plan from now.`)}</span>
+        ? tr(`Şu an uçuştasın (${esc(plan.currentFlight.destination)}); plan Torn'a döndüğünde (~${hhmmUtc(plan.currentFlight.backHomeAt)} TCT) başlar.`, `You're in flight (${esc(plan.currentFlight.destination)}); the plan starts once you're back in Torn (~${hhmmUtc(plan.currentFlight.backHomeAt)} TCT).`)
+        : tr(`Şu an uçuştasın (${esc(plan.currentFlight.destination)}), ancak plan şimdiden hesaplanıyor.`, `You're in flight (${esc(plan.currentFlight.destination)}), showing plan from now.`)}</span>
       <button class="btn sm ghost" type="button" id="dp-toggle-flight">${plannerState.includeCurrentFlight ? tr('Şimdiden başlat', 'Start now') : tr('Dönüşten başlat', 'Wait for return')}</button>
     </div>` : '';
 
@@ -299,7 +448,7 @@
     </div>`;
 
     const profitCard = `<div class="dp-kpi">
-      ${eyebrow(ICON.trend, tr('Kâr', 'Profit'), `<span class="chip dim">${tr('tahmin', 'estimate')}</span>`)}
+      ${eyebrow(ICON.trend, tr('Modellenmiş Kâr', 'Modeled Profit'), `<span class="chip dim">${tr('tahmin', 'estimate')}</span>`)}
       <div class="dp-kpi-value pos">+${money(s.todayProfit)}</div>
       <div class="dp-kpi-hint">${tr('bugün', 'today')}</div>
       <div class="dp-bar" title="${esc(tr('Bugün / toplam', 'Today / total'))}"><i style="width:${todayPct.toFixed(1)}%"></i></div>
@@ -322,12 +471,16 @@
     </div>`;
 
     host.innerHTML = `<article class="glass card dp-card">
-      ${head}${controls}${optsPanel}${flightBanner}
+      ${head}${controls}${optsPanel}${pinBanner}${flightBanner}
       <div class="dp-kpis">${nextCard}${profitCard}${perHrCard}${carryCard}</div>
+      ${plannerState.displayMode === 'dial' ? renderClockDialView(plan, pinEval) : ''}
       ${renderTimeline(plan)}
+      ${renderFlightHistory(d.flightHistory)}
     </article>`;
     watchTimeline(host);
   }
+
+  let lastBuiltPlan = null;
 
   function countdownHtml(departAt, nowSec) {
     return departAt > nowSec
@@ -359,6 +512,48 @@
     if (e.target.closest('#dp-hide')) {
       plannerState.hidden = !plannerState.hidden;
       lsSet('tt.dp.hidden', plannerState.hidden ? '1' : '0');
+      renderDeparturePlanner();
+      return;
+    }
+    const dm = e.target.closest('[data-dp-dmode]');
+    if (dm) {
+      plannerState.displayMode = dm.dataset.dpDmode === 'timeline' ? 'timeline' : 'dial';
+      lsSet('tt.dp.dmode', plannerState.displayMode);
+      renderDeparturePlanner();
+      return;
+    }
+    if (e.target.closest('#dp-pin-btn')) {
+      if (plannerState.pinnedPlan) {
+        plannerState.pinnedPlan = null;
+        lsSet('tt.dp.pinnedPlan', 'null');
+      } else if (lastBuiltPlan) {
+        plannerState.pinnedPlan = {
+          pinnedAt: Math.floor(nowTct() / 1000),
+          stops: (lastBuiltPlan.stops || []).map((s) => ({ ...s })),
+        };
+        lsSet('tt.dp.pinnedPlan', JSON.stringify(plannerState.pinnedPlan));
+      }
+      renderDeparturePlanner();
+      return;
+    }
+    if (e.target.closest('#dp-refresh-pin') && lastBuiltPlan) {
+      plannerState.pinnedPlan = {
+        pinnedAt: Math.floor(nowTct() / 1000),
+        stops: (lastBuiltPlan.stops || []).map((s) => ({ ...s })),
+      };
+      lsSet('tt.dp.pinnedPlan', JSON.stringify(plannerState.pinnedPlan));
+      renderDeparturePlanner();
+      return;
+    }
+    if (e.target.closest('#dp-fhist-toggle')) {
+      plannerState.historyOpen = !plannerState.historyOpen;
+      lsSet('tt.dp.histOpen', plannerState.historyOpen ? '1' : '0');
+      renderDeparturePlanner();
+      return;
+    }
+    const stopIdxEl = e.target.closest('[data-dp-stop-idx]');
+    if (stopIdxEl && !e.target.closest('[data-dp-exclude]')) {
+      plannerState.selectedStopIndex = Number(stopIdxEl.dataset.dpStopIdx) || 0;
       renderDeparturePlanner();
       return;
     }

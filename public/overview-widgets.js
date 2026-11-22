@@ -13,7 +13,33 @@
     job: ['İş asistanı', 'Job assistant'], crimes: ['Suç merkezi', 'Crime hub'], jail: ['Jail bustları', 'Jail busts'],
     awards: ['Merit takibi', 'Merit tracker'], oc: ['Faction OC', 'Faction OC'], war: ['Savaş', 'War'],
     events: ['Etkinlik takvimi', 'Event calendar'], orders: ['Günlük sipariş önerisi', 'Daily order hint'],
+    faction_member: ['Faction Üye Özeti', 'Faction Member Summary'],
+    faction_activity: ['Faction Aktivite', 'Faction Activity'],
+    faction_stats: ['Faction Stats', 'Faction Stats'],
+    faction_radar: ['Faction Travel Radar', 'Faction Travel Radar'],
+    travel_routes: ['Seyahat Rotaları', 'Travel Routes'],
+    travel_stock: ['Yurt Dışı Stok', 'Abroad Stock'],
+    travel_traffic: ['Seyahat Trafiği', 'Travel Traffic'],
+    travel_planner: ['Kalkış Planlayıcı', 'Departure Planner'],
+    travel_history: ['Uçuş / Alış Özeti', 'Flight / Purchase Summary'],
   };
+
+  // Shared response cache for widgets reading the same endpoint within the same refresh cycle (50 s TTL).
+  const sharedCache = new Map();
+  function sharedLoad(key, loader) {
+    const now = Date.now();
+    const hit = sharedCache.get(key);
+    if (hit && (hit.promise || now - hit.at < 50_000)) return hit.promise || Promise.resolve(hit.value);
+    const promise = Promise.resolve().then(loader).then((value) => {
+      sharedCache.set(key, { at: Date.now(), value, promise: null });
+      return value;
+    }).catch((err) => {
+      sharedCache.delete(key);
+      throw err;
+    });
+    sharedCache.set(key, { at: now, value: undefined, promise });
+    return promise;
+  }
 
   /* ---------- markup: the one-liner (S), then the lines M and L add ---------- */
   const main = (line, sub = '') => `<p class="ow-t-main">${line}</p>${sub ? `<p class="ow-t-sub muted">${sub}</p>` : ''}`;
@@ -57,8 +83,8 @@
       const oneWay = c.minutes * mult, arrive = now + oneWay * 60;
       for (const it of c.items || []) {
         if (!(it.profit > 0) || ['no', 'later', 'stale'].includes(stockStatus(it, now, arrive))) continue;
-        const { perHour: rate } = LRXTravelMath.tripMetrics(it.profit, cap, it.qty, oneWay);
-        if (rate > (best.get(c.code)?.rate ?? -Infinity)) best.set(c.code, { c, it, rate });
+        const { perHour: rate, trip } = LRXTravelMath.tripMetrics(it.profit, cap, it.qty, oneWay);
+        if (rate > (best.get(c.code)?.rate ?? -Infinity)) best.set(c.code, { c, it, rate, trip });
       }
     }
     return [...best.values()].sort((a, b) => b.rate - a.rate);
@@ -163,10 +189,168 @@
       + more(size, byDays.slice(1, 4).map((p) => [esc(p.name), days(p)]), [[tr('Sipariş tutarı', 'Order cost'), money(c.totals?.orderCost)]]);
   }
 
+  /* ---------- N5: Faction & Travel Workspace Overview Widgets ---------- */
+  function factionMember(d, size) {
+    const meId = Number(state.overview?.player?.id) || 0;
+    const rows = d?.membersTable?.rows || [];
+    const me = rows.find((r) => r.playerId === meId) || rows[0];
+    if (!me) return main(tr('Üye verisi yok', 'No member data'));
+    const ar = d?.statsView?.activeRate;
+    const rateTxt = ar?.pct != null ? `%${ar.pct} ${tr('aktiflik', 'active rate')}` : `${me.days} ${tr('gün', 'days')}`;
+    return main(`${esc(me.name)} · ${esc(me.position)}`, rateTxt)
+      + more(size, [
+        [tr('7g Oynama', '7d Activity'), me.activity7d != null ? human(me.activity7d) : '—'],
+        [tr('7g Xanax / Gym', '7d Xanax / Gym'), `${me.xanax7d != null ? n0(me.xanax7d) : '—'} / ${me.gym7d != null ? n0(me.gym7d) : '—'}`],
+        ['Battle Stats', me.battleStats?.total != null ? n0(me.battleStats.total) : '—'],
+      ]);
+  }
+
+  function factionActivity(d, size) {
+    const c = d?.counts || {};
+    const hm = d?.heatmap || {};
+    const line = `🟢 ${n0(c.online || 0)} · 🟡 ${n0(c.idle || 0)} · ⚫ ${n0(c.offline || 0)}`;
+    const sub = `${n0(c.total || 0)} ${tr('üye', 'members')} · ${n0(c.inOc || 0)} OC`;
+    const mRows = [
+      [tr('Müsait / Hastane', 'Okay / Hospital'), `${n0(c.okay || 0)} / ${n0(c.hospital || 0)}`],
+      [tr('Uçakta / Yurt dışı', 'Flying / Abroad'), `${n0(c.traveling || 0)} / ${n0(c.abroad || 0)}`],
+    ];
+    const lRows = [
+      [tr('En yoğun saat', 'Peak TCT hour'), hm.peakHour ? `${String(hm.peakHour.hour).padStart(2, '0')}:00 TCT` : '—'],
+      [tr('24s örnek', '24h samples'), n0((d?.timeline || []).length)],
+    ];
+    return main(line, sub) + more(size, mRows, lRows);
+  }
+
+  function factionStats(d, size) {
+    const sv = d?.statsView || {};
+    const ar = sv.activeRate || {};
+    const top = [...(sv.rows || [])].filter((r) => r.activity != null).sort((a, b) => b.activity - a.activity);
+    const line = ar.pct != null ? `%${ar.pct} ${tr('Aktiflik', 'Active')}` : `${n0(ar.totalMembers || 0)} ${tr('Üye', 'Members')}`;
+    const sub = `${tr('Payda', 'Denom')}: ${ar.numerator || 0}/${ar.denominator || 0} (${sv.windowDays || 7}${tr('g', 'd')})`;
+    return main(line, sub) + more(
+      size,
+      [
+        [tr('Toplam Süre', 'Total Time'), human(sv.totals?.activity || 0)],
+        ['Xanax / Gym E', `${n0(sv.totals?.xanax || 0)} / ${n0(sv.totals?.gym || 0)}`],
+      ],
+      top.slice(0, 5).map((r) => [esc(r.name), human(r.activity)]),
+    );
+  }
+
+  function factionRadar(d, size) {
+    const sum = d?.travelSummary || {};
+    const trList = [...(d?.travel || [])].sort((a, b) => (a.etaSec ?? 9e9) - (b.etaSec ?? 9e9));
+    const line = `🛫 ${n0(sum.outbound || 0)} · 🌍 ${n0(sum.abroad || 0)} · 🛬 ${n0(sum.inbound || 0)}`;
+    const sub = `${n0(sum.totalTravel || trList.length)} ${tr('aktif seyahat', 'active travelers')}`;
+    const mRows = trList.slice(0, 3).map((t) => [
+      `${esc(t.displayName)} (${esc(t.country || t.countryCode || '?')})`,
+      t.etaSec != null ? human(t.etaSec) : esc(t.state),
+    ]);
+    const byC = new Map();
+    for (const t of trList) {
+      const k = t.country || t.countryCode || tr('Bilinmiyor', 'Unknown');
+      byC.set(k, (byC.get(k) || 0) + 1);
+    }
+    const lRows = [...byC.entries()].slice(0, 3).map(([c, cnt]) => [esc(c), `${cnt} ${tr('üye', 'members')}`]);
+    return main(line, sub) + more(size, mRows, lRows);
+  }
+
+  function travelRoutes(d, size) {
+    const [top, ...rest] = d ? travelBest(d) : [];
+    if (!top) return main(tr('Uygun seyahat rotası yok', 'No eligible travel route'));
+    return main(`${esc(top.c.name)} · ${esc(top.it.name)}`, `${perHour(top.rate)} · ${cmoney(top.trip)}/${tr('sefer', 'trip')}`)
+      + more(
+        size,
+        rest.slice(0, 2).map((r) => [`${esc(r.c.name)} · ${esc(r.it.name)}`, perHour(r.rate)]),
+        rest.slice(2, 5).map((r) => [`${esc(r.c.name)} · ${esc(r.it.name)}`, `${cmoney(r.trip)}/${tr('sefer', 'trip')}`]),
+      );
+  }
+
+  function travelStock(d, size) {
+    const countries = d?.countries || [];
+    const items = countries.flatMap((c) => (c.items || []).map((it) => ({ c, it })))
+      .filter(({ it }) => (it.profit || 0) > 0)
+      .sort((a, b) => (b.it.profit || 0) - (a.it.profit || 0));
+    const inStock = items.filter(({ it }) => it.qty > 0);
+    const top = inStock[0] || items[0];
+    if (!top) return main(tr('Stok verisi yok', 'No stock data'));
+    return main(`${esc(top.it.name)} (${esc(top.c.name)})`, `${n0(top.it.qty)} ${tr('stok', 'in stock')} · +${cmoney(top.it.profit)}`)
+      + more(
+        size,
+        inStock.slice(1, 3).map(({ c, it }) => [`${esc(c.name)} · ${esc(it.name)}`, `${n0(it.qty)} ${tr('adet', 'qty')}`]),
+        inStock.slice(3, 6).map(({ c, it }) => [`${esc(c.name)} · ${esc(it.name)}`, `${n0(it.qty)} ${tr('adet', 'qty')}`]),
+      );
+  }
+
+  function travelTraffic(d, size) {
+    const ws = window.LRXTravelWorkspace;
+    const tf = ws ? ws.summarizeTraffic(d?.factionTraffic || [], { countryCode: '*', windowHours: 24 }) : null;
+    if (!tf) return main(tr('Trafik verisi yok', 'No traffic data'));
+    const lt = tf.latest;
+    const line = `🛫 ${lt.outbound} · 🌍 ${lt.abroad} · 🛬 ${lt.inbound}`;
+    const sub = `${tr('Ort.', 'Avg')} ${tf.average} · ${tr('Zirve', 'Peak')} ${tf.peak.value}${tf.peak.tct ? ` (${tf.peak.tct} TCT)` : ''}`;
+    return main(line, sub) + more(
+      size,
+      [
+        [tr('Dönem değişimi', 'Period delta'), tf.periodDelta != null ? signed(tf.periodDelta, n0) : '—'],
+        [tr('Bilinmeyen rota', 'Unknown route'), n0(lt.unknown)],
+      ],
+      [
+        [tr('Örnek / Kapsama', 'Samples / Coverage'), `${tf.sampleCount} (%${tf.coveragePct})`],
+      ],
+    );
+  }
+
+  function travelPlannerWidget(d, size) {
+    if (!d || !window.LRXTravelPlanner) return main(tr('Planlayıcı hazır değil', 'Planner not ready'));
+    const nowSec = Math.floor(nowTct() / 1000);
+    const method = travelState.method || (TRAVEL_METHODS[d.method] ? d.method : 'Standard');
+    const plan = LRXTravelPlanner.buildDeparturePlan({
+      countries: d.countries || [],
+      nowSec,
+      cap: travelState.cap,
+      method,
+      wallet: d.wallet,
+      trip: d.trip || state.overview?.trip || null,
+    });
+    const nf = plan.nextFlight;
+    if (!nf) return main(tr('Planlanabilir uçuş yok', 'No schedulable flight'));
+    const left = Math.max(0, nf.departAt - nowSec);
+    const when = left > 0 ? tr(`${human(left)} sonra kalkış`, `depart in ${human(left)}`) : tr('Şimdi kalk!', 'Leave now!');
+    return main(`${esc(nf.countryName)} · ${esc(nf.itemName)}`, `${when} · +${cmoney(plan.summary.todayProfit)} ${tr('bugün', 'today')}`)
+      + more(
+        size,
+        plan.stops.slice(1, 3).map((s) => [`${esc(s.countryName)} · ${esc(s.itemName)}`, `+${cmoney(s.profit)}`]),
+        plan.stops.slice(3, 5).map((s) => [`${esc(s.countryName)} · ${esc(s.itemName)}`, `+${cmoney(s.profit)}`]),
+      );
+  }
+
+  function travelHistoryWidget(d, size) {
+    const fh = d?.flightHistory;
+    const entries = fh?.entries || [];
+    if (!entries.length) {
+      return main(
+        tr('Alış kaydı yok', 'No purchase records'),
+        fh?.logAccess ? tr('Log kaynağı açık', 'Log source active') : tr('Log kapalı / manuel kayıt yok', 'Log off / no manual records'),
+      );
+    }
+    const top = entries[0];
+    return main(`${esc(top.name)} ×${n0(top.qty)}`, `${money(top.each)} ${tr('alış', 'cost')} · ${top.modeledTotalProfit != null ? signed(top.modeledTotalProfit, cmoney) : '—'} (${tr('modellenmiş', 'modeled')})`)
+      + more(
+        size,
+        entries.slice(1, 3).map((e) => [`${esc(e.name)} ×${n0(e.qty)}`, money(e.each)]),
+        entries.slice(3, 6).map((e) => [`${esc(e.name)} ×${n0(e.qty)}`, e.modeledTotalProfit != null ? signed(e.modeledTotalProfit, cmoney) : money(e.each)]),
+      );
+  }
+
+  const loadTravelShared = () => sharedLoad('travel', () => api('/api/travel'));
+  const loadFactionActShared = () => sharedLoad('faction:activity', () => api('/api/faction/activity'));
+  const loadFactionWsShared = () => sharedLoad('faction:workspace', () => api('/api/faction/workspace?section=members'));
+
   const premium = {
     gym: { needs: ['page.gym'], view: 'gym', load: () => api('/api/stats'), html: gym },
     networth: { needs: ['page.networth'], view: 'networth', load: () => api('/api/networth'), html: networth },
-    travel: { needs: ['page.travel'], view: 'travel', load: () => api('/api/travel'), html: travel },
+    travel: { needs: ['page.travel'], view: 'travel', load: loadTravelShared, html: travel, open: () => window.openTravelView?.('roi') },
     job: { needs: ['page.job'], view: 'job', load: () => api('/api/job'), html: job },
     crimes: {
       needs: ['page.crimes'], view: 'crimes', off: () => !feat('crimes.shoplift') && !feat('crimes.value'), html: crimes,
@@ -177,10 +361,50 @@
     },
     jail: { needs: ['page.crimes', 'crimes.jail'], view: 'crimes', load: () => api('/api/jail'), html: jail },
     awards: { needs: ['page.awards'], view: 'awards', load: () => api('/api/awards'), html: awards },
-    oc: { needs: ['page.faction'], view: 'faction', load: () => api('/api/faction'), html: oc },
+    oc: { needs: ['page.faction'], view: 'faction', load: () => api('/api/faction'), html: oc, open: () => window.openFactionTab?.('oc') },
     war: { needs: ['page.war'], view: 'war', load: () => api('/api/wars'), html: war },
     events: { needs: ['page.tools', 'tools.events'], view: 'tools', load: () => api('/api/events'), html: events },
     orders: { needs: ['page.company'], view: 'report', note: () => (state.companyMode ? null : tr('Yalnızca şirket modunda', 'Company mode only')), load: null, html: orders },
+    faction_member: {
+      needs: ['page.faction', 'faction.members'], view: 'faction', load: loadFactionWsShared, html: factionMember,
+      open: () => {
+        const meId = Number(state.overview?.player?.id) || 0;
+        if (meId && window.openFactionMember) window.openFactionMember(meId);
+        else window.openFactionTab?.('members');
+      },
+    },
+    faction_activity: {
+      needs: ['page.faction', 'faction.activity'], view: 'faction', load: loadFactionActShared, html: factionActivity,
+      open: () => window.openFactionTab?.('activity'),
+    },
+    faction_stats: {
+      needs: ['page.faction', 'faction.stats'], view: 'faction', load: loadFactionWsShared, html: factionStats,
+      open: () => window.openFactionTab?.('stats'),
+    },
+    faction_radar: {
+      needs: ['page.faction', 'faction.travelRadar'], view: 'faction', load: loadFactionActShared, html: factionRadar,
+      open: () => window.openFactionRadar?.({ state: 'all' }),
+    },
+    travel_routes: {
+      needs: ['page.travel'], view: 'travel', load: loadTravelShared, html: travelRoutes,
+      open: () => window.openTravelView?.('roi', { block: 'destinations' }),
+    },
+    travel_stock: {
+      needs: ['page.travel'], view: 'travel', load: loadTravelShared, html: travelStock,
+      open: () => window.openTravelView?.('country', { block: 'countries' }),
+    },
+    travel_traffic: {
+      needs: ['page.travel'], view: 'travel', load: loadTravelShared, html: travelTraffic,
+      open: () => window.openTravelView?.('country', { block: 'traffic' }),
+    },
+    travel_planner: {
+      needs: ['page.travel', 'travel.planner'], view: 'travel', load: loadTravelShared, html: travelPlannerWidget,
+      open: () => window.openTravelView?.('roi', { block: 'planner' }),
+    },
+    travel_history: {
+      needs: ['page.travel'], view: 'travel', load: loadTravelShared, html: travelHistoryWidget,
+      open: () => window.openTravelView?.('item', { block: 'history' }),
+    },
   };
 
   window.LRXOverviewWidgets = Object.freeze({ titles: Object.freeze(titles), premium: Object.freeze(premium) });
