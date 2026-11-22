@@ -33,6 +33,11 @@
     credNote: `Bağımsız projeler, teşekkürle anılır. Herhangi bir onay ima edilmez ve lisansları geçerliliğini korur. <a href="${GH}/blob/main/userscripts/NOTICE.txt" rel="noopener">Üçüncü taraf bildirimleri</a>`,
     relEyebrow: 'Sürüm notları', relTitle: 'Sürüm sürüm neler değişti.', relLead: 'Güncellemeler uygulamanın içinden kurulur. Key\'in, ayarların ve verilerin yerinde kalır.',
     relLatest: 'En yeni',
+    rel16t: 'Kalkış Planlayıcı, Borsa, Faction Intel ve Attack düzeltmesi',
+    rel16: '<li>Ranked War <b>Attack</b> düğmesi (ve Merit Rehberi bağlantıları) Torn\'un <code>page.php</code> adresine güncellendi; artık eski endpoint hatası alınmıyor.</li>'
+      + '<li>Eşyası eksik OC satırına, rozetine veya bildirimine tıklandığında doğrudan Torn <b>Faction Armory → Utilities</b> sayfası açılır.</li>'
+      + '<li>Seyahat Kârı sayfasına canlı geri sayımlı <b>Kalkış Planlayıcı</b> ve etkileşimli 24 saatlik zaman çizelgesi eklendi.</li>'
+      + '<li>Yeni <b>Borsa</b> sayfası (canlı blok ROI %, portföy K/Z, 30g aralık), <b>Ranked War Ödeme Planlayıcı</b> (hazır Banka linki &amp; CSV), <b>Şirket Pozisyon Optimizasyonu</b> ve <b>Faction Intel</b> sekmeleri (7×24 aktivite ısı haritası, armory geçmişi, chain ve yükseltme simülatörü).</li>',
     rel15t: 'Şifreli key\'ler ve daha sade Genel Bakış',
     rel15: '<li>Kayıtlı API key\'lerin Windows DPAPI ile şifreli saklanıyor; yalnızca bu bilgisayardaki Windows hesabın okuyabilir. Önceden kaydettiğin key\'ler ilk açılışta şifrelenir.</li>'
       + '<li><b>Canlı sayaçlar</b> şeridi sadeleşti: LIVE rozeti yok, her sayaç kendi kutucuğunda.</li>'

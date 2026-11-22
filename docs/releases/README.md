@@ -4,6 +4,9 @@ Each file is the GitHub release text for that version. The newest version is at 
 
 | Version | Date | Highlights |
 | --- | --- | --- |
+| [1.6.16](1.6.16.md) | 2026-11-22 | Ranked War `page.php` Attack fix, OC Armory Utilities shortcut, Departure Planner, Stock Market, War Payout Planner, Company Optimizer, Faction Activity/Armory/Chains/Upgrades |
+| [1.6.15](1.6.15.md) | 2026-11-16 | Encrypted API keys (Windows DPAPI), calmer Overview live timers, safety fixes |
+| [1.6.14](1.6.14.md) | 2026-11-15 | Customizable Overview grid, Beginner Guide, unified Finance page, redesigned pages |
 | [1.6.13](1.6.13.md) | 2026-11-13 | Safer updates and TornTools, a stop for self-navigating tabs, an honest Xanax Today count |
 | [1.6.12](1.6.12.md) | 2026-11-12 | Torn rules and privacy: the Rehab message button never clicks, a switch for the Premium connection, session import and guard fixes |
 | [1.6.11](1.6.11.md) | 2026-11-11 | Automatic membership: signing in connects Premium, sessions renew on their own, Xanax activates membership right away |
