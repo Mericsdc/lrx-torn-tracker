@@ -17,7 +17,10 @@ const PUBLIC = path.join(ROOT, 'public');
 const DATA = dataDir();
 const CONFIG_FILE = path.join(DATA, 'config.json');
 const HISTORY_FILE = path.join(DATA, 'history.json');
+const HOLD_DAYS_FILE = path.join(DATA, 'holdings-days.json'); // Holdings per-item day records (holdings-days.js)
 const { buildBattleStats } = require('./battle-stats');
+const holdings = require('./holdings');
+const holdingsDays = require('./holdings-days');
 const overviewLayout = require('../../public/overview-layout');
 const levelling = require('../../public/levelling');
 const travelPlanner = require('../../public/travel-planner');
@@ -78,6 +81,8 @@ delete config.updateUrl; // eski sürümlerde ayarlanabiliyordu; artık hep sabi
 let history = readJson(HISTORY_FILE, { days: [], addiction: {}, user: {}, stockOrders: {} });
 history.days ||= []; history.addiction ||= {}; history.user ||= {}; history.stockOrders ||= {};
 history.stockDeliveries ||= { at: 0, items: [] };
+// data/holdings-days.json, read on the first Holdings load; holdDaysAt = the Holdings reply (its `at`) last recorded.
+let holdDays = null, holdDaysAt = 0;
 // Rebuild the saved bootstrap snapshot after the Xanax calculation fix.
 if (history.lastOverview?.battle && history.lastOverview.battle.calculationVersion !== 2) {
   const old = history.lastOverview;
@@ -122,6 +127,9 @@ function adoptPlayer(playerId) {
     logStatus = { ok: null, error: null, at: 0 };
     halloweenInfo = null;
     saveConfig();
+    // The previous player's Holdings day records leave the disk too.
+    holdDays = null; holdDaysAt = 0;
+    try { if (fs.existsSync(HOLD_DAYS_FILE)) writeJson(HOLD_DAYS_FILE, holdingsDays.empty(id)); } catch (e) { console.warn('[holdings-days]', e.message); }
   }
   if (history.ownerId !== id) {
     history.ownerId = id;
@@ -351,6 +359,47 @@ async function getNetworth(force = false) {
   pruneDaily(history.networth, 365);
   saveHistory();
   return { current: parts, timestamp: n.timestamp || Math.floor(Date.now() / 1000), history: dailyList(history.networth) };
+}
+
+// Finance › Networth › Holdings: the items and stocks behind the networth (src/server/holdings.js). Asked only while
+// that card is shown, kept in memory as one entry (10 minutes, 30 s after a failure that may pass; holdings.cachePolicy).
+// Refresh joins a load in flight instead of starting another.
+// Price effect vs trading (switch finance.priceSplit): each reply not recorded yet becomes that Torn day's per-item
+// record in data/holdings-days.json, and the reply carries the period start records as `split` (holdings-days.js).
+async function getHoldings(force = false) {
+  const { drop, ttl } = holdings.cachePolicy(cache.get('holdings'), force, Date.now());
+  if (drop) cache.delete('holdings');
+  const gen = keyGen;
+  const data = await cached('holdings', ttl, () => holdings.loadHoldings({ get: torn, force }));
+  const owner = historyOwner();
+  if (config.features?.['finance.holdings'] === false || config.features?.['finance.priceSplit'] === false || owner == null) return data;
+  try {
+    holdDays = holdingsDays.forOwner(holdDays ?? readHoldDays(), owner);
+    const day = tctDate(data.at);
+    if (gen === keyGen && data.at !== holdDaysAt) { // a reply of the previous key is never recorded for this player
+      const nwRec = history.networth?.[day]; // the Networth tab loads /api/networth right before Holdings
+      const nw = nwRec && Math.abs(data.at - nwRec.at) < 15 * 60_000 ? Number(nwRec.total) : undefined;
+      const next = holdingsDays.record(holdDays, day, holdingsDays.snapshot(data), { nw });
+      holdDaysAt = data.at;
+      if (next !== holdDays) {
+        holdDays = next;
+        try { writeJson(HOLD_DAYS_FILE, holdDays); } catch (e) { console.warn('[holdings-days]', e.message); }
+      }
+    }
+    return { ...data, split: holdingsDays.starts(holdDays, day) };
+  } catch (e) {
+    // The split is optional: a records file it cannot read or use never takes the Holdings card down, and is not
+    // written over. It is read again on the next load.
+    console.warn('[holdings-days]', e.message);
+    holdDays = null;
+    return data;
+  }
+}
+// A missing file, or one that is not JSON, is an empty one. Any other read error (a lock held by an antivirus, say)
+// throws, so getHoldings skips this load instead of recording over up to a year of records.
+function readHoldDays() {
+  try { return JSON.parse(fs.readFileSync(HOLD_DAYS_FILE, 'utf8')); }
+  catch (e) { if (e.code === 'ENOENT' || e instanceof SyntaxError) return null; throw e; }
 }
 
 /* İş asistanı: çalışma statları + şirket türlerinin pozisyon gereksinimleri */
@@ -2316,6 +2365,7 @@ async function handleApi(req, res, url) {
     }
     if (p === '/api/stats') return send(res, 200, { history: dailyList(history.stats), battle: history.lastOverview?.battle || null });
     if (p === '/api/networth') return send(res, 200, await getNetworth(url.searchParams.get('force') === '1'));
+    if (p === '/api/holdings') return send(res, 200, await getHoldings(url.searchParams.get('force') === '1'));
     if (p === '/api/job') return send(res, 200, await getJobInfo());
     if (p === '/api/travel') return send(res, 200, await getTravelProfit());
     if (p === '/api/levelling') return send(res, 200, await getLevelling(url.searchParams.get('list') || ''));

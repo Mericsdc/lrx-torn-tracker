@@ -1153,7 +1153,38 @@ body.auth-open { overflow: hidden; }
 .fin-spark path { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .fin-spark-empty { width: 80px; text-align: right; }
 .fin-prod-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.05); }
+/* holdings: place chips, reasons, summary, item table; Allocation names that open it */
+.fin-holdings { scroll-margin-top: 16px; }
+.fin-hold-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.fin-hold-chips button { display: inline-flex; align-items: baseline; gap: 8px; padding: 6px 12px; border-radius: 999px; background: rgba(0, 0, 0, 0.42); border: 1px solid var(--stroke); color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; transition: border-color .2s, color .2s, background .2s; }
+.fin-hold-chips button .mono { color: #e5ecef; }
+.fin-hold-chips button:hover { border-color: var(--stroke-2); color: var(--text); }
+.fin-hold-chips button[aria-pressed="true"] { border-color: var(--gold-border); color: var(--gold-2); background: rgba(201, 169, 106, 0.1); }
+.fin-hold-chips button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(201, 169, 106, 0.28); }
+.fin-hold-err { display: flex; flex-direction: column; gap: 2px; margin: -4px 0 12px; overflow-wrap: anywhere; }
+.ic-summary.fin-hold-sum { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.fin-hold-sum > div { min-width: 0; }
+.fin-hold-sum strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fin-hold-off { margin: -6px 0 12px; }
+.fin-hold-name { color: #e5ecef; font-weight: 500; }
+.fin-hold-share { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.fin-hold-share .fin-bar { width: 64px; height: 6px; }
+.fin-hold-share .mono { min-width: 46px; text-align: right; }
+.fin-hold-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 10px; }
+.fin-hold-foot .sub-text { flex: 1 1 260px; min-width: 0; }
+/* holdings › Value | Change switch (head) and the change table */
+.fin-holdings .card-head { flex-wrap: wrap; }
+.fin-hold-headr { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; min-width: 0; margin-left: auto; }
+.fin-hold-mode button { padding: 4px 11px; }
+#fin-hold-change td.num { white-space: nowrap; }
+.fin-part-go { all: unset; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; cursor: pointer; border-bottom: 1px dotted rgba(201, 169, 106, 0.45); }
+.fin-part-go:hover { color: var(--gold-2); }
+.fin-part-go:focus-visible { border-radius: 3px; box-shadow: 0 0 0 2px rgba(201, 169, 106, 0.3); }
 @container (max-width: 860px) { .fin-split { grid-template-columns: minmax(0, 1fr); } }
+@container (max-width: 700px) {
+  .fin-hold-table .fin-hold-unit, .fin-hold-type, .fin-hold-table .fin-hold-where { display: none; }
+  .fin-hold-share .fin-bar { width: 36px; }
+}
 @container (max-width: 560px) {
   .fin-tabs { grid-template-columns: minmax(0, 1fr); }
   .fin-tab-value { font-size: 21px; }

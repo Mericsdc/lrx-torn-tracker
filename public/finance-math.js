@@ -143,8 +143,128 @@
   }
   const chartDays = (days, n) => coWindow(days, Math.min(90, Math.max(7, n)));
 
+  // Holdings card (/api/holdings, src/server/holdings.js): places and the networth part each one makes up.
+  const HOLD_PLACES = Object.freeze(['inventory', 'bazaar', 'display', 'itemmarket', 'stocks']);
+  const HOLD_PART = Object.freeze({ inventory: 'items', bazaar: 'bazaar', display: 'displaycase', itemmarket: 'itemmarket', stocks: 'stockmarket' });
+  // One place, or 'all' with one item merged across places. Rows worth nothing are counted (zero), not listed.
+  function holdingsView(h, place = 'all') {
+    const key = HOLD_PLACES.includes(place) ? place : 'all';
+    const P = h?.places || {};
+    const places = HOLD_PLACES.filter((k) => P[k]).map((k) => {
+      const p = P[k];
+      return { key: k, ok: !!p.ok, total: p.ok ? num(p.total) : 0, count: p.ok ? (p.rows || []).length : 0, partial: !!p.partial, error: p.ok ? null : String(p.error || ''), code: p.code || null, stale: p.ok && p.stale != null ? String(p.stale) : null };
+    });
+    const view = (rows, partial, extra = {}) => {
+      const priced = rows.filter((r) => r.value > 0).sort((a, b) => b.value - a.value || String(a.name).localeCompare(String(b.name)));
+      const total = priced.reduce((a, r) => a + r.value, 0);
+      for (const r of priced) r.share = total > 0 ? r.value / total : 0;
+      return { place: key, total, rows: priced, biggest: priced[0] || null, partial, zero: rows.length - priced.length, places, ...extra };
+    };
+    if (key !== 'all') {
+      const p = P[key];
+      if (!p?.ok) return view([], false, { error: p ? String(p.error || '') : '', code: p?.code || null });
+      return view((p.rows || []).map((r) => ({ ...r, value: num(r.value), places: [key] })), !!p.partial);
+    }
+    const by = new Map();
+    let partial = false;
+    for (const k of HOLD_PLACES) {
+      const p = P[k];
+      if (!p?.ok) continue;
+      partial ||= !!p.partial;
+      for (const r of p.rows || []) {
+        const m = by.get(r.id) || by.set(r.id, { id: r.id, name: r.name, type: r.type, qty: 0, value: 0, places: [] }).get(r.id);
+        m.qty += num(r.qty);
+        m.value += num(r.value);
+        if (!m.places.includes(k)) m.places.push(k);
+      }
+    }
+    return view([...by.values()].map((r) => ({ ...r, unit: r.qty ? r.value / r.qty : 0 })), partial);
+  }
+  // The view's total against Torn's own networth figure for the same place(s); null when it can't be compared
+  // (a failed, partial or stale place, or no networth).
+  function holdingsCompare(view, current) {
+    if (!view || view.error != null || view.partial || !current) return null;
+    if (view.places.some((p) => p.stale != null && (view.place === 'all' || p.key === view.place))) return null;
+    const keys = view.place === 'all' ? view.places.filter((p) => p.ok).map((p) => HOLD_PART[p.key]) : [HOLD_PART[view.place]];
+    const torn = keys.reduce((a, k) => a + num(current[k]), 0);
+    const diff = view.total - torn;
+    return { torn, diff, off: Math.abs(diff) > 0.02 * Math.abs(torn) };
+  }
+  // A new reply over the last one: a place that failed now but had rows before keeps those rows, marked
+  // stale with the new reason (a rate limit or a Torn outage on Refresh does not empty the card).
+  function holdingsMerge(prev, next) {
+    if (!prev?.places || !next?.places) return next;
+    const places = {};
+    for (const [k, n] of Object.entries(next.places)) {
+      const p = prev.places[k];
+      places[k] = !n?.ok && p?.ok ? { ...p, stale: String(n?.error || '') } : n;
+    }
+    return { ...next, places };
+  }
+  // Price effect vs trading (Holdings › Change): each item's value change since a start record
+  // ({ places: { place: { id: [qty, unit] } } }, src/server/holdings-days.js), split with no remainder into
+  //   price = qty now × (unit now − unit then)   Torn's prices moving, on what is still held
+  //   trade = (qty now − qty then) × unit then   buying, selling, listing, moving between places
+  // An item new to a place takes its start unit from where it was at the start (moved Items → Bazaar: still price
+  // effect); only an item held nowhere at the start counts at today's unit (all of it bought). Only places that loaded
+  // in full now and have a start record count; the others are listed in `excluded` (a stale place: 'failed').
+  function holdingsChange(h, start, names = {}, place = 'all') {
+    const P = h?.places || {}, S = start?.places || {};
+    const counted = [], excluded = [], byPlace = {}, perPlace = {};
+    const startQ = new Map(), startV = new Map(); // per id over every place in the start record
+    for (const s of Object.values(S)) for (const [key, then] of Object.entries(s && typeof s === 'object' ? s : {})) {
+      if (!Array.isArray(then) || !(num(then[0]) > 0)) continue;
+      startQ.set(key, (startQ.get(key) || 0) + num(then[0]));
+      startV.set(key, (startV.get(key) || 0) + num(then[0]) * num(then[1]));
+    }
+    for (const k of HOLD_PLACES) {
+      const p = P[k], s = S[k] && typeof S[k] === 'object' ? S[k] : null;
+      if (!p) { if (s && Object.keys(s).length) excluded.push({ key: k, why: 'failed' }); continue; }
+      if (!p.ok || p.stale != null) { excluded.push({ key: k, why: 'failed' }); continue; }
+      if (p.partial) { excluded.push({ key: k, why: 'partial' }); continue; }
+      if (!s) { if ((p.rows || []).length) excluded.push({ key: k, why: 'nostart' }); continue; }
+      counted.push(k);
+      const cur = new Map((p.rows || []).map((r) => [String(r.id), r]));
+      perPlace[k] = [...new Set([...Object.keys(s), ...cur.keys()])].map((key) => {
+        const r = cur.get(key), then = Array.isArray(s[key]) ? s[key] : [0, 0];
+        const q0 = num(then[0]), q1 = num(r?.qty), v1 = num(r?.value);
+        const u1 = q1 ? v1 / q1 : null, u0 = q0 > 0 ? num(then[1]) : startQ.has(key) ? startV.get(key) / startQ.get(key) : (u1 ?? 0);
+        return {
+          key, id: r ? r.id : key, name: r?.name || names[key]?.[0] || `#${key}`, type: r?.type || names[key]?.[1] || '', places: [k],
+          q0, q1, V0: q0 * u0, V1: v1, price: q1 ? q1 * (u1 - u0) : 0, trade: (q1 - q0) * u0, total: v1 - q0 * u0,
+        };
+      });
+      byPlace[k] = perPlace[k].reduce((a, r) => a + r.total, 0);
+    }
+    let rows;
+    if (place !== 'all') rows = perPlace[place] || [];
+    else {
+      const by = new Map();
+      for (const k of counted) for (const r of perPlace[k]) {
+        const m = by.get(r.key);
+        if (!m) { by.set(r.key, { ...r, places: [k] }); continue; }
+        for (const f of ['q0', 'q1', 'V0', 'V1', 'price', 'trade', 'total']) m[f] += r[f];
+        m.places.push(k);
+      }
+      rows = [...by.values()];
+    }
+    const sum = (f) => rows.reduce((a, r) => a + r[f], 0);
+    const out = rows.map(({ key, V0, V1, ...r }) => ({ ...r, u0: r.q0 ? V0 / r.q0 : null, u1: r.q1 ? V1 / r.q1 : null }));
+    const moved = out.filter((r) => Math.abs(r.price) >= 0.5 || Math.abs(r.trade) >= 0.5 || Math.abs(r.total) >= 0.5)
+      .sort((a, b) => Math.abs(b.total) - Math.abs(a.total) || Math.abs(b.price) - Math.abs(a.price) || String(a.name).localeCompare(String(b.name)));
+    return { place, rows: moved, price: sum('price'), trade: sum('trade'), total: sum('total'), byPlace, counted, excluded, unchanged: out.length - moved.length };
+  }
+  // The networth change since the start record = the price effect on everything held + the rest (trading profit,
+  // income, spending). Only for All with every place counted: an excluded place's change would land in the rest.
+  function holdingsTie(chg, nwNow, nwStart) {
+    if (!chg || chg.place !== 'all' || chg.excluded?.length || !Number.isFinite(nwNow) || !Number.isFinite(nwStart)) return null;
+    const change = nwNow - nwStart;
+    return { change, price: chg.price, rest: change - chg.price };
+  }
+
   return Object.freeze({
     NW_GROUPS, NW_TRIGGERS, daysApart, periodStart, nwChange, nwPrevChange, nwGroups, nwMovers, recordChanges, nwStats,
     nextMilestone, coWindow, coPrevWindow, coTotals, pctChange, coChange, breakEven, productSeries, chartDays,
+    HOLD_PLACES, HOLD_PART, holdingsView, holdingsCompare, holdingsMerge, holdingsChange, holdingsTie,
   });
 });

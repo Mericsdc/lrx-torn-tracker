@@ -48,4 +48,45 @@ function financeCompany({ now = Date.now(), count = 40, name } = {}) {
   return { ...c, days };
 }
 
-module.exports = { networthData, financeCompany, DEFAULT_ROWS };
+// /api/holdings (src/server/holdings.js shape): 31 priced inventory rows (one name with markup) + 2 without a market
+// value, a $5B bazaar that is 80 % Xanax (Xanax also sits in the inventory), a display case, an item market the key
+// may not read, and two stocks.
+function holdingsData({ now = Date.now() } = {}) {
+  const row = (id, name, type, qty, unit, listed) => ({ id, name, type, qty, unit, value: qty * unit, ...(listed != null ? { listed } : {}) });
+  const place = (rows, extra = {}) => ({ ok: true, total: rows.reduce((a, r) => a + r.value, 0), rows: rows.sort((a, b) => b.value - a.value), ...extra });
+  const inventory = Array.from({ length: 29 }, (_, i) => row(1000 + i, `Item ${String(i + 1).padStart(2, '0')}`, 'Other', i + 1, 10_000 * (30 - i)));
+  inventory.push(row(206, 'Xanax', 'Drug', 10, 1_000_000), row(2002, '<b>Bold</b> Plushie', 'Plushie', 2, 5_000), row(2000, 'Dozen Roses', 'Flower', 3, 0), row(2001, 'Old Newspaper', 'Other', 1, 0));
+  return {
+    at: now,
+    places: {
+      inventory: place(inventory, { tornAt: Math.floor(now / 1000) - 300 }),
+      bazaar: place([row(206, 'Xanax', 'Drug', 4_000, 1_000_000, 1_050_000), row(370, 'Feathery Hotel Coupon', 'Special', 12, 25_000_000, 26_000_000), row(186, 'Sheep Plushie', 'Plushie', 100, 7_000_000, 7_100_000)]),
+      display: place([row(500, 'Rare Painting', 'Collectible', 1, 150_000_000)]),
+      itemmarket: { ok: false, error: 'Torn API: Access level of this key is not high enough' },
+      stocks: place([row('s25', 'Torn City Investments (TCI)', 'Stock', 1_000, 1_200.5), row('s1', 'Torn & Shanghai Banking (TSB)', 'Stock', 2_000_000, 1_000)]),
+    },
+  };
+}
+
+// /api/holdings `split` (src/server/holdings-days.js) against holdingsData(): records 20 and 3 days before `now`
+// (none yesterday, so 1D has no start). Since then: 1,000 / 2,000 Xanax left the bazaar at a lower price, Item 01 went
+// from 6 to 1, TCI rose from 1,100 to 1,200.5, and a box sold out that is only named in `names` (markup on purpose).
+function holdingsSplit({ now = Date.now() } = {}) {
+  const cur = holdingsData({ now }).places, nw = networthData({ now }).history;
+  const rows = (p) => Object.fromEntries(p.rows.filter((r) => r.qty > 0).map((r) => [r.id, [r.qty, r.unit]]));
+  const names = {};
+  for (const p of Object.values(cur)) for (const r of p.rows || []) names[r.id] = [r.name, r.type];
+  names[3001] = ['<i>Gone</i> Box', 'Other'];
+  const rec = (daysAgo, xanax) => ({
+    date: iso(now - daysAgo * DAY), at: now - daysAgo * DAY, nw: nw[nw.length - 1 - daysAgo].total,
+    places: {
+      inventory: { ...rows(cur.inventory), 1000: [6, 300_000], 3001: [4, 2_000_000] },
+      bazaar: { ...rows(cur.bazaar), 206: xanax },
+      display: rows(cur.display),
+      stocks: { ...rows(cur.stocks), s25: [1000, 1100] },
+    },
+  });
+  return { today: iso(now), starts: [rec(20, [6000, 1_020_000]), rec(3, [5000, 1_010_000])], names };
+}
+
+module.exports = { networthData, financeCompany, holdingsData, holdingsSplit, DEFAULT_ROWS };

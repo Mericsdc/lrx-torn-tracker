@@ -183,3 +183,181 @@ describe('company windows and totals', () => {
     expect(fm.chartDays(long, Infinity).length).toBe(90);
   });
 });
+
+describe('holdingsView and holdingsCompare', () => {
+  const H = () => ({ at: 1, places: {
+    inventory: { ok: true, total: 1500, rows: [
+      { id: 206, name: 'Xanax', type: 'Drug', qty: 1, unit: 1000, value: 1000 },
+      { id: 186, name: 'Sheep Plushie', type: 'Plushie', qty: 10, unit: 50, value: 500 },
+      { id: 260, name: 'Dozen Roses', type: 'Flower', qty: 3, unit: 0, value: 0 },
+    ] },
+    bazaar: { ok: true, total: 4500, rows: [
+      { id: 206, name: 'Xanax', type: 'Drug', qty: 4, unit: 1000, value: 4000, listed: 1100 },
+      { id: 186, name: 'Sheep Plushie', type: 'Plushie', qty: 10, unit: 50, value: 500, listed: 60 },
+    ] },
+    display: { ok: true, total: 0, rows: [] },
+    itemmarket: { ok: false, error: 'Torn API: Access level of this key is not high enough' },
+    stocks: { ok: true, total: 2000, rows: [{ id: 's25', name: 'Torn City Investments (TCI)', type: 'Stock', qty: 10, unit: 200, value: 2000 }] },
+  } });
+
+  it('All merges one item across places with shares', () => {
+    const v = fm.holdingsView(H(), 'all');
+    expect(v.place).toBe('all');
+    expect(v.total).toBe(8000);
+    expect(v.rows.map((r) => [r.id, r.qty, r.value, r.places])).toEqual([
+      [206, 5, 5000, ['inventory', 'bazaar']], ['s25', 10, 2000, ['stocks']], [186, 20, 1000, ['inventory', 'bazaar']],
+    ]);
+    expect(v.rows[0].unit).toBe(1000);
+    expect(v.rows[0].share).toBeCloseTo(0.625);
+    expect(v.rows[0].listed).toBeUndefined();
+    expect(v.biggest.name).toBe('Xanax');
+    expect(v.partial).toBe(false);
+    expect(v.places.map((p) => [p.key, p.ok, p.total, p.count])).toEqual([
+      ['inventory', true, 1500, 3], ['bazaar', true, 4500, 2], ['display', true, 0, 0], ['itemmarket', false, 0, 0], ['stocks', true, 2000, 1],
+    ]);
+    expect(v.places[3].error).toContain('Access level');
+    expect(fm.holdingsView(H(), 'nowhere').place).toBe('all');
+  });
+  it('a single place keeps the listed price', () => {
+    const v = fm.holdingsView(H(), 'bazaar');
+    expect(v.total).toBe(4500);
+    expect(v.rows[0]).toMatchObject({ id: 206, listed: 1100, places: ['bazaar'] });
+    expect(v.rows[0].share).toBeCloseTo(4000 / 4500);
+  });
+  it('zero-value rows are counted, not listed', () => {
+    const v = fm.holdingsView(H(), 'inventory');
+    expect(v.rows.map((r) => r.id)).toEqual([206, 186]);
+    expect(v.zero).toBe(1);
+    expect(fm.holdingsView(H(), 'all').zero).toBe(1);
+  });
+  it('a failed place has its error and no rows; a partial place marks the view', () => {
+    const v = fm.holdingsView(H(), 'itemmarket');
+    expect(v).toMatchObject({ total: 0, rows: [], biggest: null, error: 'Torn API: Access level of this key is not high enough' });
+    const h = H();
+    h.places.inventory.partial = true;
+    expect(fm.holdingsView(h, 'inventory').partial).toBe(true);
+    expect(fm.holdingsView(h, 'all').partial).toBe(true);
+    expect(fm.holdingsView(h, 'bazaar').partial).toBe(false);
+  });
+  it('holdingsCompare: off over 2 %, All uses the parts of the places that loaded, null when partial, failed or without networth', () => {
+    const current = { items: 1500, bazaar: 4000, displaycase: 0, itemmarket: 100, stockmarket: 2000 };
+    expect(fm.holdingsCompare(fm.holdingsView(H(), 'bazaar'), current)).toEqual({ torn: 4000, diff: 500, off: true });
+    expect(fm.holdingsCompare(fm.holdingsView(H(), 'inventory'), current)).toEqual({ torn: 1500, diff: 0, off: false });
+    expect(fm.holdingsCompare(fm.holdingsView(H(), 'all'), current)).toEqual({ torn: 7500, diff: 500, off: true });
+    expect(fm.holdingsCompare(fm.holdingsView(H(), 'itemmarket'), current)).toBeNull();
+    expect(fm.holdingsCompare(fm.holdingsView(H(), 'bazaar'), null)).toBeNull();
+    const h = H();
+    h.places.inventory.partial = true;
+    expect(fm.holdingsCompare(fm.holdingsView(h, 'inventory'), current)).toBeNull();
+  });
+  it('holdingsMerge: a place that failed on a refresh keeps its last rows, marked stale with the new reason', () => {
+    const prev = H();
+    const next = H();
+    next.at = 2;
+    next.places.inventory = { ok: false, error: 'Torn API: Too many requests', code: 5 };
+    next.places.bazaar.rows = next.places.bazaar.rows.slice(0, 1);
+    const m = fm.holdingsMerge(prev, next);
+    expect(m.at).toBe(2);
+    expect(m.places.inventory).toEqual({ ...prev.places.inventory, stale: 'Torn API: Too many requests' });
+    expect(m.places.bazaar).toEqual(next.places.bazaar);
+    expect(m.places.itemmarket).toEqual(next.places.itemmarket);
+    expect(fm.holdingsMerge(null, next)).toBe(next);
+    const again = fm.holdingsMerge(m, { ...next, at: 3, places: { ...next.places, inventory: { ok: false, error: 'Torn API: still down' } } });
+    expect(again.places.inventory.stale).toBe('Torn API: still down');
+    expect(again.places.inventory.rows).toEqual(prev.places.inventory.rows);
+    expect(fm.holdingsMerge(m, H()).places.inventory.stale).toBeUndefined();
+  });
+  it('a stale place still counts in the view, names its reason, and is not compared with Torn', () => {
+    const next = H();
+    next.places.bazaar = { ok: false, error: 'Torn API: down', code: 9 };
+    const m = fm.holdingsMerge(H(), next);
+    const all = fm.holdingsView(m, 'all');
+    expect(all.total).toBe(8000);
+    expect(all.places.find((p) => p.key === 'bazaar')).toMatchObject({ ok: true, count: 2, stale: 'Torn API: down' });
+    expect(all.places.find((p) => p.key === 'inventory').stale).toBeNull();
+    const current = { items: 1500, bazaar: 4500, displaycase: 0, itemmarket: 100, stockmarket: 2000 };
+    expect(fm.holdingsCompare(all, current)).toBeNull();
+    expect(fm.holdingsCompare(fm.holdingsView(m, 'bazaar'), current)).toBeNull();
+    expect(fm.holdingsCompare(fm.holdingsView(m, 'inventory'), current)).toEqual({ torn: 1500, diff: 0, off: false });
+  });
+});
+
+describe('holdingsChange and holdingsTie', () => {
+  const cur = (places) => ({ at: 1, places });
+  const ok = (rows, extra = {}) => ({ ok: true, total: rows.reduce((a, r) => a + r.value, 0), rows, ...extra });
+  const row = (id, name, qty, unit) => ({ id, name, type: 'Drug', qty, unit, value: qty * unit });
+  const byId = (c) => Object.fromEntries(c.rows.map((r) => [r.id, r]));
+
+  it("the owner's Xanax example: price effect on what is held, bought / sold at the start price", () => {
+    const c = fm.holdingsChange(cur({ bazaar: ok([row(206, 'Xanax', 4700, 830000)]) }), { date: '2026-11-15', places: { bazaar: { 206: [5000, 840000] } } }, {}, 'bazaar');
+    expect(c.rows[0]).toMatchObject({ id: 206, name: 'Xanax', places: ['bazaar'], q0: 5000, q1: 4700, u0: 840000, u1: 830000, price: -47e6, trade: -252e6, total: -299e6 });
+    expect([c.price, c.trade, c.total]).toEqual([-47e6, -252e6, -299e6]);
+    expect(c.place).toBe('bazaar');
+    expect(c.counted).toEqual(['bazaar']);
+  });
+  it('a new item is all bought; a sold-out item is named from the stored names', () => {
+    const c = fm.holdingsChange(cur({ inventory: ok([row(186, 'Sheep Plushie', 10, 50)]) }), { places: { inventory: { s25: [1000, 1200.5] } } }, { s25: ['TCI', 'Stock'] });
+    expect(byId(c)[186]).toMatchObject({ q0: 0, q1: 10, u0: null, u1: 50, price: 0, trade: 500, total: 500 });
+    expect(byId(c).s25).toMatchObject({ name: 'TCI', type: 'Stock', q0: 1000, q1: 0, u0: 1200.5, u1: null, price: 0, trade: -1200500, total: -1200500 });
+  });
+  it('moving items from Items to the Bazaar nets to nothing in All', () => {
+    const h = cur({ inventory: ok([]), bazaar: ok([row(206, 'Xanax', 100, 830000)]) });
+    const all = fm.holdingsChange(h, { places: { inventory: { 206: [100, 830000] }, bazaar: {} } });
+    expect(all.rows).toEqual([]);
+    expect(all.unchanged).toBe(1);
+    expect(all.byPlace).toEqual({ inventory: -83e6, bazaar: 83e6 });
+    expect(all.counted).toEqual(['inventory', 'bazaar']);
+  });
+  it('an item moved to a place it was not in keeps its price effect (start unit from where it was)', () => {
+    const h = cur({ inventory: ok([]), bazaar: ok([row(206, 'Xanax', 100, 830000)]) });
+    const start = { places: { inventory: { 206: [100, 840000] }, bazaar: {} } };
+    const all = fm.holdingsChange(h, start);
+    expect(all.rows[0]).toMatchObject({ q0: 100, q1: 100, price: -1e6, trade: 0, total: -1e6 });
+    expect(all.byPlace).toEqual({ inventory: -84e6, bazaar: 83e6 });
+    expect(fm.holdingsChange(h, start, {}, 'bazaar').rows[0]).toMatchObject({ q0: 0, q1: 100, price: -1e6, trade: 84e6, total: 83e6 });
+  });
+  it('All sums one item across places', () => {
+    const h = cur({ inventory: ok([row(206, 'Xanax', 10, 900)]), bazaar: ok([row(206, 'Xanax', 20, 1000)]) });
+    const r = fm.holdingsChange(h, { places: { inventory: { 206: [10, 800] }, bazaar: { 206: [10, 1000] } } }).rows[0];
+    expect(r).toMatchObject({ places: ['inventory', 'bazaar'], q0: 20, q1: 30, u0: 900, price: 1000, trade: 10000, total: 11000 });
+    expect(r.u1).toBeCloseTo(966.67, 2);
+  });
+  it('excludes failed, stale, partial and unrecorded places, and then has no networth tie', () => {
+    const h = cur({
+      inventory: { ok: false, error: 'Torn API: down' },
+      bazaar: ok([row(206, 'Xanax', 1, 1)], { stale: 'Torn API: Too many requests' }),
+      display: ok([row(500, 'Rare Painting', 1, 9)], { partial: true }),
+      itemmarket: ok([row(9, 'Thing', 1, 10)]),
+      stocks: ok([row('s1', 'TSB', 2, 5)]),
+    });
+    const c = fm.holdingsChange(h, { places: { inventory: { 1: [1, 1] }, bazaar: { 206: [1, 1] }, display: {}, stocks: { s1: [2, 4] } } });
+    expect(c.excluded).toEqual([{ key: 'inventory', why: 'failed' }, { key: 'bazaar', why: 'failed' }, { key: 'display', why: 'partial' }, { key: 'itemmarket', why: 'nostart' }]);
+    expect(c.counted).toEqual(['stocks']);
+    expect([c.price, c.trade, c.total]).toEqual([2, 0, 2]);
+    expect(fm.holdingsTie(c, 10e9, 10.04e9)).toBeNull();
+    expect(fm.holdingsChange(h, { places: { inventory: { 1: [1, 1] }, bazaar: { 206: [1, 1] }, display: {}, stocks: { s1: [2, 4] } } }, {}, 'bazaar').rows).toEqual([]);
+  });
+  it('a place that failed now is excluded even without a start record; one with nothing in either is skipped', () => {
+    const c = fm.holdingsChange(cur({ itemmarket: { ok: false, error: 'x' }, display: ok([]), stocks: ok([row('s1', 'TSB', 1, 1)]) }), { places: { stocks: { s1: [1, 1] } } });
+    expect(c.excluded).toEqual([{ key: 'itemmarket', why: 'failed' }]);
+    expect(c.counted).toEqual(['stocks']);
+  });
+  it('ties to the networth: rest = networth change − price effect', () => {
+    const all = fm.holdingsChange(cur({ bazaar: ok([row(206, 'Xanax', 4700, 830000)]) }), { places: { bazaar: { 206: [5000, 840000] } } });
+    expect(fm.holdingsTie(all, 10e9, 10.04e9)).toEqual({ change: -40e6, price: -47e6, rest: 7e6 });
+    expect(fm.holdingsTie(all, 10e9, undefined)).toBeNull();
+    expect(fm.holdingsTie(all, NaN, 10.04e9)).toBeNull();
+    expect(fm.holdingsTie({ ...all, place: 'bazaar' }, 10e9, 10.04e9)).toBeNull();
+  });
+  it('a zero market value at either side gives numbers, never NaN', () => {
+    const c = fm.holdingsChange(cur({ inventory: ok([row(7, 'A', 5, 200), row(8, 'B', 2, 0)]) }), { places: { inventory: { 7: [5, 0], 8: [2, 50] } } });
+    expect(byId(c)[7]).toMatchObject({ price: 1000, trade: 0, total: 1000 });
+    expect(byId(c)[8]).toMatchObject({ u1: 0, price: -100, trade: 0, total: -100 });
+    expect(c.rows.every((r) => [r.price, r.trade, r.total].every(Number.isFinite))).toBe(true);
+  });
+  it('sorts by the size of the change, then the size of the price effect', () => {
+    const h = cur({ inventory: ok([row(1, 'One', 1, 100), row(2, 'Two', 1, 100), row(3, 'Three', 1, 300), row(4, 'Four', 2, 200)]) });
+    const c = fm.holdingsChange(h, { places: { inventory: { 1: [1, 200], 4: [1, 100] } } });
+    expect(c.rows.map((r) => r.id)).toEqual([4, 3, 1, 2]);
+  });
+});

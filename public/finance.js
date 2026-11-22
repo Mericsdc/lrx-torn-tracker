@@ -32,7 +32,12 @@
     nwDays: NW_DAYS.includes(Number(lsGet('tt.finance.nwPeriod', 30))) ? Number(lsGet('tt.finance.nwPeriod', 30)) : 30,
     coDays: CO_DAYS.includes(lsGet('tt.finance.coPeriod', '7')) ? lsGet('tt.finance.coPeriod', '7') : '7',
     nw: null, nwErr: null, closed: new Set(),
+    // Holdings card (/api/holdings): the last reply, the last error, the chosen place and "Show all".
+    hold: null, holdErr: null, holdPlace: ['all', ...FM.HOLD_PLACES].includes(lsGet('tt.finance.holdingsPlace', 'all')) ? lsGet('tt.finance.holdingsPlace', 'all') : 'all', holdAll: false,
+    // Holdings › Value | Change (switch finance.priceSplit): which view the card shows.
+    holdMode: lsGet('tt.finance.holdingsMode', 'value') === 'change' ? 'change' : 'value',
   };
+  let holdReq = null; // the /api/holdings request in flight
 
   const L = (pair) => tr(pair[0], pair[1]);
   const partName = (k) => (NW_PARTS[k] ? L(NW_PARTS[k]) : esc(k));
@@ -80,7 +85,8 @@
   /* ---------- Networth tab ---------- */
   function renderWealth(el) {
     const d = st.nw;
-    if (!d) { el.innerHTML = st.nwErr ? errorBox(st.nwErr) : loadingBox(); return; }
+    // Without a networth reply the Holdings card still shows (it has its own call); only the comparison is left out.
+    if (!d) { el.innerHTML = st.nwErr ? `${errorBox(st.nwErr)}${feat('finance.holdings') ? holdingsCard() : ''}` : loadingBox(); return; }
     const cur = d.current || {}, hist = d.history || [], total = Number(cur.total) || 0, n = st.nwDays;
     const ch = FM.nwChange(hist, total, n), start = ch?.start || null;
     const prev = FM.nwPrevChange(hist, n);
@@ -95,13 +101,14 @@
     const chips = [1, 7, 30, 365].map((k) => { const c = FM.nwChange(hist, total, k); return `<span class="fin-chip"><b>${nwLabel(k)}</b> <span class="mono ${c ? deltaCls(c.change) : ''}">${c ? signed(c.change) : '—'}</span></span>`; }).join('');
 
     const groups = FM.nwGroups(cur, start);
+    const goHold = feat('finance.holdings'); // Allocation names that open the Holdings card on their place
     const posSum = groups.reduce((a, g) => a + Math.max(0, g.total), 0) || 1;
     const alloc = `<article class="glass card fin-alloc">
         <div class="card-head"><h3>${tr('Servet dağılımı', 'Allocation')}</h3><span class="muted">${tr('değişim', 'change')} · ${nwLabel(n)}</span></div>
         <div class="storage-bar fin-stack">${groups.filter((g) => g.total > 0).map((g) => `<i style="width:${(g.total / posSum) * 100}%;background:${GROUPS[g.key].color}" title="${L(GROUPS[g.key].name)}"></i>`).join('')}</div>
         ${groups.map((g) => `<details data-group="${g.key}"${st.closed.has(g.key) ? '' : ' open'}>
           <summary><b class="fin-dot" style="background:${GROUPS[g.key].color}"></b><span class="fin-g-name">${L(GROUPS[g.key].name)}</span><span class="muted mono">${total > 0 && g.total > 0 ? pct(g.total / total, 1) : ''}</span><span class="mono fin-g-val">${cmoney(g.total)}</span><span class="mono fin-chg ${deltaCls(g.change)}">${g.change ? signed(g.change) : ''}</span></summary>
-          ${g.parts.length ? g.parts.map((p) => `<div class="fin-part" data-part="${esc(p.key)}"><span>${partName(p.key)}</span><span class="muted mono">${total > 0 && p.value > 0 ? pct(p.value / total, 1) : ''}</span><span class="mono ${p.value < 0 ? 'neg' : ''}">${cmoney(p.value)}</span><span class="mono fin-chg ${deltaCls(p.change)}">${p.change ? signed(p.change) : ''}</span></div>`).join('') : `<div class="fin-part muted">${tr('Bu grupta değer yok', 'Nothing in this group')}</div>`}
+          ${g.parts.length ? g.parts.map((p) => `<div class="fin-part" data-part="${esc(p.key)}"><span>${goHold && HOLD_GO[p.key] ? `<button type="button" class="fin-part-go" data-hold-go="${HOLD_GO[p.key]}" title="${tr('Varlıklarda göster', 'Show in Holdings')}">${partName(p.key)}</button>` : partName(p.key)}</span><span class="muted mono">${total > 0 && p.value > 0 ? pct(p.value / total, 1) : ''}</span><span class="mono ${p.value < 0 ? 'neg' : ''}">${cmoney(p.value)}</span><span class="mono fin-chg ${deltaCls(p.change)}">${p.change ? signed(p.change) : ''}</span></div>`).join('') : `<div class="fin-part muted">${tr('Bu grupta değer yok', 'Nothing in this group')}</div>`}
         </details>`).join('')}
       </article>`;
 
@@ -156,9 +163,161 @@
       </div>
       <div class="fin-chips">${chips}</div>
       <div class="grid fin-split">${alloc}<div class="stack fin-side">${moved}${milestone}</div></div>
-      ${history}${table}`;
+      ${feat('finance.holdings') ? holdingsCard() : ''}${history}${table}`;
     if (histSince.length >= 2) mountChart($('#fin-nw-chart'), (W) => lineChart(histSince.map((r) => ({ date: r.date, v: r.total })), W));
     else $('#fin-nw-chart').innerHTML = noStart() || emptyBox(tr('Geçmiş birikiyor', 'Building history'), tr('Her gün networth kaydı alınır; grafik 2. günden itibaren görünür.', 'Networth is recorded daily; the chart appears from day 2.'));
+  }
+
+  /* ---------- Holdings card (Networth tab): which items the networth sits in ---------- */
+  const HOLD_TOP = 25;
+  const HOLD_NAMES = { all: ['Tümü', 'All'], inventory: ['Eşyalar', 'Items'], bazaar: ['Bazaar', 'Bazaar'], display: ['Display Case', 'Display Case'], itemmarket: ['Item Market', 'Item Market'], stocks: ['Hisseler', 'Stocks'] };
+  const HOLD_GO = Object.fromEntries(Object.entries(FM.HOLD_PART).map(([place, part]) => [part, place])); // networth part → place
+  const clock = (ms) => new Date(ms).toLocaleTimeString(state.lang === 'en' ? 'en-GB' : 'tr-TR', { hour: '2-digit', minute: '2-digit' });
+  const errText = (e) => esc(e?.message || String(e));
+
+  function holdingsCard() {
+    const h = st.hold;
+    // Value | Change switch: only with the price split on and a reply that carries its records.
+    const split = feat('finance.priceSplit') && h?.split ? h.split : null;
+    const modes = split ? `<div class="toggle fin-hold-mode" role="group" aria-label="${tr('Görünüm', 'View')}">${[['value', tr('Değer', 'Value')], ['change', tr('Değişim', 'Change')]].map(([k, label]) => `<button type="button" data-hold-mode="${k}" aria-pressed="${st.holdMode === k}" class="${st.holdMode === k ? 'active' : ''}">${label}</button>`).join('')}</div>` : '';
+    const head = (sub) => `<div class="card-head"><h3>${tr('Varlıklar', 'Holdings')}</h3><div class="fin-hold-headr"><span class="muted">${sub}</span>${modes}</div></div>`;
+    if (!h) return `<article class="glass card fin-holdings" id="fin-holdings">${head(tr('piyasa değeri', 'market value'))}${st.holdErr ? errorBox(st.holdErr) : loadingBox()}</article>`;
+    if (split && st.holdMode === 'change') return holdingsChangeCard(h, split, head);
+    const all = FM.holdingsView(h, 'all');
+    // A chip per place with rows; a failed place gets a reason line instead. A remembered place without a chip shows All.
+    const chipPlaces = all.places.filter((p) => p.ok && p.count > 0);
+    const place = chipPlaces.some((p) => p.key === st.holdPlace) ? st.holdPlace : 'all';
+    const v = place === 'all' ? all : FM.holdingsView(h, place);
+    const chip = (key, total, partial) => `<button type="button" data-hold-place="${key}" aria-pressed="${key === place}"><span>${L(HOLD_NAMES[key])}</span><span class="mono">${partial ? '~' : ''}${cmoney(total)}</span></button>`;
+    const chips = `<div class="fin-hold-chips" role="group" aria-label="${tr('Yer', 'Place')}">${chip('all', chipPlaces.reduce((a, p) => a + p.total, 0), all.partial)}${chipPlaces.map((p) => chip(p.key, p.total, p.partial)).join('')}</div>`;
+    // A failed place names its reason; a stale one (failed on a refresh, last rows kept) says its list is old and why.
+    const failed = all.places.filter((p) => !p.ok);
+    const stalePlaces = all.places.filter((p) => p.stale != null);
+    const why = (p) => (p.code === 'BAD_SHAPE' ? tr("Torn'dan beklenmeyen yanıt", 'Unexpected reply from Torn') : p.error ? esc(p.error) : tr('yüklenemedi', 'could not load'));
+    const errs = failed.length || stalePlaces.length ? `<div class="fin-hold-err sub-text">${failed.map((p) => `<div data-place="${p.key}">${L(HOLD_NAMES[p.key])}: ${why(p)}</div>`).join('')}${stalePlaces.map((p) => `<div data-place="${p.key}" class="fin-hold-stale">${L(HOLD_NAMES[p.key])}: ${tr('yenilenemedi, son liste gösteriliyor', 'could not refresh, showing the last list')}${p.stale ? ` (${esc(p.stale)})` : ''}</div>`).join('')}</div>` : '';
+    const stale = st.holdErr ? `<div class="alert danger">${tr('Yenilenemedi, son liste gösteriliyor', 'Could not refresh; showing the last list')}: ${errText(st.holdErr)}</div>` : '';
+
+    const cmp = FM.holdingsCompare(v, st.nwErr ? null : st.nw?.current);
+    const big = v.biggest;
+    const sum = big ? `<div class="ic-summary fin-hold-sum">
+        <div><small>${tr('Toplam', 'Total')} · ${L(HOLD_NAMES[place])}</small><strong class="mono">${v.partial ? '~' : ''}${money(v.total)}</strong><em>${tr(`${v.rows.length} eşya`, `${v.rows.length} ${v.rows.length === 1 ? 'item' : 'items'}`)}</em></div>
+        ${cmp ? `<div><small>${tr("Torn'un networth'ünde", "In Torn's networth")}</small><strong class="mono">${money(cmp.torn)}</strong><em class="mono">${tr('fark', 'difference')} ${signed(cmp.diff)}</em></div>` : ''}
+        <div><small>${tr('En büyük', 'Biggest')}</small><strong>${esc(decode(big.name))}</strong><em class="mono">${pct(big.share, 1)} · ${cmoney(big.value)}</em></div>
+      </div>` : '';
+    const off = cmp?.off ? `<p class="sub-text fin-note fin-hold-off">${tr(`Torn'un rakamıyla ${signed(cmp.diff)} fark var: Torn networth'ü kendi fiyatlarıyla ve kendi zamanında hesaplar.`, `${signed(cmp.diff)} differs from Torn's figure: Torn prices and times its networth itself.`)}</p>` : '';
+
+    const listed = place === 'bazaar' || place === 'itemmarket';
+    const shown = st.holdAll ? v.rows : v.rows.slice(0, HOLD_TOP);
+    const table = v.rows.length ? `<div class="tbl-wrap"><table class="tbl compact fin-hold-table" id="fin-hold-table"><thead><tr><th>${tr('Eşya', 'Item')}</th>${place === 'all' ? `<th>${tr('Yer', 'Place')}</th>` : ''}<th class="num">${tr('Adet', 'Qty')}</th><th class="num fin-hold-unit">${tr('Birim değer', 'Unit value')}</th><th class="num">${tr('Değer', 'Value')}</th>${listed ? `<th class="num">${tr('Senin fiyatın', 'Your price')}</th>` : ''}<th class="num">${tr('Pay', 'Share')}</th></tr></thead><tbody>
+        ${shown.map((r) => `<tr data-item="${esc(String(r.id))}"><td><span class="fin-hold-name">${esc(decode(r.name))}</span>${r.type ? ` <span class="sub-text fin-hold-type">${esc(decode(r.type))}</span>` : ''}</td>${place === 'all' ? `<td class="muted">${r.places.map((k) => L(HOLD_NAMES[k])).join(', ')}</td>` : ''}<td class="num">${n0(r.qty)}</td><td class="num fin-hold-unit">${money(r.unit)}</td><td class="num">${money(r.value)}</td>${listed ? `<td class="num">${r.listed ? money(r.listed) : '—'}</td>` : ''}<td class="num"><span class="fin-hold-share"><span class="fin-bar"><i style="width:${(r.share * 100).toFixed(2)}%"></i></span><span class="mono">${pct(r.share, 1)}</span></span></td></tr>`).join('')}
+      </tbody></table></div>`
+      : emptyBox(tr('Değeri olan eşya yok', 'Nothing with a market value'), failed.length ? tr('Yukarıdaki nedenlere bakın.', 'See the reasons above.') : tr('Bu yerlerde piyasa değeri olan eşya bulunamadı.', 'No item with a market value was found in these places.'));
+
+    const more = v.rows.length > HOLD_TOP ? `<button type="button" class="btn sm fin-hold-more" data-hold-all aria-expanded="${st.holdAll}">${st.holdAll ? tr(`İlk ${HOLD_TOP}`, `Show top ${HOLD_TOP}`) : tr(`Tümünü göster (${v.rows.length})`, `Show all ${v.rows.length}`)}</button>` : '';
+    const inv = h.places?.inventory;
+    const notes = [
+      v.zero ? tr(`${v.zero} eşyanın piyasa değeri yok`, `${v.zero} ${v.zero === 1 ? 'item' : 'items'} without a market value`) : null,
+      v.partial ? `~ ${tr('uzun liste: yalnızca ilk 8 sayfa sayıldı', 'a long list: only the first 8 pages are counted')}` : null,
+      (place === 'all' || place === 'inventory') && inv?.ok ? `${tr('Torn envanteri 15 dakikaya kadar önbellekte tutar', 'Torn caches the inventory for up to 15 minutes')}${inv.tornAt ? ` (${tr('Torn kaydı', "Torn's copy")} ${clock(inv.tornAt * 1000)})` : ''}` : null,
+      place !== 'stocks' ? tr('silah ve zırhların bonusu ve kalitesi fiyatlanmaz', 'weapon and armour bonuses and quality are not priced') : null,
+    ].filter(Boolean);
+    return `<article class="glass card fin-holdings" id="fin-holdings">
+        ${head(`${tr('piyasa değeri', 'market value')}${h.at ? ` · ${tr('güncellendi', 'updated')} ${clock(h.at)}` : ''}`)}
+        ${stale}${chips}${errs}${sum}${off}${table}
+        ${more || notes.length ? `<div class="fin-hold-foot">${more}${notes.length ? `<p class="sub-text">${notes.join(' · ')}</p>` : ''}</div>` : ''}
+      </article>`;
+  }
+
+  // Holdings › Change: the value change since the tab period's start record, split into Torn's price moves and the
+  // player's buying / selling (FM.holdingsChange), and for All tied back to the networth (FM.holdingsTie).
+  // Spec: docs/superpowers/specs/2026-11-22-holdings-price-split-design.md
+  const HOLD_WHY = { failed: ['yüklenemedi, sayılmadı', 'could not load, not counted'], partial: ['uzun liste, sayılmadı', 'long list, not counted'] };
+  function holdingsChangeCard(h, split, head) {
+    const n = st.nwDays;
+    const stale = st.holdErr ? `<div class="alert danger">${tr('Yenilenemedi, son liste gösteriliyor', 'Could not refresh; showing the last list')}: ${errText(st.holdErr)}</div>` : '';
+    const card = (sub, body) => `<article class="glass card fin-holdings" id="fin-holdings">${head(sub)}${stale}${body}</article>`;
+    const start = FM.periodStart([...(split.starts || []), { date: split.today }], n);
+    const later = tr('Varlıklar kaydı yalnızca Networth sekmesini açtığın günlerde alınır; daha uzun bir dönem seçin.', 'Holdings records are saved only on days you open the Networth tab. Pick a longer period.');
+    if (!start) {
+      return card(nwLabel(n), !split.starts?.length
+        ? emptyBox(tr('Geçmiş birikiyor', 'Building history'), tr('Networth sekmesini açtığın her gün bir Varlıklar kaydı alınır; değişim görünümü yarından itibaren dolar.', 'A Holdings record is saved each day you open this tab; the change view fills from tomorrow.'))
+        : n === 1 ? emptyBox(tr('Dünden kayıt yok', 'No record from yesterday'), later) : emptyBox(tr('Bu dönemde Varlıklar kaydı yok', 'No Holdings record in this period'), later));
+    }
+    const since = tr(`başlangıç ${shortDate(start.date)}`, `since ${shortDate(start.date)}`);
+    const all = FM.holdingsChange(h, start, split.names, 'all');
+    // A chip per place with items now or at the start; a place that is not counted shows "—".
+    const hasRows = (k) => (h.places?.[k]?.rows?.length || 0) > 0 || Object.keys(start.places?.[k] || {}).length > 0;
+    const out = new Map(all.excluded.map((x) => [x.key, x]));
+    const chipKeys = FM.HOLD_PLACES.filter((k) => (all.counted.includes(k) || out.has(k)) && hasRows(k));
+    const place = chipKeys.includes(st.holdPlace) ? st.holdPlace : 'all';
+    const v = place === 'all' ? all : FM.holdingsChange(h, start, split.names, place);
+    // Nothing counted (Torn refused every place) or a place that is not counted: no figures at all, never "+$0".
+    const nothing = !all.counted.length;
+    const notCounted = place !== 'all' && out.has(place);
+    const chip = (key, value) => `<button type="button" data-hold-place="${key}" aria-pressed="${key === place}"><span>${L(HOLD_NAMES[key])}</span><span class="mono">${value == null ? '—' : signed(value)}</span></button>`;
+    const chips = `<div class="fin-hold-chips" role="group" aria-label="${tr('Yer', 'Place')}">${chip('all', nothing ? null : all.total)}${chipKeys.map((k) => chip(k, out.has(k) ? null : all.byPlace[k] ?? 0)).join('')}</div>`;
+    const why = (x) => (x.why === 'nostart' ? tr(`${shortDate(start.date)} tarihinde kayıt yok, sayılmadı`, `no record on ${shortDate(start.date)}, not counted`) : L(HOLD_WHY[x.why]));
+    const errs = all.excluded.length ? `<div class="fin-hold-err sub-text">${all.excluded.map((x) => `<div data-place="${x.key}">${L(HOLD_NAMES[x.key])}: ${why(x)}</div>`).join('')}</div>` : '';
+
+    // The networth at the start: the one recorded with the items, else that day's networth record ("~").
+    const rec = Number.isFinite(start.nw) ? null : (st.nw?.history || []).find((r) => r.date === start.date);
+    const nwStart = Number.isFinite(start.nw) ? start.nw : Number(rec?.total);
+    const tie = st.nwErr ? null : FM.holdingsTie(v, Number(st.nw?.current?.total), nwStart);
+    const priceTile = [tr('Fiyat etkisi', 'Price effect'), v.price, tr('Torn fiyatları, elindekiler üzerinde', "Torn's prices, on what you hold")];
+    const tiles = tie ? [
+      [`Networth · ${since}`, tie.change, tr('dönemin başından bugüne', 'from the start record to now'), rec ? '~' : ''],
+      priceTile,
+      [tr('Geri kalan', 'Rest'), tie.rest, tr('alım-satım kârın, gelirin ve harcamaların', 'your trading profit, income and spending')],
+    ] : [
+      [tr('Değer değişimi', 'Value change'), v.total, place === 'all' ? tr('sayılan yerlerdeki eşyalar ve hisseler', 'items and stocks in the counted places') : L(HOLD_NAMES[place])],
+      priceTile,
+      [tr('Alım / satım', 'Bought / sold'), v.trade, tr('adet değişimi, başlangıç fiyatıyla', 'quantity change at the start price')],
+    ];
+    const sum = nothing || notCounted ? '' : `<div class="ic-summary fin-hold-sum">${tiles.map(([label, x, note, mark = '']) => `<div><small>${label}</small><strong class="mono ${deltaCls(x)}">${mark}${signed(x)}</strong><em>${note}</em></div>`).join('')}</div>`;
+
+    const cell = (x) => (Math.abs(x) < 0.5 ? '<td class="num muted">$0</td>' : `<td class="num ${deltaCls(x)}">${signed(x)}</td>`);
+    const shown = st.holdAll ? v.rows : v.rows.slice(0, HOLD_TOP);
+    const table = v.rows.length ? `<div class="tbl-wrap"><table class="tbl compact fin-hold-table" id="fin-hold-change"><thead><tr><th>${tr('Eşya', 'Item')}</th>${place === 'all' ? `<th class="fin-hold-where">${tr('Yer', 'Place')}</th>` : ''}<th class="num">${tr('Adet', 'Qty')}</th><th class="num fin-hold-unit">${tr('Birim fark', 'Unit change')}</th><th class="num">${tr('Fiyat etkisi', 'Price effect')}</th><th class="num">${tr('Alım / satım', 'Bought / sold')}</th><th class="num">${tr('Toplam', 'Total')}</th></tr></thead><tbody>
+        ${shown.map((r) => `<tr data-item="${esc(String(r.id))}"><td><span class="fin-hold-name">${esc(decode(r.name))}</span>${r.type ? ` <span class="sub-text fin-hold-type">${esc(decode(r.type))}</span>` : ''}</td>${place === 'all' ? `<td class="muted fin-hold-where">${r.places.map((k) => L(HOLD_NAMES[k])).join(', ')}</td>` : ''}<td class="num">${n0(r.q0)} → ${n0(r.q1)}</td><td class="num fin-hold-unit">${r.u0 != null && r.u1 != null ? signed(r.u1 - r.u0) : '—'}</td>${cell(r.price)}${cell(r.trade)}${cell(r.total)}</tr>`).join('')}
+      </tbody></table></div>`
+      : notCounted ? emptyBox(tr('Bu yer sayılmadı', 'This place is not counted'), `${L(HOLD_NAMES[place])}: ${why(out.get(place))}`)
+      : nothing ? emptyBox(tr('Karşılaştıracak bir şey yok', 'Nothing to compare'), tr('Hiçbir yer sayılamadı; nedenleri yukarıda.', 'No place could be counted; the reasons are above.'))
+      : emptyBox(tr('Değişen eşya yok', 'Nothing changed'), all.excluded.length
+        ? tr(`Sayılan yerlerde adetler ve fiyatlar ${shortDate(start.date)} tarihindekiyle aynı.`, `In the counted places, quantities and prices are the same as on ${shortDate(start.date)}.`)
+        : tr(`Adetler ve fiyatlar ${shortDate(start.date)} tarihindekiyle aynı.`, `Quantities and prices are the same as on ${shortDate(start.date)}.`));
+    const more = v.rows.length > HOLD_TOP ? `<button type="button" class="btn sm fin-hold-more" data-hold-all aria-expanded="${st.holdAll}">${st.holdAll ? tr(`İlk ${HOLD_TOP}`, `Show top ${HOLD_TOP}`) : tr(`Tümünü göster (${v.rows.length})`, `Show all ${v.rows.length}`)}</button>` : '';
+    const notes = [
+      place === 'all' && all.excluded.length && !nothing ? tr(`Geri kalan için bütün yerler gerekli: ${all.excluded.map((x) => L(HOLD_NAMES[x.key])).join(', ')}`, `Rest needs every place: ${all.excluded.map((x) => L(HOLD_NAMES[x.key])).join(', ')}`) : null,
+      place === 'all' && !nothing ? tr('Satılan eşyanın değeri nakde geçer; satışın kârı Geri kalan içindedir', "Sold items move their value into cash; a sale's profit is in Rest") : null,
+      tr('Torn piyasa değeri; alım / satım başlangıç fiyatıyla', 'Torn market value; bought / sold uses the start price'),
+      v.unchanged ? tr(`${v.unchanged} eşya değişmedi`, `${v.unchanged} ${v.unchanged === 1 ? 'item' : 'items'} unchanged`) : null,
+      tie && rec ? tr('~ başlangıç networth o günün son kaydından', "~ the start networth is that day's last record") : null,
+    ].filter(Boolean);
+    return card(`<span class="fin-hold-since">${nwLabel(n)} · ${since}</span>`, `${chips}${errs}${sum}${table}
+        <div class="fin-hold-foot">${more}<p class="sub-text">${notes.join(' · ')}</p></div>`);
+  }
+  // Redraw only the card (chip, "Show all", a reply): the rest of the tab and its chart stay as they are. No card on
+  // screen (Company tab, another page): nothing to do, the next Networth render draws it from st.
+  function redrawHoldings() {
+    const card = $('#fin-holdings');
+    if (card) card.outerHTML = holdingsCard();
+  }
+  // Asked once the networth call has settled (ok or not), only while the card can be seen; a forced call (Refresh)
+  // replaces one in flight.
+  function loadHoldings(force = false) {
+    if (!feat('finance.holdings') || state.view !== 'finance' || activeTab() !== 'wealth') return Promise.resolve();
+    if (holdReq && !force) return holdReq;
+    const req = api('/api/holdings' + (force ? '?force=1' : ''))
+      .then((d) => { if (holdReq === req) { st.hold = FM.holdingsMerge(st.hold, d); st.holdErr = null; } }, (e) => { if (holdReq === req) st.holdErr = e; })
+      .finally(() => { if (holdReq === req) { holdReq = null; redrawHoldings(); } });
+    holdReq = req;
+    return req;
+  }
+  function setHoldPlace(place) {
+    st.holdPlace = ['all', ...FM.HOLD_PLACES].includes(place) ? place : 'all';
+    st.holdAll = false;
+    lsSet('tt.finance.holdingsPlace', st.holdPlace);
+    redrawHoldings();
   }
 
   /* ---------- Company tab ---------- */
@@ -306,12 +465,15 @@
       st.nwErr = null;
     } catch (e) { st.nwErr = e; }
     renderFinance();
+    await loadHoldings(force);
   }
   function setTab(tab) {
     if (tab !== 'wealth' && tab !== 'company') return;
     st.tab = tab;
     lsSet('tt.finance.tab', tab);
     renderFinance();
+    // Back on Networth: ask again (the server answers from its cache for 10 minutes, so this costs no Torn call then).
+    if (tab === 'wealth' && (st.nw || st.nwErr)) loadHoldings();
   }
   // Old page names open Finance on the matching tab (sidebar links, Overview tiles, #networth / #income hashes).
   function alias(view) {
@@ -325,13 +487,37 @@
     if (state.view !== 'finance') return;
     if (!anyTab()) { showView('overview'); try { history.replaceState(null, '', '#overview'); } catch {} return; }
     if (tabs().wealth && !st.nw && !st.nwErr) loadFinance();
-    else renderFinance();
+    else {
+      renderFinance();
+      if ((st.nw || st.nwErr) && !st.hold && !st.holdErr) loadHoldings(); // the Holdings switch was just turned on
+    }
   }
 
   const body = $('#finance-body');
   body?.addEventListener('click', (e) => {
     const t = e.target.closest('.fin-tab');
     if (t) { setTab(t.dataset.finTab); return; }
+    // Holdings: a place chip, "Show all", or an Allocation name that opens the card on its place.
+    const hm = e.target.closest('[data-hold-mode]');
+    if (hm) {
+      st.holdMode = hm.dataset.holdMode === 'change' ? 'change' : 'value';
+      st.holdAll = false;
+      lsSet('tt.finance.holdingsMode', st.holdMode);
+      redrawHoldings();
+      $(`#fin-holdings [data-hold-mode="${st.holdMode}"]`)?.focus();
+      return;
+    }
+    const hp = e.target.closest('[data-hold-place]');
+    if (hp) { setHoldPlace(hp.dataset.holdPlace); $(`#fin-holdings [data-hold-place="${st.holdPlace}"]`)?.focus(); return; }
+    if (e.target.closest('[data-hold-all]')) { st.holdAll = !st.holdAll; redrawHoldings(); $('#fin-holdings [data-hold-all]')?.focus(); return; }
+    const go = e.target.closest('[data-hold-go]');
+    if (go) {
+      setHoldPlace(go.dataset.holdGo);
+      const card = $('#fin-holdings');
+      card?.scrollIntoView({ block: 'start' });
+      (card?.querySelector('[data-hold-place][aria-pressed="true"]') || card)?.focus?.({ preventScroll: true });
+      return;
+    }
     const b = e.target.closest('[data-fin-period] button[data-days]');
     if (!b) return;
     if (b.parentElement.dataset.finPeriod === 'nw') { st.nwDays = Number(b.dataset.days); lsSet('tt.finance.nwPeriod', String(st.nwDays)); }

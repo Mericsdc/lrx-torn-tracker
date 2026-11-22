@@ -45,6 +45,8 @@ global.fetch = async (input) => {
 fs.writeFileSync(path.join(temp, 'config.json'), JSON.stringify({ apiKey: KEY_B }));
 fs.writeFileSync(path.join(temp, 'history.json'), JSON.stringify({ ownerId: 111, days: [], addiction: {}, user: {}, stockOrders: {},
   stats: { '2026-11-01': { str: 1000, def: 1000, spd: 1000, dex: 1000, total: 4000, at: 1 } } }));
+fs.writeFileSync(path.join(temp, 'holdings-days.json'), JSON.stringify({ v: 1, ownerId: 111, names: { 206: ['Xanax', 'Drug'] },
+  days: { '2026-11-01': { at: 1, places: { bazaar: { 206: [5000, 840000] } } } } }));
 
 const { server, flushData } = require('../src/server/server');
 const ready = new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -70,6 +72,7 @@ const statTotals = async () => (await request('/api/stats')).data.history.map((d
 test('records saved for one player are dropped when the saved key belongs to another player', async () => {
   assert.equal((await request('/api/overview')).data.player.id, 222);
   assert.deepEqual(await statTotals(), [20000], 'only player 222 is in the stat history');
+  assert.ok(!fs.readFileSync(path.join(temp, 'holdings-days.json'), 'utf8').includes('Xanax'), "player 111's Holdings records are gone from disk");
 });
 
 test('Log Out followed by another player signing in starts with an empty history', async () => {

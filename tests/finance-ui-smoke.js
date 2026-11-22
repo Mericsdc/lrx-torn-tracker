@@ -17,6 +17,9 @@
 //   Switches: page.networth off → Company tab only; company mode off → Networth tab only (the page falls back);
 //     both off → Overview, nav item hidden.
 //   One networth record and no company days: no NaN / undefined / Infinity / null text, empty states instead.
+//   Holdings › Change (switch finance.priceSplit, /api/holdings `split`): #fin-holdings .fin-hold-mode
+//     button[data-hold-mode="value"|"change"][aria-pressed] (remembered in tt.finance.holdingsMode);
+//     .fin-hold-since (period · start date); .fin-hold-sum tiles; #fin-hold-change tbody tr[data-item].
 //   EN and TR; 1440 / 1100 / 640 px without sideways scroll.
 const fs = require('node:fs');
 const os = require('node:os');
@@ -24,7 +27,7 @@ const path = require('node:path');
 const { fork } = require('node:child_process');
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
-const { networthData, financeCompany, DEFAULT_ROWS } = require('./finance-fixture');
+const { networthData, financeCompany, holdingsData, holdingsSplit, DEFAULT_ROWS } = require('./finance-fixture');
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'lrx-finance-ui-'));
 fs.writeFileSync(path.join(temp, 'config.json'), JSON.stringify({ features: { 'app.splash': false, 'app.animations': false, 'app.updates': false, 'app.newYearWelcome': false } }));
@@ -37,7 +40,8 @@ fs.mkdirSync(output, { recursive: true });
 
 const PRODUCTS = DEFAULT_ROWS.map((row) => row[0]);
 const errors = [], tornRequests = [];
-let browser, page, now, networth = null;
+let browser, page, now, networth = null, holdings = null;
+const holdingsUrls = []; // the query of every /api/holdings request
 
 async function until(fn, arg, what, timeout = 5000) {
   for (const end = Date.now() + timeout; !(await page.evaluate(fn, arg));) {
@@ -103,6 +107,7 @@ async function checkWidths(lang) {
   await page.route('**/*', (route) => {
     const url = new URL(route.request().url());
     if (url.origin !== base) return route.abort();
+    if (url.pathname === '/api/holdings') { holdingsUrls.push(url.search); return typeof holdings === 'function' ? holdings(route) : holdings ? route.fulfill({ json: holdings }) : route.fulfill({ status: 500, json: { error: 'no fixture' } }); }
     if (url.pathname === '/api/networth') return networth ? route.fulfill({ json: networth }) : route.fulfill({ status: 500, json: { error: 'no fixture' } });
     return route.continue();
   });
@@ -110,6 +115,7 @@ async function checkWidths(lang) {
   await page.locator('#auth-key').waitFor({ state: 'visible' });
   now = await page.evaluate(() => Date.now());
   networth = networthData({ now });
+  holdings = holdingsData({ now });
   const company = financeCompany({ now });
   await page.evaluate((c) => {
     document.querySelector('#auth-screen').hidden = true;
@@ -124,11 +130,17 @@ async function checkWidths(lang) {
   assert.equal((await textOf('#nav .nav-item[data-view="finance"]')), 'Finance');
   assert.equal(await page.locator('#nav .nav-item[data-view="finance"]').isVisible(), true, 'the Finance item is shown');
 
-  // The old names open Finance on the matching tab.
+  // The old names open Finance on the matching tab. The first networth call fails here: Holdings still load.
+  networth = null;
   await page.evaluate(() => showView('networth'));
   assert.equal(await page.evaluate(() => state.view), 'finance', 'networth opens Finance');
   assert.equal(await page.evaluate(() => location.hash), '#finance');
   assert.equal(await selectedTab(), 'wealth', 'networth opens the Networth tab');
+  await until(() => !!document.querySelector('#fin-holdings #fin-hold-table'), null, 'holdings while the networth failed');
+  assert.equal(await count('#fin-wealth > .alert.danger'), 1, 'the networth error is shown above the card');
+  assert.ok(!(await textOf('#fin-holdings .fin-hold-sum')).includes("In Torn's networth"), 'no comparison without the networth');
+  networth = networthData({ now });
+  await page.evaluate(() => loadFinance(true));
   await wealthReady();
   assert.equal(await textOf('#view-title'), 'Finance');
 
@@ -159,6 +171,136 @@ async function checkWidths(lang) {
   await page.locator('[data-fin-period="nw"] button[data-days="90"]').click();
   assert.ok((await textOf('#fin-wealth')).includes('records cover 39 days'), 'the coverage note');
   assert.equal(await page.evaluate(() => localStorage.getItem('tt.finance.nwPeriod')), '90', 'the period is remembered');
+
+  // Holdings: which items the networth sits in (/api/holdings, asked after the networth while this tab is shown).
+  networth = networthData({ now });
+  Object.assign(networth.current, { bazaar: 5_000_000_000, displaycase: 150_000_000 }); // Allocation lists these parts
+  await page.evaluate(() => loadFinance(true));
+  await until(() => !!document.querySelector('#fin-holdings #fin-hold-table'), null, 'the holdings table');
+  assert.ok(holdingsUrls.length >= 1, 'holdings are asked');
+  const holdChips = () => page.evaluate(() => [...document.querySelectorAll('#fin-holdings [data-hold-place]')].map((b) => b.dataset.holdPlace));
+  const holdPressed = () => page.evaluate(() => document.querySelector('#fin-holdings [data-hold-place][aria-pressed="true"]')?.dataset.holdPlace || null);
+  assert.deepEqual(await holdChips(), ['all', 'inventory', 'bazaar', 'display', 'stocks'], 'a chip per place with items; the failed item market has none');
+  assert.equal(await holdPressed(), 'all', 'All by default');
+  assert.equal(await count('#fin-hold-table tbody tr[data-item]'), 25, 'the top 25 rows first');
+  await page.locator('#fin-holdings [data-hold-all]').click();
+  assert.equal(await count('#fin-hold-table tbody tr[data-item]'), 36, 'Show all lists every priced row, Xanax once');
+  assert.ok((await textOf('#fin-hold-table tbody tr[data-item="206"]')).includes('Bazaar'), 'All names the places an item sits in');
+  assert.ok((await textOf('#fin-holdings')).includes('2 items without a market value'), 'zero-value rows are counted in a note');
+  assert.ok((await textOf('#fin-holdings .fin-hold-err [data-place="itemmarket"]')).includes('Access level'), 'the item market reason is shown');
+  assert.equal(await count('#fin-hold-table b'), 0, 'item names are never markup');
+  assert.ok((await textOf('#fin-hold-table')).includes('<b>Bold</b> Plushie'), 'the name is shown as text');
+  // Allocation › Bazaar opens the card on the bazaar.
+  await page.locator('.fin-alloc .fin-part-go[data-hold-go="bazaar"]').click();
+  assert.equal(await holdPressed(), 'bazaar', 'the Allocation link selects Bazaar');
+  assert.equal(await page.evaluate(() => localStorage.getItem('tt.finance.holdingsPlace')), 'bazaar', 'the place is remembered');
+  const holdSum = await textOf('#fin-holdings .fin-hold-sum');
+  assert.ok(holdSum.includes('Xanax') && holdSum.includes('80.0%'), 'the biggest bazaar item and its share: ' + holdSum);
+  assert.ok((await textOf('#fin-hold-table thead')).includes('Your price'), 'the bazaar shows the listed price');
+  assert.ok(await page.evaluate(() => { const r = document.querySelector('#fin-holdings').getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0; }), 'the card is scrolled into view');
+  await assertClean('EN holdings');
+  // Refresh asks again with force; a refresh that fails keeps the rows and says why.
+  await page.evaluate(() => loadFinance(true));
+  assert.ok(holdingsUrls[holdingsUrls.length - 1].includes('force=1'), 'Refresh forces holdings: ' + holdingsUrls[holdingsUrls.length - 1]);
+  const good = holdings;
+  holdings = (route) => route.fulfill({ status: 500, json: { error: 'Torn API: down' } });
+  await page.evaluate(() => loadFinance(true));
+  assert.ok((await textOf('#fin-holdings')).includes('Torn API: down'), 'the failed refresh is explained');
+  assert.ok(await count('#fin-hold-table tbody tr[data-item]') > 0, 'the last rows stay');
+  // Torn refuses every place (HTTP 200, each place failed): each place keeps its last rows and says why.
+  holdings = { at: now, places: Object.fromEntries(['inventory', 'bazaar', 'display', 'itemmarket', 'stocks'].map((k) => [k, { ok: false, error: 'Torn API: Too many requests', code: 5 }])) };
+  await page.evaluate(() => loadFinance(true));
+  assert.deepEqual(await holdChips(), ['all', 'inventory', 'bazaar', 'display', 'stocks'], 'the chips stay after a refused refresh');
+  assert.ok(await count('#fin-hold-table tbody tr[data-item]') > 0, 'the rows stay after a refused refresh');
+  const staleLine = await textOf('#fin-holdings .fin-hold-err [data-place="bazaar"]');
+  assert.ok(staleLine.includes('showing the last list') && staleLine.includes('Too many requests'), 'the bazaar says why its list is old: ' + staleLine);
+  holdings = good;
+  // Switch off: no card, plain Allocation names, no request.
+  await setFeat('finance.holdings', false);
+  assert.equal(await count('#fin-holdings'), 0, 'switch off hides the card');
+  assert.equal(await count('.fin-part-go'), 0, 'Allocation names are plain text');
+  const asked = holdingsUrls.length;
+  await page.evaluate(() => loadFinance(true));
+  assert.equal(holdingsUrls.length, asked, 'no holdings request with the switch off');
+  await setFeat('finance.holdings', true);
+  assert.equal(await count('#fin-holdings'), 1, 'switch on shows it again');
+  await page.locator('#fin-holdings [data-hold-place="all"]').click();
+  assert.equal(await holdPressed(), 'all', 'a chip click selects its place');
+  networth = networthData({ now });
+  await page.evaluate(() => loadFinance(true));
+  assert.ok(!(await textOf('#fin-holdings')).includes('showing the last list'), 'a good refresh clears the old-list marks');
+
+  // Price effect vs trading: the Holdings Change view (`split` from /api/holdings, switch finance.priceSplit).
+  await page.locator('[data-fin-period="nw"] button[data-days="30"]').click();
+  holdings = { ...holdingsData({ now }), split: holdingsSplit({ now }) };
+  await page.evaluate(() => loadFinance(true));
+  await until(() => document.querySelectorAll('#fin-holdings [data-hold-mode]').length === 2, null, 'the Value | Change switch');
+  const modePressed = () => page.evaluate(() => document.querySelector('#fin-holdings [data-hold-mode][aria-pressed="true"]')?.dataset.holdMode || null);
+  assert.equal(await modePressed(), 'value', 'Value by default');
+  await page.locator('#fin-holdings [data-hold-mode="change"]').click();
+  assert.equal(await modePressed(), 'change', 'Change is selected');
+  assert.equal(await page.evaluate(() => localStorage.getItem('tt.finance.holdingsMode')), 'change', 'the view is remembered');
+  assert.equal(await count('#fin-hold-change'), 1, 'the change table');
+  const since30 = await textOf('#fin-holdings .fin-hold-since');
+  assert.ok(since30.includes('30D') && since30.includes('since'), 'the period and its start: ' + since30);
+  const xanaxRow = await textOf('#fin-hold-change tbody tr[data-item="206"]');
+  assert.ok(xanaxRow.includes('6,010') && xanaxRow.includes('4,010') && xanaxRow.includes('→'), 'Xanax quantity at the start → now: ' + xanaxRow);
+  assert.ok((await textOf('#fin-hold-change tbody tr[data-item="206"]')).includes('-$80.0M'), 'the bazaar Xanax price effect: ' + xanaxRow);
+  const noTie = await textOf('#fin-holdings');
+  assert.ok(noTie.includes('Rest needs every place'), 'no Rest while the Item Market could not load: ' + noTie);
+  assert.ok(!(await textOf('#fin-holdings .fin-hold-sum')).includes('Rest'), 'no Rest tile');
+  assert.ok((await textOf('#fin-holdings .fin-hold-err [data-place="itemmarket"]')).includes('not counted'), 'the Item Market is named as not counted');
+  assert.equal(await count('#fin-hold-change i'), 0, 'stored names are text, never markup');
+  assert.ok((await textOf('#fin-hold-change')).includes('<i>Gone</i> Box'), 'the sold-out box is listed by its stored name');
+  assert.ok((await textOf('#fin-holdings')).includes('unchanged'), 'unchanged items are counted in a note');
+  await assertClean('EN holdings change');
+  // Every place loaded and recorded: the networth tie.
+  holdings = {
+    ...holdings, places: { ...holdings.places, itemmarket: { ok: true, total: 0, rows: [] } },
+    split: { ...holdings.split, starts: holdings.split.starts.map((s) => ({ ...s, places: { ...s.places, itemmarket: {} } })) },
+  };
+  await page.evaluate(() => loadFinance(true));
+  const tieText = await textOf('#fin-holdings .fin-hold-sum');
+  for (const w of ['Networth', 'Price effect', 'Rest']) assert.ok(tieText.includes(w), `tie tile ${w}: ${tieText}`);
+  // One place: value change = price effect + bought / sold.
+  await page.locator('#fin-holdings [data-hold-place="bazaar"]').click();
+  const placeSum = await textOf('#fin-holdings .fin-hold-sum');
+  for (const w of ['Value change', 'Price effect', 'Bought / sold']) assert.ok(placeSum.includes(w), `place tile ${w}: ${placeSum}`);
+  assert.equal(await count('#fin-hold-change tbody tr[data-item]'), 1, 'only the bazaar Xanax moved in the bazaar');
+  await page.locator('#fin-holdings [data-hold-place="all"]').click();
+  // Each period picks its own start record; 1D has none from yesterday.
+  await page.locator('[data-fin-period="nw"] button[data-days="7"]').click();
+  assert.notEqual(await textOf('#fin-holdings .fin-hold-since'), since30, '7D starts at the later record');
+  await page.locator('[data-fin-period="nw"] button[data-days="1"]').click();
+  assert.ok((await textOf('#fin-holdings')).includes('No record from yesterday'), '1D without a record from yesterday');
+  await assertClean('EN holdings change, 1D');
+  await page.locator('[data-fin-period="nw"] button[data-days="30"]').click();
+  // Torn refuses every place on a Refresh: nothing can be compared, never "Nothing changed" or +$0 tiles.
+  const counted = holdings;
+  holdings = { at: now, places: Object.fromEntries(['inventory', 'bazaar', 'display', 'itemmarket', 'stocks'].map((k) => [k, { ok: false, error: 'Torn API: Too many requests', code: 5 }])), split: counted.split };
+  await page.evaluate(() => loadFinance(true));
+  const refused = await textOf('#fin-holdings');
+  assert.ok(refused.includes('Nothing to compare') && !refused.includes('Nothing changed'), 'every place refused: ' + refused);
+  assert.equal(await count('#fin-holdings .fin-hold-sum'), 0, 'no +$0 tiles when nothing is counted');
+  await page.locator('#fin-holdings [data-hold-place="bazaar"]').click();
+  assert.equal(await count('#fin-holdings .fin-hold-sum'), 0, 'a place that is not counted has no tiles');
+  assert.ok((await textOf('#fin-holdings')).includes('not counted'), 'and says why');
+  await page.locator('#fin-holdings [data-hold-place="all"]').click();
+  await assertClean('EN holdings change, nothing counted');
+  holdings = counted;
+  await page.evaluate(() => loadFinance(true));
+  // No record at all yet.
+  holdings = { ...holdings, split: { ...holdings.split, starts: [] } };
+  await page.evaluate(() => loadFinance(true));
+  assert.ok((await textOf('#fin-holdings')).includes('Building history'), 'the first day');
+  // Switch off: the value view only.
+  await setFeat('finance.priceSplit', false);
+  assert.equal(await count('#fin-holdings [data-hold-mode]'), 0, 'switch off: no Value | Change switch');
+  assert.equal(await count('#fin-hold-table'), 1, 'switch off: the value table');
+  await setFeat('finance.priceSplit', true);
+  holdings = { ...holdingsData({ now }), split: holdingsSplit({ now }) };
+  await page.evaluate(() => loadFinance(true));
+  assert.equal(await count('#fin-hold-change'), 1, 'switch on: back to the remembered Change view');
 
   // Company tab: P&L with this / previous / change, products in data order, chart, funds, day rows.
   await page.locator('.fin-tab[data-fin-tab="company"]').click();
@@ -195,8 +337,11 @@ async function checkWidths(lang) {
   await page.evaluate(() => showView('income'));
   assert.equal(await selectedTab(), 'company', 'income opens the Company tab');
 
-  // Switches and company mode.
+  // Switches and company mode. Coming back to the Networth tab asks for holdings again.
+  const beforeReturn = holdingsUrls.length;
   await page.evaluate(() => LRXFinance.setTab('wealth'));
+  for (let i = 0; i < 100 && holdingsUrls.length === beforeReturn; i++) await page.waitForTimeout(50);
+  assert.ok(holdingsUrls.length > beforeReturn, 'coming back to the Networth tab asks for holdings again');
   await page.locator('[data-fin-period="nw"] button[data-days="30"]').click();
   await setFeat('finance.milestone', false);
   assert.equal(await count('.fin-milestone'), 0, 'milestone switch off hides the card');
@@ -262,6 +407,15 @@ async function checkWidths(lang) {
   await assertClean('TR company');
   await page.evaluate(() => LRXFinance.setTab('wealth'));
   await assertClean('TR networth');
+  await until(() => !!document.querySelector('#fin-holdings [data-hold-mode]'), null, 'TR Value | Change switch');
+  assert.equal(await textOf('#fin-holdings [data-hold-mode="value"]'), 'Değer', 'TR Value');
+  assert.equal(await textOf('#fin-holdings [data-hold-mode="change"]'), 'Değişim', 'TR Change');
+  assert.ok((await textOf('#fin-holdings .fin-hold-sum')).includes('Fiyat etkisi'), 'TR price effect: ' + await textOf('#fin-holdings .fin-hold-sum'));
+  await assertClean('TR holdings change');
+  await page.locator('#fin-holdings [data-hold-mode="value"]').click();
+  await until(() => !!document.querySelector('#fin-holdings #fin-hold-table'), null, 'TR holdings');
+  assert.equal(await textOf('#fin-holdings .card-head h3'), 'Varlıklar', 'TR holdings title');
+  assert.ok((await textOf('#fin-holdings [data-hold-place="all"]')).includes('Tümü'), 'TR All chip');
   await checkWidths('tr');
 
   assert.deepEqual(errors, [], 'no page errors or CSP reports');
