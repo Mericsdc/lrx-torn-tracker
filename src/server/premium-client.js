@@ -138,6 +138,24 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
       }
     }
   }
-  return { status, connect, proxy, reset };
+  const FACTION_HUB_PATH_RE = /^(?:\/v1\/factions\/\d+\/(?:status|settings|report|history(?:\?(?:from=\d+|to=\d+|grain=(?:hour|day))(?:&(?:from=\d+|to=\d+|grain=(?:hour|day)))*)?)|\/v1\/admin\/faction-collector(?:\/jobs)?)$/;
+  async function factionHub(path, { method = 'GET', body } = {}) {
+    if (!['GET', 'POST', 'PATCH'].includes(method) || !FACTION_HUB_PATH_RE.test(String(path || ''))) {
+      throw bridgeError('NOT_FOUND', 404);
+    }
+    for (let attempt = 0; ; attempt++) {
+      if (!session || session.fingerprint !== fingerprint()) await status();
+      const stamp = generation, token = current().token;
+      try {
+        const data = await request(path, { method, body: (method === 'POST' || method === 'PATCH') ? body : undefined, token });
+        if (stamp !== generation) throw bridgeError('PREMIUM_IDENTITY_CHANGED', 409);
+        return data;
+      } catch (error) {
+        if (attempt === 0 && error.status === 401 && !session && hasIdentity()) continue;
+        throw error;
+      }
+    }
+  }
+  return { status, connect, proxy, factionHub, reset };
 }
 module.exports = { createPremiumClient };

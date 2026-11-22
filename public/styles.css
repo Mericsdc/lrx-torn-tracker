@@ -1673,3 +1673,83 @@ body.no-anim *, body.no-anim *::before, body.no-anim *::after { animation: none 
 .fac-upg-top b { color: var(--text); }
 .fac-upg-ctrl { display: flex; align-items: center; gap: 8px; }
 .fac-upg-ctrl input[type="range"] { flex: 1; accent-color: var(--tq); }
+
+/* ==========================================================
+   Faction Freshness Strip, Travel Radar & 24h TCT Step-Line
+   ========================================================== */
+.fac-fresh-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 8px 12px; margin-bottom: 12px; border-radius: var(--radius-sm); border: 1px solid var(--stroke); background: var(--surface-2); }
+.fac-fresh-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.fac-fresh-note { font-size: 12px; margin: -6px 0 10px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--stroke); background: var(--surface-2); }
+.warn-text { color: var(--warn); }
+
+.fac-rad-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.fac-rad-kpi { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--stroke); background: var(--surface-2); color: var(--text); cursor: pointer; text-align: left; transition: border-color .15s, background-color .15s, transform .12s; }
+.fac-rad-kpi:hover { border-color: var(--stroke-2); transform: translateY(-1px); }
+.fac-rad-kpi.active { border-color: var(--tq); background: var(--tq-soft); box-shadow: inset 3px 0 0 var(--tq); }
+.fac-rad-kpi .label { font-size: 11.5px; color: var(--muted); }
+.fac-rad-kpi .value { font-size: 22px; line-height: 1.2; color: var(--text); }
+.fac-rad-kpi.blue .value { color: var(--blue); }
+.fac-rad-kpi.tq .value { color: var(--tq); }
+.fac-rad-kpi.green .value { color: var(--ok); }
+.fac-rad-kpi.warn .value { color: var(--warn); }
+
+.fac-rad-country { appearance: none; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 2px 6px; margin: -2px -6px; color: var(--tq); font: 600 12.5px var(--sans); cursor: pointer; transition: background-color .12s, border-color .12s; }
+.fac-rad-country:hover { background: var(--tq-soft); border-color: var(--tq-border); }
+.fac-radar-jump { cursor: pointer; border: 1px solid transparent; }
+.fac-radar-jump:hover { filter: brightness(1.12); border-color: var(--tq-border); }
+.fac-radar-retry { margin-top: 10px; }
+
+.fac-step-wrap { width: 100%; overflow-x: auto; padding: 6px 0 2px; border-radius: var(--radius-sm); border: 1px solid var(--stroke); background: var(--surface-2); }
+.fac-step-svg { display: block; width: 100%; min-width: 460px; height: auto; max-height: 200px; }
+.fac-step-grid { stroke: var(--stroke); stroke-width: 1; }
+.fac-step-lbl { fill: var(--muted); font: 500 10.5px var(--mono); }
+.fac-step-line-on { stroke: var(--ok); stroke-width: 2.2; stroke-linejoin: miter; }
+.fac-step-line-act { stroke: var(--tq); stroke-width: 1.6; stroke-dasharray: 4 3; opacity: .82; }
+.fac-step-gap { fill: rgba(217, 155, 38, 0.14); stroke: rgba(217, 155, 38, 0.42); stroke-dasharray: 3 3; }
+.fac-step-dot { fill: var(--ok); stroke: var(--bg-2); stroke-width: 1; }
+.fac-step-empty { padding: 14px 12px; font-size: 12.5px; }
+.fac-step-legend { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); }
+.fac-step-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.fac-lg-on, .fac-lg-act, .fac-lg-gap { display: inline-block; width: 12px; height: 3px; border-radius: 2px; }
+.fac-lg-on { background: var(--ok); }
+.fac-lg-act { background: var(--tq); }
+.fac-lg-gap { height: 9px; background: rgba(217, 155, 38, 0.28); border: 1px dashed var(--warn); }
+
+/* ==========================================================
+   Stock Market Price Threshold Alerts
+   ========================================================== */
+.stk-alerts-card { display: flex; flex-direction: column; gap: 10px; }
+.stk-alert-form { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.stk-alert-form select, .stk-alert-form .input { background: var(--field, rgba(6, 8, 10, 0.8)); color: var(--text); border: 1px solid var(--stroke-2); border-radius: 7px; padding: 5px 8px; font: 500 12px var(--sans); }
+.stk-alert-form .input { width: 105px; }
+.stk-alert-fired { display: flex; flex-wrap: wrap; gap: 6px; }
+.stk-alert-jump { cursor: pointer; }
+.stk-alert-chip { display: inline-flex; align-items: center; gap: 6px; }
+.stk-alert-link, .stk-alert-del { appearance: none; background: transparent; border: 0; color: inherit; cursor: pointer; padding: 0; font: inherit; }
+.stk-alert-del { font-weight: 700; opacity: .72; padding-left: 3px; }
+.stk-alert-del:hover { opacity: 1; color: var(--danger); }
+.stk-table tr.stk-highlight td { background: rgba(217, 155, 38, 0.16); outline: 1px solid var(--warn); }
+
+/* ==========================================================
+   War Score Comparison Bar
+   ========================================================== */
+.wp-score-cmp { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; margin-bottom: 12px; border-radius: var(--radius-sm); border: 1px solid var(--stroke); background: var(--surface-2); }
+.wp-score-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+.wp-score-bar { display: flex; height: 10px; width: 100%; overflow: hidden; border-radius: 999px; background: var(--stroke); }
+.wp-bar-a { display: block; height: 100%; background: var(--ok); }
+.wp-bar-b { display: block; height: 100%; background: var(--danger); opacity: .78; }
+.wp-score-links { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ==========================================================
+   Control & Operations Screen (Settings -> General)
+   ========================================================== */
+.ops-stack { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
+.ops-kv { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 12.5px; margin-bottom: 8px; }
+.ops-hub-box { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--stroke); background: var(--surface-2); margin-top: 8px; }
+.ops-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ops-preview { margin: 10px 0 0; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--stroke); background: var(--field, rgba(6, 8, 10, 0.7)); color: var(--text); font-size: 11.5px; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 640px) {
+  .fac-rad-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wp-score-head { flex-direction: column; align-items: flex-start; }
+}

@@ -87,6 +87,34 @@
     });
   }
 
+  function renderScoreComparison() {
+    const facs = st.report?.factions || [];
+    if (facs.length < 2) return '';
+    const mine = facs.find((f) => f.id === st.report.myFactionId) || facs[0];
+    const opp = facs.find((f) => f.id !== mine.id) || facs[1];
+    const sA = Number(mine.score) || 0;
+    const sB = Number(opp.score) || 0;
+    const sum = Math.max(1, sA + sB);
+    const pctA = Math.max(4, Math.min(96, (sA / sum) * 100));
+    const diff = sA - sB;
+    const warUrl = `https://www.torn.com/war.php?step=rankreport&rankID=${encodeURIComponent(st.warId)}`;
+    return `<div class="wp-score-cmp">
+      <div class="wp-score-head">
+        <span><b class="tq-text">${esc(mine.name)}</b> <span class="mono">${n0(sA)}</span> <small class="sub-text">(${n0(mine.attacks)} ${tr('vuruş', 'hits')})</small></span>
+        <span class="chip ${diff >= 0 ? 'green' : 'danger'} mono">War #${st.warId} · ${diff >= 0 ? '+' : ''}${n0(diff)}</span>
+        <span><small class="sub-text">(${n0(opp.attacks)} ${tr('vuruş', 'hits')})</small> <span class="mono">${n0(sB)}</span> <b>${esc(opp.name)}</b></span>
+      </div>
+      <div class="wp-score-bar" role="img" aria-label="${esc(`${mine.name} ${sA} vs ${opp.name} ${sB}`)}">
+        <i class="wp-bar-a" style="width:${pctA.toFixed(1)}%"></i>
+        <i class="wp-bar-b" style="width:${(100 - pctA).toFixed(1)}%"></i>
+      </div>
+      <div class="wp-score-links">
+        <button class="btn sm ghost" type="button" data-open-url="${warUrl}" data-tab-label="War #${st.warId}">${tr('Torn Savaş Raporu', 'Torn War Report')} ↗</button>
+        ${feat('page.faction') && feat('faction.travelRadar') ? `<button class="btn sm ghost" type="button" id="wp-open-radar">🛰️ ${tr('Faction Travel Radar', 'Faction Travel Radar')}</button>` : ''}
+      </div>
+    </div>`;
+  }
+
   function buildPayoutResults() {
     if (st.loadingReport) return loadingBox();
     if (st.reportErr) return errorBox(st.reportErr);
@@ -95,7 +123,8 @@
     }
     const calc = computeCurrent();
     const s = calc.summary;
-    const summary = `<div class="grid kpis small wp-kpis">
+    const scoreBar = renderScoreComparison();
+    const summary = `${scoreBar}<div class="grid kpis small wp-kpis">
       ${kpi(tr('Dağıtılacak', 'Distributable'), money(s.distributable), s.factionCut ? `${tr('Faction payı', 'Faction cut')}: ${money(s.factionCut)}` : '', 'tq')}
       ${kpi(tr('Toplam ödeme', 'Total paid'), money(s.totalPaid), s.unallocated ? `${tr('Dağıtılmayan', 'Unallocated')}: ${money(s.unallocated)}` : tr('Tamamı dağıtıldı', '100% allocated'), 'pos')}
       ${kpi(tr('Hak kazanan', 'Qualified'), `${s.qualifiedCount} / ${s.membersCount}`, s.cappedCount ? `${s.cappedCount} ${tr('tavanlı', 'capped')}` : `${tr('Min.', 'Min')} ${st.minHits} ${tr('vuruş', 'hits')}`)}
@@ -222,6 +251,7 @@
     if (m) { st.mode = m.dataset.wpMode; lsSet('tt.wp.mode', st.mode); renderPayout(); return; }
     const f = e.target.closest('[data-wp-fac]');
     if (f) { st.factionId = Number(f.dataset.wpFac); renderPayout(); return; }
+    if (e.target.closest('#wp-open-radar')) { window.openFactionRadar?.(); return; }
     if (e.target.closest('#wp-csv')) { downloadCsv(); return; }
     if (e.target.closest('#wp-copy')) {
       const calc = computeCurrent();
@@ -263,6 +293,19 @@
     if (!Number.isInteger(id) || id <= 0) return toast(tr('Geçerli bir War ID gir', 'Enter a valid War ID'));
     loadWarReport(id);
   });
+
+  window.openWarPayout = async function openWarPayout(warId = null) {
+    if (!feat('page.war') || !feat('war.payout')) return;
+    st.open = true;
+    lsSet('tt.wp.open', '1');
+    if (state.view !== 'war') showView('war');
+    renderPayout();
+    if (!st.wars) await loadWarsList();
+    if (Number(warId) > 0) await loadWarReport(Number(warId));
+    setTimeout(() => {
+      document.getElementById('war-payout-card')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  };
 
   FEATURE_HOOKS.push(renderPayout);
   const prevLang = window.onLangChanged;

@@ -162,5 +162,48 @@
     };
   }
 
-  return Object.freeze({ singleStatEff, workStatEfficiency, hungarianMax, optimizeStaff });
+  // P2.2 Company stock order recommendation:
+  // max(0, avgDailySales * targetDays - availableStock - verifiedInTransit)
+  // Returns insufficientHistory=true when no positive sales history exists.
+  function companyStockOrder({
+    avgDailySales = 0,
+    targetDays = 3,
+    availableStock = 0,
+    verifiedInTransit = 0,
+    salesSamples = 0,
+  } = {}) {
+    const avg = Number(avgDailySales) || 0;
+    const days = Math.max(1, Number(targetDays) || 1);
+    const avail = Math.max(0, Number(availableStock) || 0);
+    const transit = Math.max(0, Number(verifiedInTransit) || 0);
+    const samples = Math.max(0, Math.floor(Number(salesSamples) || 0));
+    if (!(avg > 0) || samples < 1) {
+      return {
+        recommended: 0,
+        targetStock: 0,
+        availableStock: avail,
+        verifiedInTransit: transit,
+        salesSamples: samples,
+        coverDays: null,
+        coverDaysWithTransit: null,
+        insufficientHistory: true,
+        reason: 'insufficient_sales_history',
+      };
+    }
+    const targetStock = Math.ceil(avg * days);
+    const recommended = Math.max(0, targetStock - avail - transit);
+    return {
+      recommended,
+      targetStock,
+      availableStock: avail,
+      verifiedInTransit: transit,
+      salesSamples: samples,
+      coverDays: avail / avg,
+      coverDaysWithTransit: (avail + transit) / avg,
+      insufficientHistory: false,
+      reason: null,
+    };
+  }
+
+  return Object.freeze({ singleStatEff, workStatEfficiency, hungarianMax, optimizeStaff, companyStockOrder });
 });

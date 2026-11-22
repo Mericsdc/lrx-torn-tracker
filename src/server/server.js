@@ -25,6 +25,10 @@ const overviewLayout = require('../../public/overview-layout');
 const levelling = require('../../public/levelling');
 const travelPlanner = require('../../public/travel-planner');
 const factionTools = require('../../public/faction-tools');
+const travelRadar = require('../../public/travel-radar');
+const companyAdvisor = require('../../public/company-advisor');
+const stocksMath = require('../../public/stocks-math');
+const rosterCacheMod = require('./roster-cache');
 
 if (!fs.existsSync(DATA)) fs.mkdirSync(DATA, { recursive: true });
 const warGroups = require('./war-groups').createWarGroups(DATA);
@@ -129,6 +133,7 @@ function adoptPlayer(playerId) {
     saveConfig();
     // The previous player's Holdings day records leave the disk too.
     holdDays = null; holdDaysAt = 0;
+    resetRosterState();
     try { if (fs.existsSync(HOLD_DAYS_FILE)) writeJson(HOLD_DAYS_FILE, holdingsDays.empty(id)); } catch (e) { console.warn('[holdings-days]', e.message); }
   }
   if (history.ownerId !== id) {
@@ -148,10 +153,37 @@ function next18TctMs(ms = Date.now()) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Torn API (cache + rate limit)                                       */
+/* Torn API (cache + rate limit + source telemetry)                    */
 /* ------------------------------------------------------------------ */
 class ApiError extends Error {
   constructor(message, code, source = 'torn') { super(message); this.code = code; this.source = source; }
+}
+
+const sourceHealth = {
+  torn: { ok: null, lastSuccessAt: 0, lastErrorAt: 0, lastErrorClass: null, latencyMs: 0, calls: 0 },
+  yata: { ok: null, lastSuccessAt: 0, lastErrorAt: 0, lastErrorClass: null, latencyMs: 0, calls: 0 },
+  prometheus: { ok: null, lastSuccessAt: 0, lastErrorAt: 0, lastErrorClass: null, latencyMs: 0, calls: 0 },
+};
+function markSourceOk(name, latencyMs) {
+  const s = sourceHealth[name];
+  if (!s) return;
+  s.ok = true; s.lastSuccessAt = Date.now(); s.lastErrorClass = null; s.latencyMs = Math.max(0, Math.round(latencyMs)); s.calls++;
+}
+function markSourceErr(name, err, latencyMs) {
+  const s = sourceHealth[name];
+  if (!s) return;
+  s.ok = false; s.lastErrorAt = Date.now(); s.latencyMs = Math.max(0, Math.round(latencyMs)); s.calls++;
+  s.lastErrorClass = String(err?.code || err?.name || 'ERROR');
+}
+
+const rosterCache = rosterCacheMod.createRosterCache({
+  fetchMembers: () => tornRaw('v2/faction/members'),
+  getFactionId: () => Number(history.lastOverview?.player?.faction?.faction_id) || null,
+  getKeyGen: () => keyGen,
+  onSnapshot: (entry) => recordFactionActivity(entry.members, entry.observedAtMs, entry.factionId),
+});
+function resetRosterState() {
+  rosterCache.reset();
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -170,7 +202,7 @@ const cache = new Map(); // key -> { t, ttl, data, promise }
 // Bumped whenever the API key changes: a Torn reply that was already on its way for the previous key
 // must not be cached or written into the new player's history.
 let keyGen = 0;
-function resetKeyCaches() { keyGen++; cache.clear(); ffCache.clear(); estCache.clear(); }
+function resetKeyCaches() { keyGen++; cache.clear(); ffCache.clear(); estCache.clear(); resetRosterState(); }
 async function cached(key, ttl, loader) {
   const c = cache.get(key);
   if (c && c.data !== undefined && Date.now() - c.t < ttl) return c.data;
@@ -212,8 +244,16 @@ async function tornRaw(pathq) {
   if (Date.now() < tornPausedUntil) throw rateLimited(); // the limit was hit while this call waited its turn
   const sep = pathq.includes('?') ? '&' : '?';
   const url = `https://api.torn.com/${pathq}${sep}key=${encodeURIComponent(config.apiKey)}&comment=TornTracker`;
-  const res = await fetch(url, { headers: { 'User-Agent': 'TornTracker/1.0' }, signal: AbortSignal.timeout(20_000) });
-  return tornReply(res, await res.text());
+  const started = Date.now();
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': 'TornTracker/1.0' }, signal: AbortSignal.timeout(20_000) });
+    const out = tornReply(res, await res.text());
+    markSourceOk('torn', Date.now() - started);
+    return out;
+  } catch (err) {
+    markSourceErr('torn', err, Date.now() - started);
+    throw err;
+  }
 }
 const torn = (pathq, ttl = 30_000) => cached('torn:' + pathq, ttl, () => tornRaw(pathq));
 
@@ -322,6 +362,9 @@ async function getOverview(force = false) {
     bank: u.city_bank && Number(u.city_bank.amount) > 0 ? { amount: Number(u.city_bank.amount), timeLeft: Number(u.city_bank.time_left) || 0 } : null,
   };
   recordStats(today, bs, u.personalstats || {});
+  const prevFacId = Number(history.lastOverview?.player?.faction?.faction_id) || 0;
+  const nextFacId = Number(result.player?.faction?.faction_id) || 0;
+  if (prevFacId !== nextFacId) resetRosterState();
   history.lastOverview = result;
   history.lastOverviewAt = fetchedAt;
   saveHistory();
@@ -483,16 +526,23 @@ function stockStats(code, id, q, update) {
 /* YATA + Prometheus: miktar için en taze kaynak, restock tahmini Prometheus'tan */
 async function fetchStocks() {
   return cached('travel:stocks', 120_000, async () => {
-    const get = async (url, name) => {
-      const r = await fetch(url, { headers: { 'User-Agent': 'LRX-Torn-Tracker' }, signal: AbortSignal.timeout(15_000) });
-      if (!r.ok) throw new Error(`${name} HTTP ${r.status}`);
-      const j = await r.json();
-      if (!j || typeof j.stocks !== 'object') throw new Error(T(`${name}: beklenmeyen veri`, `${name}: unexpected data`));
-      return j;
+    const get = async (url, name, key) => {
+      const started = Date.now();
+      try {
+        const r = await fetch(url, { headers: { 'User-Agent': 'LRX-Torn-Tracker' }, signal: AbortSignal.timeout(15_000) });
+        if (!r.ok) throw Object.assign(new Error(`${name} HTTP ${r.status}`), { code: `HTTP_${r.status}` });
+        const j = await r.json();
+        if (!j || typeof j.stocks !== 'object') throw Object.assign(new Error(T(`${name}: beklenmeyen veri`, `${name}: unexpected data`)), { code: 'BAD_PAYLOAD' });
+        markSourceOk(key, Date.now() - started);
+        return j;
+      } catch (err) {
+        markSourceErr(key, err, Date.now() - started);
+        throw err;
+      }
     };
     const [y, p] = await Promise.allSettled([
-      get('https://yata.yt/api/v1/travel/export/', 'YATA'),
-      get('https://api.prombot.co.uk/api/travel', 'Prometheus'),
+      get('https://yata.yt/api/v1/travel/export/', 'YATA', 'yata'),
+      get('https://api.prombot.co.uk/api/travel', 'Prometheus', 'prometheus'),
     ]);
     const yata = y.status === 'fulfilled' ? y.value : null;
     const prom = p.status === 'fulfilled' ? p.value : null;
@@ -750,12 +800,19 @@ function buildCompanyReport(c) {
       }
     }
 
+    const orderBasis = companyAdvisor.companyStockOrder({
+      avgDailySales: avgDaily,
+      targetDays: coverDays,
+      availableStock: s.in_stock,
+      verifiedInTransit: s.on_order,
+      salesSamples: hist.length || (s.sold_amount > 0 ? 1 : 0),
+    });
     return {
       name, ...s, avgDaily: Math.round(avgDaily), samples: hist.length,
       avgPrice: s.sold_amount ? s.sold_worth / s.sold_amount : s.price,
       cogs, profit, margin: s.sold_worth ? profit / s.sold_worth : 0,
       daysLeft, daysLeftWithOrder, hoursLeft, hoursLeftWithOrder,
-      target, need, status, orderDelivery,
+      target, need, status, orderDelivery, orderBasis,
     };
   });
 
@@ -1702,11 +1759,7 @@ function ocSummary(c, items, byId, now) {
   };
 }
 
-const memberRow = (m) => ({
-  id: m.id, name: m.name, level: m.level, position: m.position, days: m.days_in_faction, inOc: !!m.is_in_oc,
-  last: m.last_action?.timestamp || 0, lastRel: m.last_action?.relative || '', lastStatus: m.last_action?.status || '',
-  state: m.status?.state || '', until: m.status?.until || null, desc: m.status?.description || '',
-});
+const memberRow = rosterCacheMod.normalizeMemberRow;
 
 // Herkes: kendi OC'si (yalnızca kendi bilgisi)
 async function getMyOcInfo() {
@@ -1725,11 +1778,11 @@ async function getFactionOC(force = false) {
   const access = await factionAccess(force);
   if (!access.allowed) return { access };
   const ttl = force ? 0 : 60_000;
-  const [mem, cr, items] = await Promise.all([
-    torn('v2/faction/members', ttl), torn('v2/faction/crimes?cat=available&limit=100', ttl), itemNames(),
+  const [roster, cr, items] = await Promise.all([
+    rosterCache.load({ force }), torn('v2/faction/crimes?cat=available&limit=100', ttl), itemNames(),
   ]);
   const now = Math.floor(Date.now() / 1000);
-  const members = (mem.members || []).map(memberRow);
+  const members = roster.members || [];
   const byId = new Map(members.map((m) => [m.id, m]));
   const rank = (c) => (c.delayed ? 0 : c.missing.length || c.away.length ? 1 : c.status === 'Planning' ? 2 : 3);
   const crimes = (cr.crimes || []).map((c) => ocSummary(c, items, byId, now))
@@ -1830,8 +1883,8 @@ async function getFactionReport(start = false, windowDays = 7) {
   const st = facStore();
   const now = Math.floor(Date.now() / 1000);
   const today = utcDay(now);
-  const mem = await torn('v2/faction/members', 60_000);
-  const members = (mem.members || []).map(memberRow);
+  const roster = await rosterCache.load({ force: false });
+  const members = roster.members || [];
   const fresh = members.length && members.every((m) => st.snaps[today]?.[m.id]);
   if ((start || !fresh) && !facJob.running && !(facJob.error && Date.now() - facJob.finishedAt < 5 * 60_000)) await runFactionReport();
 
@@ -1872,32 +1925,56 @@ async function getFactionReport(start = false, windowDays = 7) {
   };
 }
 
-/* Faction Activity (members + hourly heatmap snapshots), Armory History, Chains, Upgrade Simulator */
-function recordFactionActivity(members, nowMs = Date.now()) {
+/* Faction Activity (members + hourly heatmap snapshots + 24h timeline + Travel Radar), Armory History, Chains, Upgrade Simulator */
+function recordFactionActivity(members, nowMs = Date.now(), factionId = null) {
   if (!Array.isArray(members) || !members.length) return;
   const st = facStore();
-  st.activity ||= { lastAt: 0, buckets: {} };
+  st.activity ||= { factionId: null, lastAt: 0, lastTimelineAt: 0, buckets: {}, timeline: [] };
+  if (factionId && st.activity.factionId && st.activity.factionId !== factionId) {
+    st.activity = { factionId, lastAt: 0, lastTimelineAt: 0, buckets: {}, timeline: [] };
+  }
+  if (factionId) st.activity.factionId = factionId;
   st.activity.buckets ||= {};
-  // At most one snapshot every 15 minutes so manual refreshes do not skew the hourly heatmap
-  if (nowMs - (st.activity.lastAt || 0) < 15 * 60_000) return;
-  const d = new Date(nowMs);
-  const key = `${d.getUTCDay()}:${d.getUTCHours()}`;
-  const b = st.activity.buckets[key] ||= { samples: 0, onlineSum: 0, idleSum: 0, totalSum: 0 };
-  let online = 0, idle = 0;
+  st.activity.timeline ||= [];
+
+  let online = 0, idle = 0, offline = 0;
   for (const m of members) {
     if (m.lastStatus === 'Online') online++;
     else if (m.lastStatus === 'Idle') idle++;
+    else offline++;
   }
-  b.samples++; b.onlineSum += online; b.idleSum += idle; b.totalSum += members.length;
-  st.activity.lastAt = nowMs;
-  saveHistory();
+
+  let dirty = false;
+  // 24h TCT activity step-line samples (at most 1 sample every 5 minutes, keep 72h rolling)
+  if (nowMs - (st.activity.lastTimelineAt || 0) >= 5 * 60_000) {
+    st.activity.timeline.push({
+      at: nowMs,
+      observedAt: travelRadar.isoUtc(nowMs),
+      online,
+      idle,
+      offline,
+      total: members.length,
+    });
+    const cutoff = nowMs - 72 * 3600_000;
+    while (st.activity.timeline.length && st.activity.timeline[0].at < cutoff) st.activity.timeline.shift();
+    st.activity.lastTimelineAt = nowMs;
+    dirty = true;
+  }
+
+  // At most one heatmap snapshot every 15 minutes so manual refreshes do not skew the hourly heatmap
+  if (nowMs - (st.activity.lastAt || 0) >= 15 * 60_000) {
+    const d = new Date(nowMs);
+    const key = `${d.getUTCDay()}:${d.getUTCHours()}`;
+    const b = st.activity.buckets[key] ||= { samples: 0, onlineSum: 0, idleSum: 0, totalSum: 0 };
+    b.samples++; b.onlineSum += online; b.idleSum += idle; b.totalSum += members.length;
+    st.activity.lastAt = nowMs;
+    dirty = true;
+  }
+
+  if (dirty) saveHistory();
 }
 
-async function getFactionActivity(force = false) {
-  const ttl = force ? 0 : 120_000;
-  const mem = await torn('v2/faction/members', ttl);
-  const members = (mem.members || []).map(memberRow).sort((a, b) => b.last - a.last);
-  recordFactionActivity(members);
+function summarizeActivityCounts(members) {
   const counts = { total: members.length, online: 0, idle: 0, offline: 0, okay: 0, hospital: 0, traveling: 0, abroad: 0, jail: 0, inOc: 0 };
   for (const m of members) {
     if (m.lastStatus === 'Online') counts.online++;
@@ -1910,9 +1987,61 @@ async function getFactionActivity(force = false) {
     else if (m.state === 'Jail' || m.state === 'Federal') counts.jail++;
     if (m.inOc) counts.inOc++;
   }
+  return counts;
+}
+
+async function getFactionActivity(force = false, opts = {}) {
+  const myFacId = Number(history.lastOverview?.player?.faction?.faction_id) || null;
+  let hubFallbackReason = null;
+
+  if (opts.preferShared && myFacId && config.features?.['app.premium'] !== false) {
+    try {
+      const shared = await premiumClient.factionHub(`/v1/factions/${myFacId}/status`);
+      if (shared && shared.freshness && Array.isArray(shared.travel)) {
+        const st = facStore();
+        const cutoff24 = Date.now() - 24 * 3600_000;
+        return {
+          factionId: shared.factionId || myFacId,
+          sourceMode: 'shared',
+          freshness: shared.freshness,
+          travel: shared.travel,
+          travelSummary: shared.travelSummary || { outbound: 0, abroad: 0, inbound: 0, unknown: 0, totalTravel: shared.travel.length },
+          members: shared.members || [],
+          counts: shared.counts || summarizeActivityCounts(shared.members || []),
+          heatmap: factionTools.buildActivityHeatmap(st.activity?.buckets || {}),
+          timeline: (st.activity?.timeline || []).filter((pt) => pt.at >= cutoff24),
+          lastSampleAt: st.activity?.lastAt || null,
+          collector: shared.collector || null,
+          at: Date.now(),
+        };
+      }
+    } catch (err) {
+      hubFallbackReason = String(err?.code || err?.message || 'HUB_UNAVAILABLE');
+    }
+  }
+
+  const roster = await rosterCache.load({ force });
+  const members = roster.members || [];
+  const counts = summarizeActivityCounts(members);
   const st = facStore();
   const heatmap = factionTools.buildActivityHeatmap(st.activity?.buckets || {});
-  return { members, counts, heatmap, lastSampleAt: st.activity?.lastAt || null, at: Date.now() };
+  const cutoff24 = Date.now() - 24 * 3600_000;
+  const timeline = (st.activity?.timeline || []).filter((pt) => pt.at >= cutoff24);
+  return {
+    factionId: roster.factionId || myFacId,
+    sourceMode: 'local',
+    hubFallbackReason,
+    freshness: roster.freshness,
+    travel: roster.travel,
+    travelSummary: roster.travelSummary,
+    transitions: roster.transitions,
+    members,
+    counts,
+    heatmap,
+    timeline,
+    lastSampleAt: st.activity?.lastAt || null,
+    at: Date.now(),
+  };
 }
 
 async function getFactionArmory(force = false) {
@@ -2044,6 +2173,20 @@ async function getStockMarket(force = false) {
     if (STOCK_DIVIDEND_ITEMS.has(low)) itemPriceByName[low] = Number(it.market_value) || 0;
   }
   const pointsPrice = Number(stats.stats?.points_averagecost) || 0;
+
+  // Evaluate local price threshold alerts (first sample = baseline; source loss never fires)
+  const rules = Array.isArray(history.priceAlerts) ? history.priceAlerts : [];
+  const currentPrices = {};
+  for (const [id, s] of Object.entries(stocks)) {
+    const p = Number(s?.current_price) || 0;
+    if (p > 0) currentPrices[`stock:${s.stock_id ?? id}`] = p;
+  }
+  const evaluated = stocksMath.evaluatePriceAlerts(rules, currentPrices, history.priceAlertBaselines || {}, travelRadar.isoUtc(Date.now()));
+  if (JSON.stringify(evaluated.nextPrev) !== JSON.stringify(history.priceAlertBaselines || {})) {
+    history.priceAlertBaselines = evaluated.nextPrev;
+    saveHistory();
+  }
+
   return {
     stocks,
     userStocks: mine.stocks || {},
@@ -2051,7 +2194,84 @@ async function getStockMarket(force = false) {
     pointsPrice,
     bankAprs: bank.bank || null,
     priceHistory: history.stockPrices || {},
+    priceAlerts: { rules, triggered: evaluated.events },
     at: Date.now(),
+  };
+}
+
+function managePriceAlerts(body = {}) {
+  history.priceAlerts ||= [];
+  const action = String(body.action || 'list');
+  if (action === 'add') {
+    const assetKind = body.assetKind === 'item' ? 'item' : 'stock';
+    const assetId = String(body.assetId || '').trim();
+    const threshold = Number(body.threshold);
+    const direction = body.direction === 'below' ? 'below' : 'above';
+    if (!assetId || !(threshold > 0)) throw Object.assign(new ApiError(T('Geçersiz fiyat eşiği.', 'Invalid price threshold.'), 'BAD_ALERT'), { status: 400 });
+    const rule = {
+      id: `${assetKind}_${assetId}_${direction}_${Date.now()}`,
+      assetKind,
+      assetId,
+      label: String(body.label || assetId).slice(0, 48),
+      direction,
+      threshold,
+      enabled: true,
+      source: assetKind === 'stock' ? 'torn_stocks' : 'torn_items',
+      createdAt: Date.now(),
+    };
+    history.priceAlerts = [...history.priceAlerts.slice(-49), rule];
+    saveHistory();
+    return { rules: history.priceAlerts, added: rule };
+  }
+  if (action === 'remove') {
+    const id = String(body.id || '');
+    history.priceAlerts = history.priceAlerts.filter((r) => r.id !== id);
+    saveHistory();
+    return { rules: history.priceAlerts };
+  }
+  return { rules: history.priceAlerts };
+}
+
+async function getOpsStatus(checkSources = false) {
+  if (checkSources) {
+    await Promise.allSettled([
+      tornRaw('torn/?selections=timestamp').catch(() => null),
+      fetchStocks().catch(() => null),
+    ]);
+  }
+  const maskedKey = config.apiKey ? '****' + config.apiKey.slice(-4) : '';
+  const peek = rosterCache.peek();
+  const facId = Number(history.lastOverview?.player?.faction?.faction_id) || peek?.factionId || null;
+  let hub = { connected: false, admin: false, collector: null, factionSettings: null };
+  if (config.features?.['app.premium'] !== false) {
+    try {
+      const st = await premiumClient.status({ skipReconnect: true });
+      hub.connected = Boolean(st?.connected);
+      hub.admin = Boolean(st?.account?.admin);
+      if (st?.connected && st?.account?.admin) {
+        hub.collector = await premiumClient.factionHub('/v1/admin/faction-collector').catch(() => null);
+      }
+      if (st?.connected && facId) {
+        hub.factionSettings = await premiumClient.factionHub(`/v1/factions/${facId}/settings`).catch(() => null);
+      }
+    } catch { /* Hub optional: local ops remain fully visible */ }
+  }
+  return {
+    at: Date.now(),
+    factionId: facId,
+    maskedKey,
+    tornPausedUntil,
+    sources: { ...sourceHealth },
+    localRoster: peek ? {
+      factionId: peek.factionId,
+      observedAt: peek.freshness.observedAt,
+      receivedAt: peek.freshness.receivedAt,
+      ageSec: peek.freshness.ageSec,
+      state: peek.freshness.state,
+      membersCount: peek.membersCount,
+      travelCount: peek.travelCount,
+    } : null,
+    hub,
   };
 }
 
@@ -2221,7 +2441,9 @@ function schedulePoll() {
     fetchCompany(true).catch((e) => console.warn('[poll] company:', e.message));
     getOverview().catch(() => {});
     if (config.features?.['page.networth'] !== false) getNetworth().catch(() => {});
-    if (config.features?.['page.faction'] !== false && config.features?.['faction.activity'] !== false && Number(history.lastOverview?.player?.faction?.faction_id) > 0) {
+    if (config.features?.['page.faction'] !== false
+      && (config.features?.['faction.activity'] !== false || config.features?.['faction.travelRadar'] !== false)
+      && Number(history.lastOverview?.player?.faction?.faction_id) > 0) {
       getFactionActivity().catch(() => {});
     }
   }, mins * 60_000).unref();
@@ -2396,10 +2618,36 @@ async function handleApi(req, res, url) {
       return send(res, 200, { access, myOc, oc, at: Date.now() });
     }
     if (p === '/api/faction/report') return send(res, 200, await getFactionReport(req.method === 'POST', Number(url.searchParams.get('days')) || 7));
-    if (p === '/api/faction/activity') return send(res, 200, await getFactionActivity(url.searchParams.get('force') === '1'));
+    if (p === '/api/faction/activity') return send(res, 200, await getFactionActivity(url.searchParams.get('force') === '1', { preferShared: url.searchParams.get('source') === 'shared' }));
     if (p === '/api/faction/armory') return send(res, 200, await getFactionArmory(url.searchParams.get('force') === '1'));
     if (p === '/api/faction/chains') return send(res, 200, await getFactionChains(url.searchParams.get('force') === '1'));
     if (p === '/api/faction/upgrades') return send(res, 200, await getFactionUpgrades(url.searchParams.get('force') === '1'));
+    if (p === '/api/alerts/price' && req.method === 'GET') return send(res, 200, managePriceAlerts({ action: 'list' }));
+    if (p === '/api/alerts/price' && req.method === 'POST') return send(res, 200, managePriceAlerts(await readBody(req)));
+    if (p === '/api/ops/status' && req.method === 'GET') return send(res, 200, await getOpsStatus(url.searchParams.get('check') === '1'));
+    if (p === '/api/ops/faction-collector/jobs' && req.method === 'POST') {
+      return send(res, 200, await premiumClient.factionHub('/v1/admin/faction-collector/jobs', { method: 'POST', body: await readBody(req) }));
+    }
+    if (p === '/api/faction/hub/settings') {
+      const fid = Number(url.searchParams.get('factionId')) || Number(history.lastOverview?.player?.faction?.faction_id) || 0;
+      if (!fid) return send(res, 400, { error: T('Faction kimliği bulunamadı.', 'Faction ID not found.') });
+      const method = req.method === 'PATCH' || req.method === 'POST' ? 'PATCH' : 'GET';
+      const body = method === 'PATCH' ? await readBody(req) : undefined;
+      return send(res, 200, await premiumClient.factionHub(`/v1/factions/${fid}/settings`, { method, body }));
+    }
+    if (p === '/api/faction/hub/history' && req.method === 'GET') {
+      const fid = Number(url.searchParams.get('factionId')) || Number(history.lastOverview?.player?.faction?.faction_id) || 0;
+      if (!fid) return send(res, 400, { error: T('Faction kimliği bulunamadı.', 'Faction ID not found.') });
+      const q = new URLSearchParams();
+      for (const k of ['from', 'to', 'grain']) if (url.searchParams.get(k)) q.set(k, url.searchParams.get(k));
+      const suffix = q.toString() ? `?${q.toString()}` : '';
+      return send(res, 200, await premiumClient.factionHub(`/v1/factions/${fid}/history${suffix}`));
+    }
+    if (p === '/api/faction/hub/report' && req.method === 'GET') {
+      const fid = Number(url.searchParams.get('factionId')) || Number(history.lastOverview?.player?.faction?.faction_id) || 0;
+      if (!fid) return send(res, 400, { error: T('Faction kimliği bulunamadı.', 'Faction ID not found.') });
+      return send(res, 200, await premiumClient.factionHub(`/v1/factions/${fid}/report`));
+    }
     if (p === '/api/feedback' && req.method === 'POST') {
       try { return send(res, 200, await sendFeedback(await readBody(req))); }
       catch (e) { return send(res, e.code === 'FEEDBACK_RATE' ? 429 : e.code === 'FEEDBACK_SHORT' ? 400 : 502, { error: e.message, code: e.code }); }

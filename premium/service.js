@@ -5,6 +5,7 @@ const { createWorker } = require('./worker');
 const { normalizeEvents } = require('./parser');
 const crypto = require('node:crypto');
 const { createFeatureService } = require('./feature-service');
+const { createFactionHub } = require('./faction-hub');
 const featureCatalog = require('../public/feature-catalog');
 
 function createPremiumService(config, dependencies = {}) {
@@ -14,6 +15,7 @@ function createPremiumService(config, dependencies = {}) {
   const auth = createAuth(store, client, config);
   const features = createFeatureService(store);
   const worker = createWorker(store, client, config, { random: dependencies.random, maxPages: dependencies.maxPages });
+  const factionHub = createFactionHub(config, dependencies);
   function info() {
     const settings = store.settings(), checkpoint = store.checkpoint();
     const gate = worker.gate();
@@ -114,6 +116,6 @@ function createPremiumService(config, dependencies = {}) {
     }
     fail('NOT_FOUND', 404);
   }
-  return { store, auth, worker, config, features, info, me, requirePremium, exportReceipts, adminAction, close: async () => { await worker.stop(); store.close(); } };
+  return { store, auth, worker, factionHub, config, features, info, me, requirePremium, exportReceipts, adminAction, close: async () => { await worker.stop(); await factionHub.close(); store.close(); } };
 }
 module.exports = { createPremiumService };

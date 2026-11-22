@@ -38,15 +38,19 @@ function createHttpServer(config, dependencies = {}) {
     try {
       if (req.url.length > 2048) fail('REQUEST_URL_LIMIT', 414);
       const url = new URL(req.url, 'http://premium.local');
-      if (url.search) fail('QUERY_NOT_ALLOWED');
       const prefix = config.publicUrl ? new URL(config.publicUrl).pathname.replace(/\/$/, '') : '';
       if (prefix && url.pathname === prefix) url.pathname = '/';
       else if (prefix && url.pathname.startsWith(prefix + '/')) url.pathname = url.pathname.slice(prefix.length);
+      const isFactionHistory = /^\/v1\/factions\/\d+\/history$/.test(url.pathname);
+      if (url.search && !isFactionHistory) fail('QUERY_NOT_ALLOWED');
+      if (isFactionHistory && url.search) {
+        for (const k of url.searchParams.keys()) if (!['from', 'to', 'grain'].includes(k)) fail('QUERY_NOT_ALLOWED');
+      }
       if (req.headers.origin) {
         const expected = config.publicUrl ? new URL(config.publicUrl).origin : 'http://' + req.headers.host;
         if (req.headers.origin !== expected) fail('ORIGIN_DENIED', 403);
       }
-      if (req.method === 'POST' && !/^application\/json(?:;|$)/i.test(req.headers['content-type'] || '')) fail('JSON_REQUIRED', 415);
+      if ((req.method === 'POST' || req.method === 'PATCH') && !/^application\/json(?:;|$)/i.test(req.headers['content-type'] || '')) fail('JSON_REQUIRED', 415);
       if (url.pathname === '/health' && req.method === 'GET') return send(res, 200, { ok: true, mode: config.mode });
       if (url.pathname === '/v1/info' && req.method === 'GET') return send(res, 200, service.info());
       if (url.pathname === '/terms' && req.method === 'GET') return send(res, 200, {
@@ -90,8 +94,32 @@ function createHttpServer(config, dependencies = {}) {
       if (url.pathname === '/v1/me/erasure-request' && req.method === 'POST') return send(res, 200, service.store.requestErasure(actor));
       if (url.pathname === '/v1/premium/receipt-export' && req.method === 'GET') return send(res, 200, service.exportReceipts(actor));
       if (url.pathname === '/v1/premium/access-check' && req.method === 'GET') { service.requirePremium(actor); return send(res, 200, { entitled: true }); }
+      // Shared Faction Hub endpoints (P1.3 / P3.1) — verified session + Torn faction role on every call
+      const facMatch = /^\/v1\/factions\/(\d+)\/(status|history|settings|report)$/.exec(url.pathname);
+      if (facMatch) {
+        const fid = Number(facMatch[1]);
+        const sub = facMatch[2];
+        if (sub === 'status' && req.method === 'GET') return send(res, 200, await service.factionHub.getStatus(actor, fid));
+        if (sub === 'history' && req.method === 'GET') {
+          return send(res, 200, await service.factionHub.getHistory(actor, fid, {
+            from: url.searchParams.get('from'),
+            to: url.searchParams.get('to'),
+            grain: url.searchParams.get('grain') || 'hour',
+          }));
+        }
+        if (sub === 'settings' && req.method === 'GET') return send(res, 200, await service.factionHub.getSettings(actor, fid));
+        if (sub === 'settings' && req.method === 'PATCH') return send(res, 200, await service.factionHub.updateSettings(actor, fid, await readBody(req)));
+        if (sub === 'report' && req.method === 'GET') return send(res, 200, await service.factionHub.getSharedReport(actor, fid));
+        fail('METHOD_NOT_ALLOWED', 405);
+      }
       if (url.pathname.startsWith('/v1/admin')) {
         service.store.assertAdmin(actor);
+        if (url.pathname === '/v1/admin/faction-collector' && req.method === 'GET') {
+          return send(res, 200, service.factionHub.operatorSummary());
+        }
+        if (url.pathname === '/v1/admin/faction-collector/jobs' && req.method === 'POST') {
+          return send(res, 200, await service.factionHub.operatorJob(actor, await readBody(req)));
+        }
         if (url.pathname === '/v1/admin' && req.method === 'GET') {
           // The admin page reloads itself every 15 seconds. A viewing is recorded once per administrator per ten
           // minutes, so the audit trail (its last 100 entries are shown) is not buried under "viewed" rows.
@@ -117,7 +145,7 @@ if (require.main === module) {
   try {
     const config = readConfig();
     const { server, service } = createHttpServer(config);
-    server.listen(config.port, config.host, () => { service.worker.start(); console.log('Premium service listening; mode=' + config.mode + '; port=' + server.address().port); });
+    server.listen(config.port, config.host, () => { service.worker.start(); service.factionHub.start(); console.log('Premium service listening; mode=' + config.mode + '; port=' + server.address().port); });
     let stopping = false;
     const stop = () => { if (stopping) return; stopping = true; server.close(async () => { try { await service.close(); } finally { process.exit(0); } }); };
     process.on('SIGINT', stop); process.on('SIGTERM', stop);

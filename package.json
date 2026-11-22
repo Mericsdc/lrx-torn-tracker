@@ -9,7 +9,7 @@
     "build:preview": "node tools/build-preview.js",
     "test:all": "npm test && npm run test:premium",
     "test": "npm run test:node && npm run test:unit",
-    "test:node": "node --test tests/core.test.js tests/account.test.js tests/torn-api.test.js tests/session.test.js tests/session-guard.test.js tests/ff-script.test.js tests/updater.test.js tests/torntools.test.js tests/nav-guard.test.js tests/levelling-api.test.js tests/userscripts.test.js tests/profile-work-stats.test.js tests/awards.test.js tests/faction-key-change.test.js tests/secret-store.test.js tests/secret-config.test.js tests/secret-config-unreadable.test.js tests/intel-features.test.js tests/holdings-split.test.js",
+    "test:node": "node --test tests/core.test.js tests/account.test.js tests/torn-api.test.js tests/session.test.js tests/session-guard.test.js tests/ff-script.test.js tests/updater.test.js tests/torntools.test.js tests/nav-guard.test.js tests/levelling-api.test.js tests/userscripts.test.js tests/profile-work-stats.test.js tests/awards.test.js tests/faction-key-change.test.js tests/secret-store.test.js tests/secret-config.test.js tests/secret-config-unreadable.test.js tests/intel-features.test.js tests/holdings-split.test.js tests/travel-radar.test.js",
     "test:unit": "vitest run",
     "test:watch": "vitest",
     "test:premium": "node --test tests/premium/*.test.js",

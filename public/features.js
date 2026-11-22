@@ -27,6 +27,7 @@ const FEATURE_DEFS = [
   { group: 'pages', parent: 'page.crimes', key: 'crimes.jail', def: true, tr: ["Jail bust takibi", "Son 24 / 72 saatteki bustlar ve tahmini ceza puanı"], en: ["Jail bust tracker", "Busts in the last 24 / 72 hours and estimated penalty score"] },
   { group: 'pages', key: 'page.faction', def: true, tr: ['Faction', "Kendi OC durumun · OC'ye girmeyenler, geciken OC'ler ve üye raporu (yetkililer) · aktivite, armory, chain ve yükseltmeler"], en: ['Faction', 'Your OC status · missing/delayed OCs and member reports (officers) · activity, armory, chains and upgrades'] },
   { group: 'pages', parent: 'page.faction', key: 'faction.activity', def: true, tr: ['Aktivite & ısı haritası', 'Canlı çevrimiçi dağılımı, 7×24 TCT ısı haritası, tam liste ve üye karşılaştırma'], en: ['Activity & heatmap', 'Live online distribution, 7×24 TCT heatmap, full roster and member comparison'] },
+  { group: 'pages', parent: 'page.faction', key: 'faction.travelRadar', def: true, tr: ['Travel Radar (uçuş takibi)', 'Yurt dışına giden, yurt dışındaki ve Torn\'a dönen faction üyeleri, rota ve tahmini varış'], en: ['Travel Radar (flight watch)', 'Faction members flying abroad, abroad or returning to Torn with route and ETA'] },
   { group: 'pages', parent: 'page.faction', key: 'faction.armory', def: true, tr: ['Armory geçmişi', 'Son 100 armory hareketi, kategori filtresi ve en çok kullananlar'], en: ['Armory history', 'Last 100 armory events, category filters and top actors'] },
   { group: 'pages', parent: 'page.faction', key: 'faction.chains', def: true, tr: ['Chain raporları', 'Aktif chain ve son 25 chain bonus / respect özeti'], en: ['Chain reports', 'Active chain and last 25 chains milestone / respect summary'] },
   { group: 'pages', parent: 'page.faction', key: 'faction.upgrades', def: true, tr: ['Yükseltme simülatörü', 'Dal sırası (1×→32×) çarpanlarıyla respect harcama simülasyonu'], en: ['Upgrade simulator', 'Respect cost simulation with branch-order multipliers (1×→32×)'] },
@@ -52,6 +53,10 @@ const FEATURE_DEFS = [
   { group: 'notify', key: 'notify.bank', def: true, tr: ['Banka yatırımın bitti', ''], en: ['Bank investment finished', ''] },
   { group: 'notify', key: 'notify.oc', def: true, tr: ["OC: eşyan eksik, planlama bitti ya da OC'n bitti", ''], en: ['OC: your item is missing, planning finished or your OC ended', ''] },
   { group: 'notify', key: 'notify.factionOc', def: true, tr: ["Faction OC: geciken ya da eşyası eksik OC (lider ve yetkililer)", ''], en: ['Faction OC: delayed OCs or OCs missing an item (leader and authorized positions)', ''] },
+  { group: 'notify', key: 'notify.travelRadar', def: true, tr: ['Faction Travel Radar: yaklaşan iniş ve uçuş geçişleri', ''], en: ['Faction Travel Radar: approaching landings and flight transitions', ''] },
+  { group: 'notify', key: 'notify.warEvents', def: true, tr: ['Savaş ve chain: savaş başlangıcı, bitişi ve hedef eşikleri', ''], en: ['War & chain: war start, end and score thresholds', ''] },
+  { group: 'notify', key: 'notify.companySummary', def: true, tr: ['Şirket 18:00 TCT stok siparişi özeti', ''], en: ['Company 18:00 TCT stock order summary', ''] },
+  { group: 'notify', key: 'notify.priceAlert', def: true, tr: ['Borsa / piyasa fiyat eşiği uyarıları', ''], en: ['Stock / market price threshold alerts', ''] },
   { group: 'notify', key: 'notify.restock', def: true, tr: ['Takip ettiğin ürün (★): kalkış zamanı ve restock', ''], en: ['Watched item (★): departure time and restock', ''] },
   { group: 'notify', key: 'notify.shoplift', def: true, tr: ['Shoplifting: takip ettiğin (★) mağazada bütün güvenlik kapandı', ''], en: ['Shoplifting: all security down at a watched (★) store', ''] },
   { group: 'notify', key: 'notify.events', def: true, tr: ['Etkinlik başladı (Easter, Trick or Treat, Christmas Town)', ''], en: ['Event started (Easter, Trick or Treat, Christmas Town)', ''] },
@@ -189,6 +194,7 @@ function showSettingsTab(t) {
   for (const p of document.querySelectorAll('.set-panel')) p.classList.toggle('active', p.dataset.setPanel === t);
   try { localStorage.setItem('lrx.setTab', t); } catch {}
   if (t === 'events') window.loadEventSettings?.();
+  if (t === 'general') window.loadOpsPanel?.();
 }
 window.showSettingsTab = showSettingsTab;
 let settingsBound = false;
@@ -747,6 +753,20 @@ function renderTravelResults() {
     </article>`;
   window.renderDeparturePlanner?.();
 }
+
+/* Travel Radar → Travel Profit cross-link: filter by destination/origin country code */
+window.openTravelCountry = function openTravelCountry(code) {
+  if (!feat('page.travel') || viewHidden('travel')) {
+    toast(tr('Seyahat Kârı sayfası şu an kapalı veya seviye 15 altında.', 'Travel Profit is currently disabled or below level 15.'));
+    return;
+  }
+  const clean = String(code || '').trim().toLowerCase();
+  travelState.countries = clean && clean !== 'torn' ? new Set([clean]) : new Set();
+  travelState.stock = 'all';
+  saveTravelPrefs();
+  showView('travel');
+  if (travelState.data) renderTravel();
+};
 
 /* Filtre olayları (tek sefer bağlanır; #travel-body kalıcı) */
 (() => {

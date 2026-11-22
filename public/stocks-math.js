@@ -217,6 +217,42 @@
     };
   }
 
+  // P2.2 Price threshold alerts:
+  // Emits ONLY when previous and new valid prices sit on opposite sides of threshold.
+  // First valid sample establishes baseline without firing; missing/invalid price (source outage) never emits.
+  function evaluatePriceAlerts(rules = [], currentPrices = {}, prevPrices = {}, observedAt = null) {
+    const nextPrev = { ...(prevPrices || {}) };
+    const events = [];
+    for (const r of rules || []) {
+      if (!r || !r.id || r.enabled === false) continue;
+      const key = `${r.assetKind || 'stock'}:${r.assetId}`;
+      const cur = Number(currentPrices?.[key]);
+      const thresh = Number(r.threshold);
+      if (!(cur > 0) || !(thresh > 0)) continue; // source loss / invalid price -> no event, keep old baseline
+      const prev = Number(nextPrev[key]);
+      nextPrev[key] = cur;
+      if (!(prev > 0)) continue; // first observation is baseline only
+      const crossedAbove = r.direction === 'above' && prev < thresh && cur >= thresh;
+      const crossedBelow = r.direction === 'below' && prev > thresh && cur <= thresh;
+      if (crossedAbove || crossedBelow) {
+        events.push({
+          ruleId: String(r.id),
+          assetKind: r.assetKind || 'stock',
+          assetId: String(r.assetId),
+          label: String(r.label || r.assetId),
+          direction: r.direction,
+          threshold: thresh,
+          prevPrice: prev,
+          currentPrice: cur,
+          source: String(r.source || 'torn_stocks'),
+          observedAt: observedAt || new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+          idempotencyKey: `price:${r.id}:${r.direction}:${thresh}:${observedAt || cur}`,
+        });
+      }
+    }
+    return { events, nextPrev };
+  }
+
   return Object.freeze({
     SELL_FEE,
     PAYOUT_MAP: Object.freeze(PAYOUT_MAP),
@@ -224,5 +260,6 @@
     resolvePayoutValue,
     holdingSummary,
     analyzeStocks,
+    evaluatePriceAlerts,
   });
 });

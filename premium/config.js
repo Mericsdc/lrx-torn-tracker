@@ -20,6 +20,8 @@ function readConfig(env = process.env) {
   return {
     mode, host, port, receiverId, adminIds, publicUrl, testAuthToken, reviewRetentionDays,
     dbPath: env.PREMIUM_DB_PATH === ':memory:' ? ':memory:' : path.resolve(env.PREMIUM_DB_PATH || path.join(__dirname, '..', 'data', 'premium-' + mode + '.sqlite')),
+    factionDbPath: (env.PREMIUM_FACTION_DB_PATH === ':memory:' || env.PREMIUM_DB_PATH === ':memory:') ? ':memory:' : path.resolve(env.PREMIUM_FACTION_DB_PATH || path.join(__dirname, '..', 'data', 'faction-hub-' + mode + '.sqlite')),
+    factionKeySecret: env.PREMIUM_FACTION_KEY_SECRET || '',
     receiverKey: env.PREMIUM_RECEIVER_API_KEY || '',
     livePaymentsAllowed: bool(env.PREMIUM_ALLOW_LIVE_PAYMENTS),
     formatVerified: bool(env.PREMIUM_RECEIVER_FORMAT_VERIFIED),

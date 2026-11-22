@@ -1,8 +1,9 @@
 /* =========================================================
-   LRX Faction sayfası (events.js ve faction-tools.js'ten sonra yüklenir)
+   LRX Faction sayfası (events.js, faction-tools.js ve travel-radar.js'ten sonra yüklenir)
    Sekmeler:
    - OC & Özet: kendi OC'n, OC'ye girmeyenler, devam eden OC'ler (eksik eşyalı satır -> Armory Utilities), 7g/30g üye raporu
-   - Aktivite: canlı Online/Idle/Offline dağılımı, 7x24 TCT aktivite ısı haritası, tam üye tablosu, 2 üye karşılaştırma
+   - Aktivite: canlı Online/Idle/Offline dağılımı, 24s TCT adım çizgisi, 7x24 TCT ısı haritası, tam liste, 2 üye karşılaştırma
+   - Travel Radar: yurt dışına giden / yurt dışındaki / dönen üyeler, rota, ayrık aktivite & sağlık eksenleri, geçiş tabanlı ETA
    - Armory: 30 günlük armory geçmişi (kim ne kullandı/ödünç aldı/doldurdu)
    - Chain: canlı chain durumu ve geçmiş chain bonus raporları
    - Yükseltme Simülatörü: respect harcamadan dal sıralaması (1×/2×/4×/8×/16×/32×) maliyet hesabı
@@ -12,8 +13,8 @@
   Object.assign(I18N, { 'nav.faction': ['Faction', 'Faction'] });
   Object.assign(VIEW_META, {
     faction: {
-      tr: ['Faction', 'OC takibi, aktivite ısı haritası, armory, chain ve yükseltme simülatörü'],
-      en: ['Faction', 'OC tracking, activity heatmap, armory history, chains and upgrade simulator'],
+      tr: ['Faction', 'OC takibi, aktivite, travel radar, armory, chain ve yükseltme simülatörü'],
+      en: ['Faction', 'OC tracking, activity, travel radar, armory history, chains and upgrade simulator'],
     },
   });
 
@@ -25,13 +26,34 @@
 
   const fac = {
     tab: lsGet('tt.fac.tab', 'oc'),
+    scopeKey: '',
+    facSeq: 0, actSeq: 0, repSeq: 0, armSeq: 0, chSeq: 0, upgSeq: 0,
     d: null, err: null,
     rep: null, repErr: null, repTimer: null, repDays: Number(lsGet('tt.fac.repDays', '7')) === 30 ? 30 : 7,
     act: null, actErr: null, actQ: '', actFilter: 'all', actSort: 'last', cmpA: 0, cmpB: 0,
+    radState: 'all', radCountry: 'all', radAct: 'all', radQ: '', radSource: 'local',
     arm: null, armErr: null, armCat: 'all', armQ: '',
     ch: null, chErr: null,
     upg: null, upgErr: null, upgSel: null, upgRespectOverride: null, upgBranch: 'all',
   };
+
+  function currentScopeKey() {
+    const p = state.overview?.player;
+    return `${Number(p?.id) || 0}:${Number(p?.faction?.faction_id) || 0}`;
+  }
+  function syncScope() {
+    const k = currentScopeKey();
+    if (fac.scopeKey && k !== '0:0' && fac.scopeKey !== k) {
+      fac.d = null; fac.err = null;
+      fac.rep = null; fac.repErr = null; clearTimeout(fac.repTimer);
+      fac.act = null; fac.actErr = null;
+      fac.arm = null; fac.armErr = null;
+      fac.ch = null; fac.chErr = null;
+      fac.upg = null; fac.upgErr = null; fac.upgSel = null;
+      fac.facSeq++; fac.actSeq++; fac.repSeq++; fac.armSeq++; fac.chSeq++; fac.upgSeq++;
+    }
+    if (k !== '0:0') fac.scopeKey = k;
+  }
 
   const nowS = () => Math.floor(nowTct() / 1000);
   const profile = (id) => `${T}profiles.php?XID=${id}`;
@@ -39,6 +61,25 @@
   const hms = (s) => { s = Math.max(0, Math.round(s)); return `${Math.floor(s / 3600)}${tr('sa', 'h')} ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}${tr('dk', 'm')} ${String(s % 60).padStart(2, '0')}${tr('sn', 's')}`; };
   const dayLabel = (d) => (d ? new Date(`${d}T00:00:00Z`).toLocaleDateString(state.lang === 'en' ? 'en-GB' : 'tr-TR', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '—');
   const tsFmt = (ts) => (ts ? new Date(ts * 1000).toLocaleString(state.lang === 'en' ? 'en-GB' : 'tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) : '—');
+  const isoHm = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+  };
+  const isoHms = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}:${String(d.getUTCSeconds()).padStart(2, '0')} TCT`;
+  };
+  const ageText = (sec) => {
+    const s = Math.max(0, Math.floor(Number(sec) || 0));
+    if (s < 60) return tr(`${s} sn önce`, `${s}s ago`);
+    const m = Math.floor(s / 60);
+    if (m < 60) return tr(`${m} dk önce`, `${m}m ago`);
+    return tr(`${Math.floor(m / 60)} sa ${m % 60} dk önce`, `${Math.floor(m / 60)}h ${m % 60}m ago`);
+  };
   const STATE_TR = { Traveling: ['uçakta', 'Traveling'], Abroad: ['yurt dışında', 'Abroad'], Hospital: ['hastanede', 'In Hospital'], Jail: ['hapiste', 'In Jail'], Federal: ['federal hapiste', 'In Federal Jail'], Okay: ['müsait', 'Okay'] };
   const stateText = (s) => { const t = STATE_TR[s]; return t ? tr(t[0], t[1]) : esc(s || ''); };
   const ROLE_TR = { leader: ['Lider', 'Leader'], 'co-leader': ['Eş lider', 'Co-leader'] };
@@ -52,6 +93,7 @@
   function visibleTabs() {
     const out = [['oc', '🕵️', tr('OC & Özet', 'OC & Overview')]];
     if (feat('faction.activity')) out.push(['activity', '📊', tr('Aktivite', 'Activity')]);
+    if (feat('faction.travelRadar')) out.push(['radar', '🛰️', tr('Travel Radar', 'Travel Radar')]);
     if (feat('faction.armory')) out.push(['armory', '🧰', tr('Armory', 'Armory')]);
     if (feat('faction.chains')) out.push(['chains', '⛓', tr('Chain', 'Chains')]);
     if (feat('faction.upgrades')) out.push(['upgrades', '🌳', tr('Yükseltmeler', 'Upgrades')]);
@@ -64,48 +106,102 @@
 
   /* ---------- Veri ---------- */
   async function fetchFaction(force = false) {
-    try { fac.d = await api(`/api/faction${force ? '?force=1' : ''}`); fac.err = null; }
-    catch (e) { fac.err = e; }
+    syncScope();
+    const seq = ++fac.facSeq;
+    try {
+      const res = await api(`/api/faction${force ? '?force=1' : ''}`);
+      if (seq !== fac.facSeq) return fac.d;
+      fac.d = res; fac.err = null;
+    } catch (e) {
+      if (seq !== fac.facSeq) return fac.d;
+      fac.err = e;
+    }
     checkOcNotify();
     return fac.d;
   }
   async function fetchReport(start = false) {
-    try { fac.rep = await api(`/api/faction/report?days=${fac.repDays}`, start ? { method: 'POST' } : {}); fac.repErr = null; }
-    catch (e) { fac.repErr = e; }
+    syncScope();
+    const seq = ++fac.repSeq;
+    try {
+      const res = await api(`/api/faction/report?days=${fac.repDays}`, start ? { method: 'POST' } : {});
+      if (seq !== fac.repSeq) return fac.rep;
+      fac.rep = res; fac.repErr = null;
+    } catch (e) {
+      if (seq !== fac.repSeq) return fac.rep;
+      fac.repErr = e;
+    }
     // Rapor hazırlanırken sayfa açıksa 4 sn'de bir ilerlemeyi göster
     clearTimeout(fac.repTimer);
     if (fac.rep?.job?.running && state.view === 'faction') fac.repTimer = setTimeout(() => fetchReport().then(render), 4000);
   }
   async function fetchActivity(force = false) {
-    try { fac.act = await api(`/api/faction/activity${force ? '?force=1' : ''}`); fac.actErr = null; }
-    catch (e) { fac.actErr = e; }
+    syncScope();
+    const seq = ++fac.actSeq;
+    const qs = [];
+    if (force) qs.push('force=1');
+    if (fac.radSource === 'shared') qs.push('source=shared');
+    const suffix = qs.length ? `?${qs.join('&')}` : '';
+    try {
+      const res = await api(`/api/faction/activity${suffix}`);
+      if (seq !== fac.actSeq) return fac.act;
+      fac.act = res; fac.actErr = null;
+      checkTravelRadarNotify(res);
+    } catch (e) {
+      if (seq !== fac.actSeq) return fac.act;
+      fac.actErr = e;
+      // Auth/permission revocation never keeps stale private data on screen
+      if (e?.status === 401 || e?.status === 403 || e?.code === 'NO_KEY' || e?.code === 'KEY_ACCESS') fac.act = null;
+    }
     return fac.act;
   }
   async function fetchArmory(force = false) {
-    try { fac.arm = await api(`/api/faction/armory${force ? '?force=1' : ''}`); fac.armErr = null; }
-    catch (e) { fac.armErr = e; }
+    syncScope();
+    const seq = ++fac.armSeq;
+    try {
+      const res = await api(`/api/faction/armory${force ? '?force=1' : ''}`);
+      if (seq !== fac.armSeq) return fac.arm;
+      fac.arm = res; fac.armErr = null;
+    } catch (e) {
+      if (seq !== fac.armSeq) return fac.arm;
+      fac.armErr = e;
+    }
     return fac.arm;
   }
   async function fetchChains(force = false) {
-    try { fac.ch = await api(`/api/faction/chains${force ? '?force=1' : ''}`); fac.chErr = null; }
-    catch (e) { fac.chErr = e; }
+    syncScope();
+    const seq = ++fac.chSeq;
+    try {
+      const res = await api(`/api/faction/chains${force ? '?force=1' : ''}`);
+      if (seq !== fac.chSeq) return fac.ch;
+      fac.ch = res; fac.chErr = null;
+    } catch (e) {
+      if (seq !== fac.chSeq) return fac.ch;
+      fac.chErr = e;
+    }
     return fac.ch;
   }
   async function fetchUpgrades(force = false) {
+    syncScope();
+    const seq = ++fac.upgSeq;
     try {
-      fac.upg = await api(`/api/faction/upgrades${force ? '?force=1' : ''}`);
-      fac.upgErr = null;
+      const res = await api(`/api/faction/upgrades${force ? '?force=1' : ''}`);
+      if (seq !== fac.upgSeq) return fac.upg;
+      fac.upg = res; fac.upgErr = null;
       if (!fac.upgSel || force) fac.upgSel = { ...(fac.upg.currentLevels || {}) };
-    } catch (e) { fac.upgErr = e; }
+    } catch (e) {
+      if (seq !== fac.upgSeq) return fac.upg;
+      fac.upgErr = e;
+    }
     return fac.upg;
   }
   async function loadTabData(tab, force = false) {
-    if (tab === 'activity' && (force || !fac.act)) { await fetchActivity(force); render(); }
+    if ((tab === 'activity' || tab === 'radar') && (force || !fac.act)) { await fetchActivity(force); render(); }
     else if (tab === 'armory' && (force || !fac.arm)) { await fetchArmory(force); render(); }
     else if (tab === 'chains' && (force || !fac.ch)) { await fetchChains(force); render(); }
     else if (tab === 'upgrades' && (force || !fac.upg)) { await fetchUpgrades(force); render(); }
   }
   async function loadFaction(force = false) {
+    syncScope();
     const el = $('#faction-body');
     if (!fac.d && el) el.innerHTML = loadingBox();
     await fetchFaction(force);
@@ -121,6 +217,23 @@
     if (seen) return;
     try { localStorage.setItem(key, String(Date.now())); } catch {}
     if (feat('notify')) notify(key, title, body, url ? { url } : {});
+  }
+  function checkTravelRadarNotify(data) {
+    if (!data || !feat('page.faction') || !feat('faction.travelRadar') || !feat('notify') || !feat('notify.travelRadar')) return;
+    const trList = Array.isArray(data.transitions) ? data.transitions : [];
+    const byId = new Map((data.travel || []).map((r) => [r.playerId, r]));
+    for (const item of trList) {
+      if (item.toState !== 'inbound') continue;
+      const row = byId.get(item.playerId);
+      const cname = window.LRXTravelRadar?.countryName?.(item.origin) || item.origin || '';
+      const name = row?.displayName || `#${item.playerId}`;
+      notifyOnce(
+        `lrx.radar.${item.transitionId}`,
+        '🛰️ ' + tr('Faction üyesi Torn\'a dönüyor', 'Faction member returning to Torn'),
+        cname ? `${name} · ${cname} → Torn` : `${name} → Torn`,
+        profile(item.playerId),
+      );
+    }
   }
   function checkOcNotify() {
     const d = fac.d; if (!d || !feat('page.faction')) return;
@@ -220,7 +333,9 @@
     const rows = oc.crimes.map((c) => {
       const probs = [
         ...c.missing.map((m) => `<span class="chip danger">🧰 ${esc(m.name)}: ${esc(m.item)}</span>`),
-        ...c.away.map((a) => `<span class="chip blue">${esc(a.name)}: ${stateText(a.state)}${a.until ? ` · ${human(a.until - now)}` : ''}</span>`),
+        ...c.away.map((a) => (a.state === 'Traveling' || a.state === 'Abroad') && feat('faction.travelRadar')
+          ? `<button type="button" class="chip blue fac-radar-jump" data-open-radar-player="${esc(a.name)}" title="${esc(tr('Travel Radar\'da göster', 'Show in Travel Radar'))}">🛰️ ${esc(a.name)}: ${stateText(a.state)}</button>`
+          : `<span class="chip blue">${esc(a.name)}: ${stateText(a.state)}${a.until ? ` · ${human(a.until - now)}` : ''}</span>`),
         ...(c.open ? [`<span class="chip warn">${c.open} ${tr('boş slot', c.open > 1 ? 'open slots' : 'open slot')}</span>`] : []),
       ];
       const when = c.delayed ? `<span class="chip danger">${tr('gecikiyor', 'delayed')}</span>`
@@ -289,6 +404,138 @@
     </article>`;
   }
 
+  /* ---------- Tazelik & 24s TCT Adım Çizgisi Yardımcıları ---------- */
+  function renderFreshnessBar(d, refreshBtnId, showSourceToggle = false) {
+    const f = d?.freshness || null;
+    const isShared = d?.sourceMode === 'shared' || f?.source === 'shared_hub';
+    const srcLabel = isShared ? tr('Ortak · Faction Hub', 'Shared · Faction Hub') : tr('Yerel · Torn roster', 'Local · Torn roster');
+    const obs = f?.observedAt ? isoHms(f.observedAt) : '—';
+    const age = f?.observedAt ? ageText(Math.max(0, Math.floor((Date.now() - Date.parse(f.observedAt)) / 1000))) : '';
+    const stale = f?.state === 'stale' || Boolean(f?.staleFallback);
+    const badge = f
+      ? `<span class="chip ${stale ? 'warn' : 'green'}">${stale ? `⚠ ${tr('Eski veri', 'Stale')}` : `● ${tr('Güncel', 'Fresh')}`}</span>`
+      : '';
+    const sourceToggle = showSourceToggle ? `<div class="toggle" role="group" aria-label="${tr('Kaynak', 'Source')}">
+      <button type="button" data-fac-rad-src="local" class="${fac.radSource === 'local' ? 'active' : ''}">${tr('Yerel', 'Local')}</button>
+      <button type="button" data-fac-rad-src="shared" class="${fac.radSource === 'shared' ? 'active' : ''}">${tr('Ortak', 'Shared')}</button>
+    </div>` : '';
+    const fallbackNote = d?.hubFallbackReason && fac.radSource === 'shared'
+      ? `<div class="fac-fresh-note muted">${tr('Ortak Hub şu an kullanılamıyor; yerel Torn verisi gösteriliyor.', 'Shared Hub unavailable right now; showing local Torn roster.')}</div>`
+      : f?.staleFallback
+        ? `<div class="fac-fresh-note warn-text">⚠ ${tr('Geçici kaynak hatası nedeniyle önceki anlık görüntü gösteriliyor.', 'Showing last snapshot due to a temporary upstream error.')} ${esc(f.staleMessage || '')}</div>`
+        : '';
+    return `<div class="fac-fresh-bar">
+      <div class="fac-fresh-meta">
+        <span class="chip dim">${srcLabel}</span>
+        ${badge}
+        <span class="mono sub-text">${tr('Gözlem', 'Observed')}: <b>${obs}</b>${age ? ` (${age})` : ''}</span>
+      </div>
+      <div class="fac-head-r">
+        ${sourceToggle}
+        <button class="btn sm ghost" type="button" id="${refreshBtnId}">↻ ${tr('Yenile', 'Refresh')}</button>
+      </div>
+    </div>${fallbackNote}`;
+  }
+
+  function renderActivityTimelineSvg(timeline, totalMembers) {
+    const pts = Array.isArray(timeline) ? timeline.filter((p) => Number(p?.at) > 0).sort((a, b) => a.at - b.at) : [];
+    const denom = Math.max(1, Number(totalMembers) || Math.max(0, ...pts.map((p) => Number(p.total) || 0)));
+    if (pts.length < 2) {
+      return `<article class="glass card">
+        <div class="card-head wrap">
+          <div><h3>📈 ${tr('24 Saatlik Aktivite (TCT Adım Çizgisi)', '24h Activity (TCT Step-Line)')}</h3>
+            <span class="muted">${tr('Payda', 'Denominator')}: ${denom} ${tr('üye', 'members')}</span></div>
+        </div>
+        <div class="fac-step-empty muted">${tr('24 saatlik TCT adım çizgisi için en az 2 örnek bekleniyor. Uygulama açık kaldıkça her 5 dakikada bir kaydedilir.', 'Waiting for at least 2 snapshots to plot the 24h TCT step-line. Snapshots record every 5 minutes while the app runs.')}</div>
+      </article>`;
+    }
+
+    const W = 720, H = 172, padL = 34, padR = 14, padT = 14, padB = 26;
+    const endMs = Math.max(Date.now(), pts[pts.length - 1].at);
+    const startMs = endMs - 24 * 3600_000;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const xOf = (ms) => padL + Math.max(0, Math.min(1, (ms - startMs) / (24 * 3600_000))) * plotW;
+    const yOf = (val) => padT + plotH - Math.max(0, Math.min(1, val / denom)) * plotH;
+
+    const GAP_MS = 35 * 60_000;
+    const onlineSegs = [];
+    const activeSegs = [];
+    const gaps = [];
+    let curOn = [], curAct = [];
+    const flush = () => {
+      if (curOn.length >= 2) onlineSegs.push(curOn.join(' '));
+      if (curAct.length >= 2) activeSegs.push(curAct.join(' '));
+      curOn = []; curAct = [];
+    };
+
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      const prev = i > 0 ? pts[i - 1] : null;
+      const x = xOf(p.at).toFixed(1);
+      const yOn = yOf(Number(p.online) || 0).toFixed(1);
+      const yAct = yOf((Number(p.online) || 0) + (Number(p.idle) || 0)).toFixed(1);
+      if (prev && (p.at - prev.at) > GAP_MS) {
+        flush();
+        gaps.push({ x1: xOf(prev.at), x2: xOf(p.at) });
+      }
+      if (curOn.length) {
+        const prevYOn = yOf(Number(prev.online) || 0).toFixed(1);
+        const prevYAct = yOf((Number(prev.online) || 0) + (Number(prev.idle) || 0)).toFixed(1);
+        curOn.push(`L ${x} ${prevYOn} L ${x} ${yOn}`);
+        curAct.push(`L ${x} ${prevYAct} L ${x} ${yAct}`);
+      } else {
+        curOn.push(`M ${x} ${yOn}`);
+        curAct.push(`M ${x} ${yAct}`);
+      }
+    }
+    flush();
+
+    const yTicks = [0, Math.round(denom / 2), denom];
+    const gridLines = yTicks.map((v) => {
+      const y = yOf(v).toFixed(1);
+      return `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" class="fac-step-grid"/><text x="${padL - 6}" y="${Number(y) + 4}" text-anchor="end" class="fac-step-lbl">${v}</text>`;
+    }).join('');
+    const xTicks = [0, 6, 12, 18, 24].map((h) => {
+      const ms = startMs + h * 3600_000;
+      const x = xOf(ms).toFixed(1);
+      const d = new Date(ms);
+      const lbl = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
+      return `<text x="${x}" y="${H - 6}" text-anchor="middle" class="fac-step-lbl">${lbl}</text>`;
+    }).join('');
+    const gapRects = gaps.map((g) => `<rect x="${g.x1.toFixed(1)}" y="${padT}" width="${Math.max(2, g.x2 - g.x1).toFixed(1)}" height="${plotH}" class="fac-step-gap"><title>${esc(tr('Veri kesintisi / örnek yok', 'Outage / missing samples'))}</title></rect>`).join('');
+    const dots = pts.slice(-48).map((p) => {
+      const x = xOf(p.at).toFixed(1);
+      const yOn = yOf(Number(p.online) || 0).toFixed(1);
+      const tip = `${isoHm(p.observedAt || new Date(p.at).toISOString())} TCT · ${tr('Çevrimiçi', 'Online')}: ${p.online} · ${tr('Beklemede', 'Idle')}: ${p.idle} / ${p.total || denom}`;
+      return `<circle cx="${x}" cy="${yOn}" r="2.6" class="fac-step-dot"><title>${esc(tip)}</title></circle>`;
+    }).join('');
+
+    return `<article class="glass card">
+      <div class="card-head wrap">
+        <div>
+          <h3>📈 ${tr('24 Saatlik Aktivite (TCT Adım Çizgisi)', '24h Activity (TCT Step-Line)')}</h3>
+          <span class="muted">${tr('Payda', 'Denominator')}: <b class="mono">${denom}</b> ${tr('üye', 'members')} · ${pts.length} ${tr('örnek', 'samples')}${gaps.length ? ` · ${gaps.length} ${tr('kesinti aralığı', 'gap(s)')}` : ''}</span>
+        </div>
+        <div class="fac-step-legend">
+          <span><i class="fac-lg-on"></i> ${tr('Çevrimiçi', 'Online')}</span>
+          <span><i class="fac-lg-act"></i> ${tr('Çevrimiçi + Beklemede', 'Online + Idle')}</span>
+          ${gaps.length ? `<span><i class="fac-lg-gap"></i> ${tr('Kesinti', 'Gap')}</span>` : ''}
+        </div>
+      </div>
+      <div class="fac-step-wrap">
+        <svg viewBox="0 0 ${W} ${H}" class="fac-step-svg" role="img" aria-label="${esc(tr('24 saatlik TCT aktivite grafiği', '24h TCT activity chart'))}">
+          ${gridLines}
+          ${gapRects}
+          ${activeSegs.map((s) => `<path d="${s}" class="fac-step-line-act" fill="none"/>`).join('')}
+          ${onlineSegs.map((s) => `<path d="${s}" class="fac-step-line-on" fill="none"/>`).join('')}
+          ${dots}
+          ${xTicks}
+        </svg>
+      </div>
+    </article>`;
+  }
+
   /* ---------- Sekme 2: Aktivite Dashboard (/dashboard/activity) ---------- */
   function renderActivityTab() {
     if (!fac.act) return fac.actErr ? errorBox(fac.actErr) : loadingBox();
@@ -300,15 +547,15 @@
 
     const repById = new Map((fac.rep?.rows || []).map((r) => [r.id, r]));
 
-    // Live distribution + stacked bar
+    // Live distribution + stacked bar + freshness strip
     const dist = `<article class="glass card">
+      ${renderFreshnessBar(d, 'fac-act-refresh', false)}
       <div class="card-head wrap">
         <h3>🟢 ${tr('Canlı Faction Aktivitesi', 'Live Faction Activity')}</h3>
         <span class="fac-head-r">
           <span class="chip green">● ${tr('Çevrimiçi', 'Online')}: ${c.online}</span>
           <span class="chip warn">● ${tr('Beklemede', 'Idle')}: ${c.idle}</span>
           <span class="chip dim">● ${tr('Çevrimdışı', 'Offline')}: ${c.offline}</span>
-          <button class="btn sm ghost" type="button" id="fac-act-refresh">↻ ${tr('Yenile', 'Refresh')}</button>
         </span>
       </div>
       <div class="storage-bar fac-act-bar">
@@ -319,12 +566,17 @@
       <div class="chip-row fac-state-chips">
         <span class="chip ok">✓ ${tr('Müsait', 'Okay')}: ${c.okay}</span>
         <span class="chip danger">🏥 ${tr('Hastane', 'Hospital')}: ${c.hospital}</span>
-        <span class="chip blue">✈ ${tr('Uçakta', 'Traveling')}: ${c.traveling}</span>
-        <span class="chip blue">🌍 ${tr('Yurt dışı', 'Abroad')}: ${c.abroad}</span>
+        ${feat('faction.travelRadar')
+          ? `<button type="button" class="chip blue fac-radar-jump" data-open-radar-state="outbound">✈ ${tr('Uçakta', 'Traveling')}: ${c.traveling} ↗</button>
+             <button type="button" class="chip blue fac-radar-jump" data-open-radar-state="abroad">🌍 ${tr('Yurt dışı', 'Abroad')}: ${c.abroad} ↗</button>`
+          : `<span class="chip blue">✈ ${tr('Uçakta', 'Traveling')}: ${c.traveling}</span>
+             <span class="chip blue">🌍 ${tr('Yurt dışı', 'Abroad')}: ${c.abroad}</span>`}
         <span class="chip warn">⛓ ${tr('Hapis', 'Jail')}: ${c.jail}</span>
         <span class="chip tq">🕵️ ${tr('OC\'de', 'In OC')}: ${c.inOc}/${c.total}</span>
       </div>
     </article>`;
+
+    const stepChartCard = renderActivityTimelineSvg(d.timeline, c.total);
 
     // 7x24 UTC/TCT Activity Heatmap
     const hoursHead = Array.from({ length: 24 }, (_, h) => `<th class="mono">${String(h).padStart(2, '0')}</th>`).join('');
@@ -454,7 +706,150 @@
       </table></div>
     </article>`;
 
-    return dist + heatmapCard + cmpCard + rosterCard;
+    return dist + stepChartCard + heatmapCard + cmpCard + rosterCard;
+  }
+
+  /* ---------- Sekme 2.5: Faction Travel Radar (P0.3) ---------- */
+  function renderRadarTab() {
+    if (!fac.act && !fac.actErr) return loadingBox();
+    if (!fac.act && fac.actErr) {
+      return `<article class="glass card">${errorBox(fac.actErr)}
+        <div class="fac-radar-retry"><button class="btn sm ghost" type="button" id="fac-rad-refresh">↻ ${tr('Tekrar dene', 'Retry')}</button></div>
+      </article>`;
+    }
+    const d = fac.act;
+    const travel = Array.isArray(d.travel) ? d.travel : [];
+    const sum = d.travelSummary || { outbound: 0, abroad: 0, inbound: 0, unknown: 0, totalTravel: travel.length };
+    const countryTitle = (code) => window.LRXTravelRadar?.countryName?.(code) || (code ? String(code).toUpperCase() : '');
+
+    // Summary filter cards (clickable)
+    const sumCard = (key, icon, label, val, cls) => `<button type="button" class="glass fac-rad-kpi ${cls}${fac.radState === key ? ' active' : ''}" data-fac-rad-state="${key}" aria-pressed="${fac.radState === key}">
+      <span class="label">${icon} ${label}</span>
+      <strong class="value mono">${n0(val)}</strong>
+    </button>`;
+
+    const summaryBar = `<div class="fac-rad-kpis">
+      ${sumCard('outbound', '↗', tr('Yurt dışına giden', 'Outbound'), sum.outbound, 'blue')}
+      ${sumCard('abroad', '🌍', tr('Yurt dışında', 'Abroad'), sum.abroad, 'tq')}
+      ${sumCard('inbound', '↙', tr('Torn\'a dönen', 'Inbound'), sum.inbound, 'green')}
+      ${sum.unknown ? sumCard('unknown', '?', tr('Bilinmiyor', 'Unknown'), sum.unknown, 'warn') : ''}
+    </div>`;
+
+    const countriesSet = new Map();
+    for (const r of travel) {
+      const code = r.travelState === 'inbound' ? r.origin : r.destination;
+      if (code && code !== 'torn') countriesSet.set(code, countryTitle(code) || code);
+    }
+    const countryOpts = [...countriesSet.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+
+    const q = fac.radQ.trim().toLowerCase();
+    const filtered = travel.filter((r) => {
+      if (fac.radState !== 'all' && r.travelState !== fac.radState) return false;
+      const cc = r.travelState === 'inbound' ? r.origin : r.destination;
+      if (fac.radCountry !== 'all' && cc !== fac.radCountry) return false;
+      if (fac.radAct !== 'all' && r.activityStatus !== fac.radAct) return false;
+      if (q) {
+        const hay = `${r.displayName} ${countryTitle(r.destination)} ${countryTitle(r.origin)} ${r.rawDescription || ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    const hasFilters = fac.radState !== 'all' || fac.radCountry !== 'all' || fac.radAct !== 'all' || Boolean(q);
+    const stateBadge = (r) => {
+      const map = {
+        outbound: ['blue', '↗', tr('Gidiş', 'Outbound')],
+        abroad: ['tq', '🌍', tr('Yurt dışı', 'Abroad')],
+        inbound: ['green', '↙', tr('Dönüş', 'Inbound')],
+        unknown: ['warn', '?', tr('Bilinmiyor', 'Unknown')],
+      };
+      const [cls, ic, lbl] = map[r.travelState] || ['dim', '•', r.travelState];
+      const health = r.healthStatus && r.healthStatus !== 'okay' && r.healthStatus !== 'unknown'
+        ? ` <span class="chip danger">${esc(stateText(r.healthStatus[0].toUpperCase() + r.healthStatus.slice(1)))}</span>`
+        : '';
+      return `<span class="chip ${cls}">${ic} ${lbl}</span>${health}`;
+    };
+
+    const routeCell = (r) => {
+      const cc = r.travelState === 'inbound' ? r.origin : r.destination;
+      const cName = countryTitle(cc);
+      if (r.travelState === 'unknown') {
+        return `<span class="muted">${esc(r.rawDescription || tr('Rota tanınmadı', 'Unrecognized route'))}</span>`;
+      }
+      const routeTxt = r.travelState === 'outbound' ? `Torn → ${cName}`
+        : r.travelState === 'inbound' ? `${cName} → Torn`
+          : cName || '—';
+      const travelBtn = cc && cc !== 'torn' && feat('page.travel') && !viewHidden('travel')
+        ? `<button type="button" class="fac-rad-country" data-travel-country="${esc(cc)}" title="${esc(tr('Seyahat Kârı\'nda bu ülkeyi aç', 'Open this country in Travel Profit'))}"><span lang="en">${esc(routeTxt)}</span> ↗</button>`
+        : `<span lang="en"><b>${esc(routeTxt)}</b></span>`;
+      return travelBtn;
+    };
+
+    const etaCell = (r) => {
+      if (r.travelState === 'abroad') return `<span class="muted">—</span>`;
+      if (r.etaKind === 'exact' && r.etaAt) {
+        const left = Math.round((Date.parse(r.etaAt) - Date.now()) / 1000);
+        return `<b class="mono">${isoHm(r.etaAt)} TCT</b> <span class="chip green">${tr('Kesin', 'Exact')}</span>${left > 0 ? `<div class="sub-text">${human(left)}</div>` : ''}`;
+      }
+      if (r.etaKind === 'estimate' && r.etaFrom && r.etaTo) {
+        return `<span class="mono">${isoHm(r.etaFrom)}–${isoHm(r.etaTo)} TCT</span><div class="sub-text">${tr('Tahmini aralık', 'Est. window')}</div>`;
+      }
+      return `<span class="muted">${tr('Bilinmiyor', 'Unknown')}</span>`;
+    };
+
+    const rowsHtml = filtered.map((r) => `<tr>
+      <td>${nameBtn(r.playerId, r.displayName)}<div class="sub-text">Lv ${r.level}${r.position ? ` · ${esc(r.position)}` : ''}${r.inOc ? ' · OC' : ''}</div></td>
+      <td>${stateBadge(r)}</td>
+      <td>${routeCell(r)}</td>
+      <td><i class="fac-dot ${r.activityStatus === 'Online' ? 'on' : r.activityStatus === 'Idle' ? 'idle' : ''}"></i><span>${esc(r.activityStatus)}</span>${r.lastRel ? `<div class="sub-text">${esc(r.lastRel)}</div>` : ''}</td>
+      <td>${etaCell(r)}</td>
+    </tr>`).join('');
+
+    const opt = (v, label, cur) => `<option value="${esc(v)}"${String(v) === String(cur) ? ' selected' : ''}>${esc(label)}</option>`;
+    const body = !travel.length
+      ? emptyBox(
+        tr('Şu an uçuşta veya yurt dışında üye yok', 'No faction members flying or abroad right now'),
+        tr('Faction üyeleri seyahate çıktığında yön, ülke ve geçiş tabanlı tahmini varış penceresi burada görünür.', 'When faction members travel abroad, direction, country and transition-based ETA windows appear here.'),
+      )
+      : filtered.length
+        ? `<div class="tbl-wrap"><table class="tbl compact fac-rad-tbl">
+            <thead><tr>
+              <th>${tr('Üye', 'Member')}</th>
+              <th>${tr('Yön / Durum', 'Direction / State')}</th>
+              <th>${tr('Ülke / Rota', 'Country / Route')}</th>
+              <th>${tr('Aktivite', 'Activity')}</th>
+              <th>${tr('Tahmini Varış (TCT)', 'ETA (TCT)')}</th>
+            </tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table></div>`
+        : emptyBox(tr('Filtreye uyan üye yok', 'No matching travelers'), tr('Arama veya filtreleri temizlemeyi dene.', 'Try clearing your search or filters.'));
+
+    return `<article class="glass card">
+      ${renderFreshnessBar(d, 'fac-rad-refresh', true)}
+      ${summaryBar}
+      <div class="card-head wrap">
+        <h3>🛰️ ${tr('Faction Travel Radar', 'Faction Travel Radar')} <span class="chip">${filtered.length} / ${travel.length}</span></h3>
+        <div class="fac-act-tools">
+          <input class="input" id="fac-rad-q" type="search" placeholder="${tr('Üye veya ülke ara…', 'Search member or country…')}" value="${esc(fac.radQ)}">
+          <select id="fac-rad-country" aria-label="${esc(tr('Ülke', 'Country'))}">
+            ${opt('all', tr('Tüm ülkeler', 'All countries'), fac.radCountry)}
+            ${countryOpts.map(([code, name]) => opt(code, name, fac.radCountry)).join('')}
+          </select>
+          <select id="fac-rad-act" aria-label="${esc(tr('Aktivite', 'Activity'))}">
+            ${opt('all', tr('Tüm aktivite', 'All activity'), fac.radAct)}
+            ${opt('Online', tr('Çevrimiçi', 'Online'), fac.radAct)}
+            ${opt('Idle', tr('Beklemede', 'Idle'), fac.radAct)}
+            ${opt('Offline', tr('Çevrimdışı', 'Offline'), fac.radAct)}
+          </select>
+          ${hasFilters ? `<button class="btn sm ghost" type="button" id="fac-rad-reset">${tr('Sıfırla', 'Reset')}</button>` : ''}
+        </div>
+      </div>
+      ${body}
+      <p class="muted sl-note">${tr(
+        'Aktivite ve sağlık ayrı izlenir. ETA yalnızca iki anlık görüntü arasında geçiş gözlendiğinde aralık olarak hesaplanır; hastane/hapis süresi asla uçuş inişi olarak gösterilmez.',
+        'Activity and health are tracked separately. ETA windows appear only when a transition is observed between snapshots; hospital/jail timers are never treated as flight arrival.',
+      )}</p>
+    </article>`;
   }
 
   /* ---------- Sekme 3: Armory Geçmişi ---------- */
@@ -540,6 +935,7 @@
           <span class="muted">${tr('Son 25 chain · bonus eşikleri, respect ve hit başına respect', 'Last 25 chains · bonus milestones, total respect and respect per hit')}</span></div>
         <div class="fac-head-r">
           <button class="btn sm ghost" type="button" id="fac-ch-refresh">↻ ${tr('Yenile', 'Refresh')}</button>
+          ${feat('page.war') && feat('war.payout') ? `<button class="btn sm ghost" type="button" data-open-war-payout="">💰 ${tr('Savaş Ödemesi', 'War Payout')}</button>` : ''}
           <button class="btn sm ghost" type="button" data-open-url="${CHAIN_URL}" data-tab-label="Faction Chain">${tr('Chain sayfası', 'Chain page')} ↗</button>
         </div>
       </div>
@@ -703,6 +1099,7 @@
           : d.oc?.error ? `<div class="alert danger">${esc(d.oc.error)}</div>`
             : `${notInOcCard(oc)}${crimesCard(oc)}${reportCard()}`);
     } else if (tab === 'activity') content = renderActivityTab();
+    else if (tab === 'radar') content = renderRadarTab();
     else if (tab === 'armory') content = renderArmoryTab();
     else if (tab === 'chains') content = renderChainsTab();
     else if (tab === 'upgrades') content = renderUpgradesTab();
@@ -710,9 +1107,50 @@
     preserveFocus(el, () => { el.innerHTML = kpis + tabBar + content; });
   }
 
+  async function openFactionRadar({ state: radState = 'all', country = 'all', query = '' } = {}) {
+    if (!feat('page.faction') || !feat('faction.travelRadar')) return;
+    fac.tab = 'radar';
+    fac.radState = radState || 'all';
+    fac.radCountry = country || 'all';
+    fac.radQ = String(query || '');
+    lsSet('tt.fac.tab', 'radar');
+    if (state.view !== 'faction') showView('faction');
+    else {
+      render();
+      await loadTabData('radar');
+    }
+  }
+  window.openFactionRadar = openFactionRadar;
+
   /* ---------- Olaylar ---------- */
   const host = $('#faction-body');
   host?.addEventListener('click', async (e) => {
+    const radPlayer = e.target.closest('[data-open-radar-player]');
+    if (radPlayer) {
+      e.preventDefault();
+      e.stopPropagation();
+      await openFactionRadar({ query: radPlayer.dataset.openRadarPlayer || '' });
+      return;
+    }
+    const radStateBtn = e.target.closest('[data-open-radar-state]');
+    if (radStateBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      await openFactionRadar({ state: radStateBtn.dataset.openRadarState || 'all' });
+      return;
+    }
+    const tvCountry = e.target.closest('[data-travel-country]');
+    if (tvCountry) {
+      e.preventDefault();
+      window.openTravelCountry?.(tvCountry.dataset.travelCountry);
+      return;
+    }
+    const warPayoutBtn = e.target.closest('[data-open-war-payout]');
+    if (warPayoutBtn) {
+      e.preventDefault();
+      window.openWarPayout?.(warPayoutBtn.dataset.openWarPayout || null);
+      return;
+    }
     const t = e.target.closest('[data-fac-tab]');
     if (t) {
       fac.tab = t.dataset.facTab;
@@ -724,9 +1162,28 @@
     if (e.target.closest('#fac-rep-refresh')) { await fetchReport(true); render(); return; }
     const rd = e.target.closest('[data-fac-rep-days]');
     if (rd) { fac.repDays = Number(rd.dataset.facRepDays) === 30 ? 30 : 7; lsSet('tt.fac.repDays', String(fac.repDays)); await fetchReport(false); render(); return; }
-    if (e.target.closest('#fac-act-refresh')) { await fetchActivity(true); render(); return; }
+    if (e.target.closest('#fac-act-refresh') || e.target.closest('#fac-rad-refresh')) { await fetchActivity(true); render(); return; }
     if (e.target.closest('#fac-arm-refresh')) { await fetchArmory(true); render(); return; }
     if (e.target.closest('#fac-ch-refresh')) { await fetchChains(true); render(); return; }
+    const radSrc = e.target.closest('[data-fac-rad-src]');
+    if (radSrc) {
+      fac.radSource = radSrc.dataset.facRadSrc === 'shared' ? 'shared' : 'local';
+      await fetchActivity(false);
+      render();
+      return;
+    }
+    const radKpi = e.target.closest('[data-fac-rad-state]');
+    if (radKpi) {
+      const next = radKpi.dataset.facRadState;
+      fac.radState = fac.radState === next ? 'all' : next;
+      render();
+      return;
+    }
+    if (e.target.closest('#fac-rad-reset')) {
+      fac.radState = 'all'; fac.radCountry = 'all'; fac.radAct = 'all'; fac.radQ = '';
+      render();
+      return;
+    }
     const af = e.target.closest('[data-fac-af]');
     if (af) { fac.actFilter = af.dataset.facAf; render(); return; }
     const ac = e.target.closest('[data-fac-arm-cat]');
@@ -738,6 +1195,7 @@
   });
   host?.addEventListener('input', (e) => {
     if (e.target.id === 'fac-act-q') { fac.actQ = e.target.value; render(); return; }
+    if (e.target.id === 'fac-rad-q') { fac.radQ = e.target.value; render(); return; }
     if (e.target.id === 'fac-arm-q') { fac.armQ = e.target.value; render(); return; }
     if (e.target.id === 'fac-upg-respect') {
       fac.upgRespectOverride = Math.max(0, Number(e.target.value) || 0);
@@ -753,6 +1211,8 @@
   });
   host?.addEventListener('change', (e) => {
     if (e.target.id === 'fac-act-sort') { fac.actSort = e.target.value; render(); }
+    else if (e.target.id === 'fac-rad-country') { fac.radCountry = e.target.value || 'all'; render(); }
+    else if (e.target.id === 'fac-rad-act') { fac.radAct = e.target.value || 'all'; render(); }
     else if (e.target.id === 'fac-cmp-a') { fac.cmpA = Number(e.target.value) || 0; render(); }
     else if (e.target.id === 'fac-cmp-b') { fac.cmpB = Number(e.target.value) || 0; render(); }
   });
@@ -764,8 +1224,13 @@
     openInTab(row.dataset.openUrl, { activate: true, label: row.dataset.tabLabel || null, reuse: true });
   });
 
-  // Sayfa açıkken dakikada bir yeniden çiz (geri sayımlar), 2 dakikada bir veriyi tazele
-  setInterval(() => { if (state.view === 'faction' && trackerVisible() && activeTab() === 'oc') render(); }, 60_000);
+  // Sayfa açıkken dakikada bir yeniden çiz (geri sayımlar & yaş), 2 dakikada bir veriyi tazele
+  setInterval(() => {
+    if (state.view === 'faction' && trackerVisible()) {
+      const t = activeTab();
+      if (t === 'oc' || t === 'radar' || t === 'activity') render();
+    }
+  }, 60_000);
   setInterval(() => { if (state.view === 'faction' && trackerVisible()) loadFaction(); }, 2 * 60_000);
 
   Object.assign(EXTRA_LOADERS, { faction: loadFaction });
