@@ -116,6 +116,33 @@ let app;
   await aligned('zoomed out');
   await menuClick('Actual Size'); await aligned('actual size');
 
+  // Minimize and restore. Windows can report a 0×0 resize while the window is minimized (replayed here so the check
+  // does not depend on timing) and may send no resize on the way back: the Torn view must still fill the window.
+  const fillsWindow = () => app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0], b = w.contentView.children[0].getBounds(), [width, height] = w.getContentSize();
+    return { fills: b.width === width && b.y + b.height === height, bounds: b, content: [width, height] };
+  });
+  for (const fromMaximized of [false, true]) {
+    if (fromMaximized) await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].maximize());
+    await app.evaluate(async ({ BrowserWindow }) => {
+      const w = BrowserWindow.getAllWindows()[0];
+      w.minimize();
+      for (let i = 0; i < 40 && !w.isMinimized(); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+      w.emit('resize');
+    });
+    assert.ok((await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children[0].getBounds().width)) > 100, 'a resize while minimized keeps the view size');
+    await app.evaluate(async ({ BrowserWindow }) => {
+      const w = BrowserWindow.getAllWindows()[0];
+      w.restore();
+      for (let i = 0; i < 40 && w.isMinimized(); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    await page.waitForTimeout(300);
+    const restored = await fillsWindow();
+    assert.ok(restored.fills, `after restore${fromMaximized ? ' (maximized)' : ''} the view fills the window: ${JSON.stringify(restored)}`);
+    if (fromMaximized) { await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].unmaximize()); await page.waitForTimeout(300); }
+  }
+  await aligned('after minimize and restore');
+
   // Reload (Ctrl+R) acts on the Torn tab being viewed and leaves the app page alone.
   await page.evaluate(() => { window.qaAppPageKept = true; });
   await app.evaluate(({ BrowserWindow }) => { global.__qaReloads = 0; BrowserWindow.getAllWindows()[0].contentView.children[0].webContents.on('did-start-loading', () => { global.__qaReloads++; }); });
@@ -277,7 +304,7 @@ let app;
   assert.deepEqual(savedConfig().secrets, entry, 'the unreadable keys are not wiped by a settings save');
   if (process.env.QA_OUTPUT) await reset.screenshot({ path: path.join(process.env.QA_OUTPUT, 'secrets-unreadable-sign-in.png') });
 
-  console.log(JSON.stringify({ result: 'PASS', checked: ['saved keys encrypted with safeStorage', 'encrypted keys read after a restart', 'unreadable keys reported on the sign-in screen and kept','packaged executable startup', 'native clipboard paste', 'manual key entry', '480x400 minimum', '640x700 window', 'native view bounds', 'modal visibility during resize', 'tab view follows app zoom', 'Reload acts on the viewed tab', 'tabs survive an app page reload', 'session guard document-start', 'FF Scouter initialization', 'isolated React dependency', 'GM network bridge', 'TornW3B market injection', 'page helpers run only on their own page', 'profile helper looks up once, then from memory', 'self-navigating tab stopped until the user clicks', 'app page recovers from a renderer crash'] }));
+  console.log(JSON.stringify({ result: 'PASS', checked: ['saved keys encrypted with safeStorage', 'encrypted keys read after a restart', 'unreadable keys reported on the sign-in screen and kept','packaged executable startup', 'native clipboard paste', 'manual key entry', '480x400 minimum', '640x700 window', 'native view bounds', 'modal visibility during resize', 'tab view follows app zoom', 'view fills the window after minimize and restore', 'Reload acts on the viewed tab', 'tabs survive an app page reload', 'session guard document-start', 'FF Scouter initialization', 'isolated React dependency', 'GM network bridge', 'TornW3B market injection', 'page helpers run only on their own page', 'profile helper looks up once, then from memory', 'self-navigating tab stopped until the user clicks', 'app page recovers from a renderer crash'] }));
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => {
   await app?.close();
   const resolved = path.resolve(temp);

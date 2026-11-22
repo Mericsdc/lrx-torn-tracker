@@ -112,11 +112,15 @@ function main() {
 
   function layoutViews() {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    const bounds = tabViewBounds();
+    // While minimized, Windows can still send a resize with a 0×0 content area, and it does not always send
+    // another one when the window comes back. Sizing the view then shrank it to the 100 px floor for good, so the
+    // view keeps its last bounds until the window has a real size again ('restore' lays it out).
+    const [contentWidth, contentHeight] = mainWindow.getContentSize();
+    const bounds = !mainWindow.isMinimized() && contentWidth > 0 && contentHeight > 0 ? tabViewBounds() : null;
     for (const [id, t] of tabs.entries()) {
       if (viewsVisible && activeTabId === id) {
         t.view.setVisible(true);
-        t.view.setBounds(bounds);
+        if (bounds) t.view.setBounds(bounds);
       } else {
         t.view.setVisible(false);
       }
@@ -902,6 +906,8 @@ function main() {
       mainWindow.on('focus', () => { if (tabs.has(activeTabId)) injectTornHelpers(activeTabId); });
       mainWindow.on('maximize', layoutViews);
       mainWindow.on('unmaximize', layoutViews);
+      mainWindow.on('restore', layoutViews);
+      mainWindow.on('show', layoutViews);
 
       /* Application menu (hidden until Alt). Electron's default View menu reloads and zooms the APP page whatever
          the user is looking at: Ctrl+R on a Torn tab threw away the tab bar, and Ctrl +/- moved the top bars
