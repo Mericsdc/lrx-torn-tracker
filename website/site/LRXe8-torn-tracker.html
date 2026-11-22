@@ -60,7 +60,7 @@
         <p class="hero-sub" data-i18n-html="heroSub">Timers, war targets, travel profit and Torn itself in one Windows app. It runs on <b>your own Limited Access API key</b>, and it stays on your PC.</p>
         <a class="btn-silver" href="https://github.com/Mericsdc/lrx-torn-tracker/releases/latest/download/LRX-Torn-Tracker-Windows-x64.zip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/></svg><span data-i18n="download">Download for Windows</span></a>
         <ul class="facts" aria-label="Facts">
-          <li data-i18n="factFree">Free</li><li>Windows 10/11</li><li><span class="mono">v1.6.17</span></li><li data-i18n="factEnTr">English · Türkçe</li>
+          <li data-i18n="factFree">Free</li><li>Windows 10/11</li><li><span class="mono">v1.6.18</span></li><li data-i18n="factEnTr">English · Türkçe</li>
         </ul>
       </div>
       <a class="dev-chip" href="https://www.torn.com/profiles.php?XID=4037017" rel="noopener"><span>Ezlira <span class="mono">[4037017]</span></span><small data-i18n="development">Development</small></a>
@@ -153,7 +153,15 @@
       </div>
       <div class="rel-list">
         <details class="rel" open>
-          <summary><span class="rel-v mono">v1.6.17</span><span class="rel-t" data-i18n="rel17t">Holdings: where your networth sits</span><time class="rel-d mono" datetime="2026-11-23">2026-11-23</time><span class="rel-latest" data-i18n="relLatest">Latest</span></summary>
+          <summary><span class="rel-v mono">v1.6.18</span><span class="rel-t" data-i18n="rel18t">Faction Travel Radar, 24h Activity chart, Price Alerts &amp; Operations Panel</span><time class="rel-d mono" datetime="2026-11-23">2026-11-23</time><span class="rel-latest" data-i18n="relLatest">Latest</span></summary>
+          <ul data-i18n-html="rel18">
+            <li>Added <b>Faction › Travel Radar</b> (Free) with shared 2-minute roster caching, separate activity/health axes, transition-based ETA windows, clickable Outbound/Abroad/Inbound filters and Country → Travel Profit cross-links.</li>
+            <li>Added a <b>24h TCT Activity step-line chart</b> with visible outage gaps, <b>Stock Market price threshold alerts</b>, and a <b>2-series War score comparison bar</b> with cross-module deep links.</li>
+            <li>Added the <b>Control &amp; Operations</b> screen under Settings › General (Torn/YATA/Prometheus health, masked keys, collection status, outbox &amp; audit) and the separate-DB <b>Shared Faction Hub</b> backend with Team Plans.</li>
+          </ul>
+        </details>
+        <details class="rel">
+          <summary><span class="rel-v mono">v1.6.17</span><span class="rel-t" data-i18n="rel17t">Holdings: where your networth sits</span><time class="rel-d mono" datetime="2026-11-23">2026-11-23</time></summary>
           <ul data-i18n-html="rel17">
             <li>A <b>Holdings</b> card on Finance › Networth shows which items your money sits in: inventory, Bazaar, Display Case, Item Market and stocks, with the biggest item and its share.</li>
             <li>A <b>Value | Change</b> switch splits each item's change into the <b>price effect</b> (Torn's market value moved) and <b>bought / sold</b>, over 1D to 1Y, and ties it to your networth. No extra Torn requests.</li>

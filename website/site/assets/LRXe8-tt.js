@@ -33,6 +33,10 @@
     credNote: `Bağımsız projeler, teşekkürle anılır. Herhangi bir onay ima edilmez ve lisansları geçerliliğini korur. <a href="${GH}/blob/main/userscripts/NOTICE.txt" rel="noopener">Üçüncü taraf bildirimleri</a>`,
     relEyebrow: 'Sürüm notları', relTitle: 'Sürüm sürüm neler değişti.', relLead: 'Güncellemeler uygulamanın içinden kurulur. Key\'in, ayarların ve verilerin yerinde kalır.',
     relLatest: 'En yeni',
+    rel18t: 'Faction Travel Radar, 24s Aktivite grafiği, Fiyat Uyarıları ve Operasyon Ekranı',
+    rel18: '<li><b>Faction › Travel Radar</b> (Ücretsiz) eklendi: ortak 2 dakikalık roster önbelleği, ayrık aktivite/sağlık eksenleri, geçiş tabanlı ETA penceresi, tıklanabilir Gidiş/Yurt dışı/Dönüş filtreleri ve Ülke → Seyahat Kârı bağlantıları.</li>'
+      + '<li>Kesinti boşluklarını gösteren <b>24s TCT Aktivite adım çizgisi grafiği</b>, <b>Borsa fiyat eşiği uyarıları</b> ve <b>iki serili Savaş skor çubuğu</b> eklendi.</li>'
+      + '<li>Ayarlar › Genel altına <b>Kontrol ve Operasyon Ekranı</b> (Torn/YATA/Prometheus sağlığı, maskeli anahtar, toplama ve bildirim kuyruğu) ile ayrı SQLite tabanlı <b>Ortak Faction Hub</b> ve Takım Planı altyapısı eklendi.</li>',
     rel17t: 'Varlıklar: paran hangi eşyalarda duruyor',
     rel17: '<li>Finans › Networth\'e <b>Varlıklar</b> kartı eklendi: paranın hangi eşyalarda durduğunu gösterir (envanter, Bazaar, Display Case, Item Market ve hisseler), en büyük eşya ve payıyla.</li>'
       + '<li><b>Değer | Değişim</b> anahtarı her eşyanın değişimini <b>fiyat etkisi</b> (Torn piyasa değeri oynadı) ve <b>alım / satım</b> olarak ayırır; 1G\'den 1Y\'ye kadar, networth\'e bağlı. Ekstra Torn isteği yok.</li>'

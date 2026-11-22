@@ -4,6 +4,7 @@ Each file is the GitHub release text for that version. The newest version is at 
 
 | Version | Date | Highlights |
 | --- | --- | --- |
+| [1.6.18](1.6.18.md) | 2026-11-23 | Faction Travel Radar, shared roster cache, 24h TCT Activity step-line chart, Stock price alerts, War score bar, Control & Operations panel, Shared Faction Hub backend |
 | [1.6.17](1.6.17.md) | 2026-11-23 | Holdings card (where your networth sits), price effect vs trading split, Torn tab size after minimize, Departure Planner labels |
 | [1.6.16](1.6.16.md) | 2026-11-22 | Ranked War `page.php` Attack fix, OC Armory Utilities shortcut, Departure Planner, Stock Market, War Payout Planner, Company Optimizer, Faction Activity/Armory/Chains/Upgrades |
 | [1.6.15](1.6.15.md) | 2026-11-16 | Encrypted API keys (Windows DPAPI), calmer Overview live timers, safety fixes |
