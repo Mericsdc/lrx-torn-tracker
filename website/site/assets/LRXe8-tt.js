@@ -33,7 +33,15 @@
     credNote: `Bağımsız projeler, teşekkürle anılır. Herhangi bir onay ima edilmez ve lisansları geçerliliğini korur. <a href="${GH}/blob/main/userscripts/NOTICE.txt" rel="noopener">Üçüncü taraf bildirimleri</a>`,
     relEyebrow: 'Sürüm notları', relTitle: 'Sürüm sürüm neler değişti.', relLead: 'Güncellemeler uygulamanın içinden kurulur. Key\'in, ayarların ve verilerin yerinde kalır.',
     relLatest: 'En yeni',
-    rel18t: 'Faction Travel Radar, 24s Aktivite grafiği, Fiyat Uyarıları ve Operasyon Ekranı',
+    rel20t: 'Travel, Faction ve Borsa düzeltmeleri',
+    rel20: '<li>Tetiklenen <b>fiyat uyarısı</b> artık Borsa sayfasını bozmuyor. <b>TCT</b> yazan seyahat saatleri yeniden Torn saati, <b>Planıma ekle</b> rotayı gerçekten 24s planlayıcıya ekliyor ve <b>Ülkeye göre</b> ayrı bir görünüm.</li>'
+      + '<li><b>Üye seyahat kaydı</b> her uçuşu ülkesiyle tutuyor; Üyeler tablosu ve Genel Bakış radar widget\'ı yine varış yeri ve süresini gösteriyor. Yazdığın notlar yenilemede silinmiyor.</li>'
+      + '<li>30g ve 90g sütunları gerçekte kaç günlük veri olduğunu gösteriyor, Torn kesintileri artık izin eksikliği gibi gösterilmiyor ve etiketler İngilizce ve Türkçe doğru okunuyor.</li>',
+    rel19t: 'Seyahat çalışma alanı ve Faction üye grafikleri',
+    rel19: '<li>Seyahat Kârı\'na <b>Eşyaya göre / Ülkeye göre / Seyahat ROI</b> görünümleri, ülke kartları, stok ve fiyat geçmişi grafiği, destinasyon tablosu ve zaman çizelgesinin yanında <b>24s kalkış kadranı</b> eklendi.</li>'
+      + '<li>Faction\'a kişisel grafikli <b>Üyeler</b> tablosu ile <b>Stats, Faction Gym, Banka, Başvurular, Transfers</b> ve <b>Alliance &amp; Graffiti</b> sekmeleri eklendi.</li>'
+      + '<li>Genel Bakış için dokuz yeni <b>Faction ve Seyahat widget\'ı</b>.</li>',
+    rel18t:'Faction Travel Radar, 24s Aktivite grafiği, Fiyat Uyarıları ve Operasyon Ekranı',
     rel18: '<li><b>Faction › Travel Radar</b> (Ücretsiz) eklendi: ortak 2 dakikalık roster önbelleği, ayrık aktivite/sağlık eksenleri, geçiş tabanlı ETA penceresi, tıklanabilir Gidiş/Yurt dışı/Dönüş filtreleri ve Ülke → Seyahat Kârı bağlantıları.</li>'
       + '<li>Kesinti boşluklarını gösteren <b>24s TCT Aktivite adım çizgisi grafiği</b>, <b>Borsa fiyat eşiği uyarıları</b> ve <b>iki serili Savaş skor çubuğu</b> eklendi.</li>'
       + '<li>Ayarlar › Genel altına <b>Kontrol ve Operasyon Ekranı</b> (Torn/YATA/Prometheus sağlığı, maskeli anahtar, toplama ve bildirim kuyruğu) ile ayrı SQLite tabanlı <b>Ortak Faction Hub</b> ve Takım Planı altyapısı eklendi.</li>',

@@ -4,6 +4,8 @@ Each file is the GitHub release text for that version. The newest version is at 
 
 | Version | Date | Highlights |
 | --- | --- | --- |
+| [1.6.20](1.6.20.md) | 2026-11-23 | Fixes for 1.6.18/1.6.19: Stock price alert crash, TCT times, Add to plan, By Country view, 48h travel history, member travel log, Members/radar travel fields, form drafts, 30d/90d coverage, Faction Hub security and privacy |
+| [1.6.19](1.6.19.md) | 2026-11-23 | Travel workspace (By Item / By Country / Travel ROI, country cards, history chart, destinations), 24h departure dial, Faction Members drawer with personal charts, Stats/Gym/Bank/Recruitment/Transfers/Alliance tabs, 9 Faction and Travel Overview widgets |
 | [1.6.18](1.6.18.md) | 2026-11-23 | Faction Travel Radar, shared roster cache, 24h TCT Activity step-line chart, Stock price alerts, War score bar, Control & Operations panel, Shared Faction Hub backend |
 | [1.6.17](1.6.17.md) | 2026-11-23 | Holdings card (where your networth sits), price effect vs trading split, Torn tab size after minimize, Departure Planner labels |
 | [1.6.16](1.6.16.md) | 2026-11-22 | Ranked War `page.php` Attack fix, OC Armory Utilities shortcut, Departure Planner, Stock Market, War Payout Planner, Company Optimizer, Faction Activity/Armory/Chains/Upgrades |

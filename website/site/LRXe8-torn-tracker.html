@@ -60,7 +60,7 @@
         <p class="hero-sub" data-i18n-html="heroSub">Timers, war targets, travel profit and Torn itself in one Windows app. It runs on <b>your own Limited Access API key</b>, and it stays on your PC.</p>
         <a class="btn-silver" href="https://github.com/Mericsdc/lrx-torn-tracker/releases/latest/download/LRX-Torn-Tracker-Windows-x64.zip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/></svg><span data-i18n="download">Download for Windows</span></a>
         <ul class="facts" aria-label="Facts">
-          <li data-i18n="factFree">Free</li><li>Windows 10/11</li><li><span class="mono">v1.6.18</span></li><li data-i18n="factEnTr">English · Türkçe</li>
+          <li data-i18n="factFree">Free</li><li>Windows 10/11</li><li><span class="mono">v1.6.20</span></li><li data-i18n="factEnTr">English · Türkçe</li>
         </ul>
       </div>
       <a class="dev-chip" href="https://www.torn.com/profiles.php?XID=4037017" rel="noopener"><span>Ezlira <span class="mono">[4037017]</span></span><small data-i18n="development">Development</small></a>
@@ -153,7 +153,23 @@
       </div>
       <div class="rel-list">
         <details class="rel" open>
-          <summary><span class="rel-v mono">v1.6.18</span><span class="rel-t" data-i18n="rel18t">Faction Travel Radar, 24h Activity chart, Price Alerts &amp; Operations Panel</span><time class="rel-d mono" datetime="2026-11-23">2026-11-23</time><span class="rel-latest" data-i18n="relLatest">Latest</span></summary>
+          <summary><span class="rel-v mono">v1.6.20</span><span class="rel-t" data-i18n="rel20t">Fixes for Travel, Faction and Stock Market</span><time class="rel-d mono" datetime="2026-11-23">2026-11-23</time><span class="rel-latest" data-i18n="relLatest">Latest</span></summary>
+          <ul data-i18n-html="rel20">
+            <li>A firing <b>price alert</b> no longer breaks the Stock Market page. Travel times marked <b>TCT</b> are Torn time again, <b>Add to plan</b> really adds the route to the 24h planner, and <b>By Country</b> is its own view.</li>
+            <li>The <b>member travel log</b> keeps every flight with its country, and the Members table and Overview radar widget show destination and arrival time again. Typed notes are no longer wiped by a refresh.</li>
+            <li>30d and 90d columns show how many days of data they cover, Torn outages are no longer reported as missing permission, and labels read correctly in English and Turkish.</li>
+          </ul>
+        </details>
+        <details class="rel">
+          <summary><span class="rel-v mono">v1.6.19</span><span class="rel-t" data-i18n="rel19t">Travel workspace and Faction member charts</span><time class="rel-d mono" datetime="2026-11-23">2026-11-23</time></summary>
+          <ul data-i18n-html="rel19">
+            <li>Travel Profit gained <b>By Item / By Country / Travel ROI</b> views, country cards, a stock and price history chart, a destinations table and a <b>24h departure dial</b> next to the timeline.</li>
+            <li>Faction gained a <b>Members</b> table with personal charts, and <b>Stats, Faction Gym, Bank, Recruitment, Transfers</b> and <b>Alliance &amp; Graffiti</b> tabs.</li>
+            <li>Nine new <b>Faction and Travel widgets</b> for the Overview.</li>
+          </ul>
+        </details>
+        <details class="rel">
+          <summary><span class="rel-v mono">v1.6.18</span><span class="rel-t" data-i18n="rel18t">Faction Travel Radar, 24h Activity chart, Price Alerts &amp; Operations Panel</span><time class="rel-d mono" datetime="2026-11-23">2026-11-23</time></summary>
           <ul data-i18n-html="rel18">
             <li>Added <b>Faction › Travel Radar</b> (Free) with shared 2-minute roster caching, separate activity/health axes, transition-based ETA windows, clickable Outbound/Abroad/Inbound filters and Country → Travel Profit cross-links.</li>
             <li>Added a <b>24h TCT Activity step-line chart</b> with visible outage gaps, <b>Stock Market price threshold alerts</b>, and a <b>2-series War score comparison bar</b> with cross-module deep links.</li>
