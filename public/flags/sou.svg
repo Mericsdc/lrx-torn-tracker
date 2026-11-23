@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 180" width="300" height="180">
+  <defs>
+    <clipPath id="za-clip"><rect width="300" height="180"/></clipPath>
+    <linearGradient id="wave" x1="0%" y1="10%" x2="100%" y2="90%">
+      <stop offset="0%" stop-color="#000" stop-opacity="0.16"/>
+      <stop offset="25%" stop-color="#fff" stop-opacity="0.14"/>
+      <stop offset="50%" stop-color="#000" stop-opacity="0.22"/>
+      <stop offset="76%" stop-color="#fff" stop-opacity="0.13"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.20"/>
+    </linearGradient>
+  </defs>
+  <g clip-path="url(#za-clip)">
+    <rect y="0" width="300" height="90" fill="#e03c31"/>
+    <rect y="90" width="300" height="90" fill="#001489"/>
+    <!-- White fimbriation + Green Y -->
+    <path d="M0 0 L132 90 L0 180 M132 90 H300" fill="none" stroke="#f5f6f7" stroke-width="58" stroke-linejoin="miter"/>
+    <path d="M0 0 L132 90 L0 180 M132 90 H300" fill="none" stroke="#007749" stroke-width="36" stroke-linejoin="miter"/>
+    <!-- Gold chevron + Black hoist triangle -->
+    <polygon points="0,18 106,90 0,162" fill="#ffb81c"/>
+    <polygon points="0,33 84,90 0,147" fill="#121212"/>
+  </g>
+  <rect width="300" height="180" fill="url(#wave)"/>
+</svg>

@@ -33,6 +33,9 @@
     credNote: `Bağımsız projeler, teşekkürle anılır. Herhangi bir onay ima edilmez ve lisansları geçerliliğini korur. <a href="${GH}/blob/main/userscripts/NOTICE.txt" rel="noopener">Üçüncü taraf bildirimleri</a>`,
     relEyebrow: 'Sürüm notları', relTitle: 'Sürüm sürüm neler değişti.', relLead: 'Güncellemeler uygulamanın içinden kurulur. Key\'in, ayarların ve verilerin yerinde kalır.',
     relLatest: 'En yeni',
+    rel21t: 'Ülke Kartları için bayrak arka planları',
+    rel21: '<li><b>Seyahat Kârı › Ülke Kartları</b> bölümündeki 11 ülkenin tamamına çevrimdışı vektörel SVG bayrak arka planları eklendi (resmî Hawaii eyalet bayrağı, Meksika ve Cayman Adaları armaları dahil).</li>'
+      + '<li>Çift eksenli gradyan maskeleme ve okunabilirlik ayarlarıyla bayraklar 5 temanın tamamına doğal biçimde uyum sağlıyor; animasyon kapatma ayarına uyuyor.</li>',
     rel20t: 'Travel, Faction ve Borsa düzeltmeleri',
     rel20: '<li>Tetiklenen <b>fiyat uyarısı</b> artık Borsa sayfasını bozmuyor. <b>TCT</b> yazan seyahat saatleri yeniden Torn saati, <b>Planıma ekle</b> rotayı gerçekten 24s planlayıcıya ekliyor ve <b>Ülkeye göre</b> ayrı bir görünüm.</li>'
       + '<li><b>Üye seyahat kaydı</b> her uçuşu ülkesiyle tutuyor; Üyeler tablosu ve Genel Bakış radar widget\'ı yine varış yeri ve süresini gösteriyor. Yazdığın notlar yenilemede silinmiyor.</li>'

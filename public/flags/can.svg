@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 180" width="300" height="180">
+  <defs>
+    <linearGradient id="wave" x1="0%" y1="12%" x2="100%" y2="88%">
+      <stop offset="0%" stop-color="#000" stop-opacity="0.16"/>
+      <stop offset="25%" stop-color="#fff" stop-opacity="0.14"/>
+      <stop offset="50%" stop-color="#000" stop-opacity="0.22"/>
+      <stop offset="76%" stop-color="#fff" stop-opacity="0.13"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.20"/>
+    </linearGradient>
+  </defs>
+  <rect width="75" height="180" fill="#d80621"/>
+  <rect x="75" width="150" height="180" fill="#f5f6f7"/>
+  <rect x="225" width="75" height="180" fill="#d80621"/>
+  <!-- Official 11-point Maple Leaf -->
+  <path d="M150 28 L141 47 L131 44 L135 67 L119 56 L116 64 L101 62 L106 76 L99 81 L117 97 L114 106 L146 102 L145 144 L155 144 L154 102 L186 106 L183 97 L201 81 L194 76 L199 62 L184 64 L181 56 L165 67 L169 44 L159 47 Z" fill="#d80621"/>
+  <rect width="300" height="180" fill="url(#wave)"/>
+</svg>

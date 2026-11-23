@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 180" width="300" height="180">
+  <defs>
+    <linearGradient id="wave" x1="0%" y1="10%" x2="100%" y2="90%">
+      <stop offset="0%" stop-color="#000" stop-opacity="0.16"/>
+      <stop offset="22%" stop-color="#fff" stop-opacity="0.14"/>
+      <stop offset="46%" stop-color="#000" stop-opacity="0.22"/>
+      <stop offset="70%" stop-color="#fff" stop-opacity="0.13"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.20"/>
+    </linearGradient>
+  </defs>
+  <rect width="100" height="180" fill="#006847"/>
+  <rect x="100" width="100" height="180" fill="#f5f6f7"/>
+  <rect x="200" width="100" height="180" fill="#ce1126"/>
+  <!-- Mexican Coat of Arms (stylized) -->
+  <g transform="translate(150 74) scale(1.06)">
+    <!-- Oak & Laurel wreath -->
+    <path d="M-24 4 C-26 20 -14 31 0 31 C14 31 26 20 24 4" fill="none" stroke="#1e7b47" stroke-width="5.2" stroke-linecap="round"/>
+    <path d="M-22 6 C-23 19 -12 28 0 28 C12 28 23 19 22 6" fill="none" stroke="#85a83e" stroke-width="2" stroke-dasharray="3 3"/>
+    <!-- Tricolor ribbon bow -->
+    <rect x="-8" y="28" width="5.5" height="4.5" rx="1" fill="#006847"/>
+    <rect x="-2.5" y="28" width="5" height="4.5" fill="#f5f6f7"/>
+    <rect x="2.5" y="28" width="5.5" height="4.5" rx="1" fill="#ce1126"/>
+    <!-- Lake water & rock -->
+    <path d="M-15 18 Q0 24 15 18 Q8 26 0 26 Q-8 26 -15 18Z" fill="#2e9bd6"/>
+    <ellipse cx="0" cy="17" rx="10" ry="4" fill="#9c7248"/>
+    <!-- Nopal cactus -->
+    <ellipse cx="0" cy="11" rx="6" ry="5" fill="#2a8a4b"/>
+    <ellipse cx="-9" cy="9" rx="4.5" ry="3.5" transform="rotate(-24 -9 9)" fill="#2a8a4b"/>
+    <ellipse cx="9" cy="9" rx="4.5" ry="3.5" transform="rotate(24 9 9)" fill="#2a8a4b"/>
+    <circle cx="-11" cy="5.5" r="1.7" fill="#d92b3a"/>
+    <circle cx="11" cy="5.5" r="1.7" fill="#d92b3a"/>
+    <!-- Golden eagle -->
+    <path d="M-2 10 L-19 -6 C-22 -14 -14 -21 -6 -16 L-1 -7 L2 -15 C6 -20 13 -19 15 -14 L12 -11 C9 -13 6 -12 5 -8 L19 -14 C21 -6 14 2 5 6 L4 13 L-4 13 Z" fill="#6b4423"/>
+    <path d="M-15 -7 C-12 -11 -6 -9 -2 -3 M14 -9 C10 -5 6 -2 2 2" stroke="#9e6d3b" stroke-width="1.6" stroke-linecap="round"/>
+    <!-- Beak & serpent -->
+    <path d="M12 -15 L17 -14 L13 -12 Z" fill="#e6b422"/>
+    <path d="M16 -13 C20 -8 14 -3 17 2 C19 5 14 7 11 5" fill="none" stroke="#1c7a43" stroke-width="2.2" stroke-linecap="round"/>
+  </g>
+  <rect width="300" height="180" fill="url(#wave)"/>
+</svg>

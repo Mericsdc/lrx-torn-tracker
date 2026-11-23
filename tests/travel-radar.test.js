@@ -830,3 +830,18 @@ test('Fix 9: groupRowsByCountry builds the By Country view in flight-time order 
   assert.equal(groups[0].bestPerHour, 300);
   assert.equal(groups[1].bestPerHour, 900);
 });
+
+test('Country Cards: all 11 Torn travel destinations have valid SVG flag backdrops and CSS mappings', () => {
+  const tw = require('../public/travel-workspace');
+  const css = fs.readFileSync(path.join(ROOT, 'public/styles.css'), 'utf8');
+  assert.equal(tw.COUNTRY_ORDER.length, 11);
+  for (const code of tw.COUNTRY_ORDER) {
+    const svgPath = path.join(ROOT, 'public', 'flags', `${code}.svg`);
+    assert.ok(fs.existsSync(svgPath), `Missing flag SVG for ${code}: ${svgPath}`);
+    const svg = fs.readFileSync(svgPath, 'utf8');
+    assert.ok(svg.includes('<svg') && svg.includes('</svg>'), `Invalid SVG content for ${code}`);
+    assert.equal(/<script|onload=|onerror=/i.test(svg), false, `Flag SVG for ${code} must be static and script-free`);
+    assert.ok(css.includes(`.tv-ccard[data-country="${code}"]`), `Missing CSS flag mapping for ${code}`);
+    assert.ok(css.includes(`/flags/${code}.svg`), `Missing CSS URL for /flags/${code}.svg`);
+  }
+});

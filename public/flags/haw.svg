@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 180" width="300" height="180">
+  <defs>
+    <clipPath id="haw-canton"><rect width="132" height="90"/></clipPath>
+    <clipPath id="haw-diag">
+      <path d="M0 0 L66 45 L0 45 Z M66 0 L132 0 L66 45 Z M66 45 L132 45 L132 90 Z M0 90 L66 45 L66 90 Z"/>
+    </clipPath>
+    <linearGradient id="wave" x1="0%" y1="10%" x2="100%" y2="90%">
+      <stop offset="0%" stop-color="#000" stop-opacity="0.16"/>
+      <stop offset="26%" stop-color="#fff" stop-opacity="0.15"/>
+      <stop offset="52%" stop-color="#000" stop-opacity="0.22"/>
+      <stop offset="76%" stop-color="#fff" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.20"/>
+    </linearGradient>
+  </defs>
+  <!-- 8 stripes of the State of Hawaii flag -->
+  <rect y="0" width="300" height="22.5" fill="#f5f6f7"/>
+  <rect y="22.5" width="300" height="22.5" fill="#c8102e"/>
+  <rect y="45" width="300" height="22.5" fill="#012169"/>
+  <rect y="67.5" width="300" height="22.5" fill="#f5f6f7"/>
+  <rect y="90" width="300" height="22.5" fill="#c8102e"/>
+  <rect y="112.5" width="300" height="22.5" fill="#012169"/>
+  <rect y="135" width="300" height="22.5" fill="#f5f6f7"/>
+  <rect y="157.5" width="300" height="22.5" fill="#c8102e"/>
+  <!-- Union Jack Canton -->
+  <g clip-path="url(#haw-canton)">
+    <rect width="132" height="90" fill="#012169"/>
+    <path d="M0 0 L132 90 M132 0 L0 90" stroke="#f5f6f7" stroke-width="18"/>
+    <path d="M0 0 L132 90 M132 0 L0 90" stroke="#c8102e" stroke-width="11" clip-path="url(#haw-diag)"/>
+    <path d="M66 0 V90 M0 45 H132" stroke="#f5f6f7" stroke-width="28"/>
+    <path d="M66 0 V90 M0 45 H132" stroke="#c8102e" stroke-width="16"/>
+  </g>
+  <rect width="300" height="180" fill="url(#wave)"/>
+</svg>

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 180" width="300" height="180">
+  <defs>
+    <clipPath id="uk-diag">
+      <path d="M0 0 L150 90 L0 90 Z M150 0 L300 0 L150 90 Z M150 90 L300 90 L300 180 Z M0 180 L150 90 L150 180 Z"/>
+    </clipPath>
+    <linearGradient id="wave" x1="0%" y1="10%" x2="100%" y2="90%">
+      <stop offset="0%" stop-color="#000" stop-opacity="0.16"/>
+      <stop offset="25%" stop-color="#fff" stop-opacity="0.14"/>
+      <stop offset="50%" stop-color="#000" stop-opacity="0.22"/>
+      <stop offset="76%" stop-color="#fff" stop-opacity="0.13"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.20"/>
+    </linearGradient>
+  </defs>
+  <rect width="300" height="180" fill="#012169"/>
+  <path d="M0 0 L300 180 M300 0 L0 180" stroke="#f5f6f7" stroke-width="34"/>
+  <path d="M0 0 L300 180 M300 0 L0 180" stroke="#c8102e" stroke-width="20" clip-path="url(#uk-diag)"/>
+  <path d="M150 0 V180 M0 90 H300" stroke="#f5f6f7" stroke-width="54"/>
+  <path d="M150 0 V180 M0 90 H300" stroke="#c8102e" stroke-width="32"/>
+  <rect width="300" height="180" fill="url(#wave)"/>
+</svg>
