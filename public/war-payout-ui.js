@@ -101,7 +101,7 @@
     return `<div class="wp-score-cmp">
       <div class="wp-score-head">
         <span><b class="tq-text">${esc(mine.name)}</b> <span class="mono">${n0(sA)}</span> <small class="sub-text">(${n0(mine.attacks)} ${tr('vuruş', 'hits')})</small></span>
-        <span class="chip ${diff >= 0 ? 'green' : 'danger'} mono">War #${st.warId} · ${diff >= 0 ? '+' : ''}${n0(diff)}</span>
+        <span class="chip ${diff >= 0 ? 'green' : 'danger'} mono">${tr('Savaş', 'War')} #${st.warId} · ${diff >= 0 ? '+' : ''}${n0(diff)}</span>
         <span><small class="sub-text">(${n0(opp.attacks)} ${tr('vuruş', 'hits')})</small> <span class="mono">${n0(sB)}</span> <b>${esc(opp.name)}</b></span>
       </div>
       <div class="wp-score-bar" role="img" aria-label="${esc(`${mine.name} ${sA} vs ${opp.name} ${sB}`)}">
@@ -109,7 +109,7 @@
         <i class="wp-bar-b" style="width:${(100 - pctA).toFixed(1)}%"></i>
       </div>
       <div class="wp-score-links">
-        <button class="btn sm ghost" type="button" data-open-url="${warUrl}" data-tab-label="War #${st.warId}">${tr('Torn Savaş Raporu', 'Torn War Report')} ↗</button>
+        <button class="btn sm ghost" type="button" data-open-url="${warUrl}" data-tab-label="${tr('Savaş', 'War')} #${st.warId}">${tr('Torn Savaş Raporu', 'Torn War Report')} ↗</button>
         ${feat('page.faction') && feat('faction.travelRadar') ? `<button class="btn sm ghost" type="button" id="wp-open-radar">🛰️ ${tr('Faction Travel Radar', 'Faction Travel Radar')}</button>` : ''}
       </div>
     </div>`;
@@ -223,7 +223,7 @@
     const calc = computeCurrent();
     if (!calc) return;
     const fac = currentFaction();
-    const title = `War #${st.warId} - ${fac?.name || 'Faction'}`;
+    const title = `${tr('Savaş', 'War')} #${st.warId} - ${fac?.name || 'Faction'}`;
     const csv = LRXWarPayout.toCsv(calc, { warTitle: title });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -257,7 +257,7 @@
       const calc = computeCurrent();
       if (!calc) return;
       const fac = currentFaction();
-      await copyText(LRXWarPayout.toTextSummary(calc, `War #${st.warId} · ${fac?.name || ''}`), tr('Ödeme özeti kopyalandı', 'Payout summary copied'));
+      await copyText(LRXWarPayout.toTextSummary(calc, `${tr('Savaş', 'War')} #${st.warId} · ${fac?.name || ''}`), tr('Ödeme özeti kopyalandı', 'Payout summary copied'));
     }
   });
   host?.addEventListener('change', (e) => {

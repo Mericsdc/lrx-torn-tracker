@@ -1494,7 +1494,11 @@ body.no-anim *, body.no-anim *::before, body.no-anim *::after { animation: none 
 .dp-head-text > .muted b { color: var(--text); font-weight: 600; }
 .dp-match { display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; color: var(--ok); font-weight: 600; }
 .dp-match .dp-i { width: 11px; height: 11px; vertical-align: 0; }
-.dp-head-actions { display: flex; flex: none; align-items: center; gap: 8px; }
+/* Two view pills + Pin + Options + Hide: the actions wrap under the title instead of squeezing it (any width). */
+.dp-head { flex-wrap: wrap; row-gap: 10px; }
+.dp-head-text { flex: 1 1 340px; }
+.dp-head-actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
+.dp-head-actions .btn-group { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 .dp-head-actions .btn.active { color: var(--gold-2); border-color: var(--gold-border); background: var(--gold-soft); }
 .dp-count { display: inline-grid; place-items: center; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--gold-soft); color: var(--gold-2); font-size: 10px; font-weight: 700; }
 .dp-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; font-size: 12.5px; color: var(--muted); }
@@ -1777,9 +1781,9 @@ body.no-anim *, body.no-anim *::before, body.no-anim *::after { animation: none 
 .tv-ccard-top, .tv-ccard-mid, .tv-ccard-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; }
 .tv-ccard-title { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; }
 .tv-ccard-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.tv-ccard-profit { font: 700 14px var(--mono); color: var(--tq); }
+.tv-ccard-profit { flex: none; white-space: nowrap; font: 700 14px var(--mono); color: var(--tq); }
 .tv-ccard-profit small { font: 400 11px var(--sans); color: var(--muted); }
-.tv-ccard-badges { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.tv-ccard-badges { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
 
 .tv-hist-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tv-hist-svg { display: block; width: 100%; height: auto; max-height: 195px; margin-top: 8px; border-radius: var(--radius-sm); border: 1px solid var(--stroke); background: var(--surface-2); }
@@ -1793,6 +1797,14 @@ body.no-anim *, body.no-anim *::before, body.no-anim *::after { animation: none 
 .tv-hist-dot:focus-visible { outline: 2px solid var(--gold); r: 5; }
 .tv-traffic-kpis { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0 4px; }
 .tv-traffic-line { fill: none; stroke: var(--ok); stroke-width: 2.2; }
+.tv-traffic-dot { fill: var(--ok); stroke: var(--bg-2); stroke-width: 1.2; }
+/* Warning text on the Travel page ("Stale data", "Source switch") uses the warning colour, like .chip.warn. */
+#travel-body .warn:not(.chip):not(.alert) { color: var(--warn); }
+/* By Country: a header row per country in the item list */
+.tv-table.tv-grouped .tv-group-row th { padding: 10px 8px 6px; text-align: left; font-weight: 500; text-transform: none; letter-spacing: 0; background: var(--surface-2); border-top: 1px solid var(--stroke-2); }
+.tv-table.tv-grouped .tv-group-row:first-child th { border-top: 0; }
+.tv-group-title { margin-right: 6px; font-size: 12.5px; color: var(--text); }
+.dp-added { margin-left: 4px; padding: 0 6px; font-size: 10px; }
 
 /* N2: 24-Hour Clock Dial + Synchronized Chronological List */
 .dp-dial-layout { display: grid; grid-template-columns: 245px 1fr; gap: 16px; align-items: start; margin-top: 12px; padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--stroke); background: var(--surface-2); }
@@ -1830,6 +1842,10 @@ body.no-anim *, body.no-anim *::before, body.no-anim *::after { animation: none 
 .fac-prof-ext:hover { color: var(--tq); }
 .fac-drawer-tr td { padding: 0 !important; background: var(--surface-2); border-bottom: 2px solid var(--tq-border); }
 .fac-drawer { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+/* A wide members table scrolls sideways; the drawer stays the width of the visible area and pinned to its left edge,
+   so the profile/close buttons and the chart are never scrolled out of view. */
+.fac-mem-wrap { container-type: inline-size; }
+.fac-mem-wrap .fac-drawer { position: sticky; left: 0; width: 100cqw; max-width: 100%; box-sizing: border-box; }
 .fac-drawer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .fac-drawer-head h4 { margin: 0 0 4px; font-size: 14px; }
 .fac-drawer-actions { display: flex; align-items: center; gap: 6px; }
@@ -1847,6 +1863,13 @@ body.no-anim *, body.no-anim *::before, body.no-anim *::after { animation: none 
 .fac-graffiti-card { padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--stroke); display: flex; flex-direction: column; gap: 8px; }
 .fac-graffiti-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .fac-graffiti-text { margin: 0; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Members / Stats toolbars and the compact controls the workspace tabs use */
+.fac-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 10px; }
+.fac-toolbar .input { flex: 1 1 200px; min-width: 160px; max-width: 300px; }
+#faction-body .btn-group { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+#faction-body .input.sm { height: 32px; padding: 0 10px; font-size: 12.5px; }
+.fac-form-row select { height: 32px; }
+.fac-local-note { margin: 0 0 12px; font-size: 12.5px; }
 
 @media (max-width: 900px) {
   .dp-dial-layout { grid-template-columns: 1fr; }

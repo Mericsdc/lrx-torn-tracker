@@ -177,6 +177,17 @@ function markSourceErr(name, err, latencyMs) {
   s.ok = false; s.lastErrorAt = Date.now(); s.latencyMs = Math.max(0, Math.round(latencyMs)); s.calls++;
   s.lastErrorClass = String(err?.code || err?.name || 'ERROR');
 }
+// Torn itself is failing only on an outage: no connection, a timeout, an unreadable/HTTP error reply, or Torn's
+// codes 5 (too many requests), 8 (IP block) and 9 (API disabled). A refusal for this key or position (2, 7, 16 ...)
+// is a working Torn answering, not a source error.
+const TORN_SOURCE_CODES = new Set([5, 8, 9]);
+function isTornSourceError(err) {
+  if (!err) return false;
+  if (err.name === 'TimeoutError' || err.name === 'AbortError' || err instanceof TypeError) return true;
+  const code = err.code;
+  if (code === 'BAD_RESPONSE' || code === 'TIMEOUT' || code === 'NETWORK' || /^HTTP_\d+$/.test(String(code ?? ''))) return true;
+  return TORN_SOURCE_CODES.has(Number(code));
+}
 
 const rosterCache = rosterCacheMod.createRosterCache({
   fetchMembers: () => tornRaw('v2/faction/members'),
@@ -253,7 +264,8 @@ async function tornRaw(pathq) {
     markSourceOk('torn', Date.now() - started);
     return out;
   } catch (err) {
-    markSourceErr('torn', err, Date.now() - started);
+    if (isTornSourceError(err)) markSourceErr('torn', err, Date.now() - started);
+    else markSourceOk('torn', Date.now() - started); // Torn answered; the refusal is about this key, not the source
     throw err;
   }
 }
@@ -476,6 +488,17 @@ const flushStocks = () => { if (stockDirty) { stockDirty = false; try { writeJso
 setInterval(flushStocks, 60_000).unref();
 const QUARTER = 900; // Torn yurt dışı stokları çeyrek saatlerde yenilenir
 const pushMax = (arr, v, max) => { if (arr[arr.length - 1] !== v) arr.push(v); while (arr.length > max) arr.shift(); };
+// Stock chart history (6/12/24/48h on the Travel page): the last 48 hours, one reading per 30 minutes (the last one
+// seen in that half hour, so the newest raw reading is always the last row), at most 96 rows per item.
+const STOCK_HISTORY_SPAN = 48 * 3600, STOCK_HISTORY_STEP = 1800, STOCK_HISTORY_ROWS = 96;
+function compactStockHistory(rows) {
+  if (!rows.length) return rows;
+  const cutoff = rows[rows.length - 1][0] - STOCK_HISTORY_SPAN;
+  const byStep = new Map();
+  for (const row of rows) if (row[0] > cutoff) byStep.set(Math.floor(row[0] / STOCK_HISTORY_STEP), row);
+  const out = [...byStep.values()].sort((a, b) => a[0] - b[0]);
+  return out.length > STOCK_HISTORY_ROWS ? out.slice(-STOCK_HISTORY_ROWS) : out;
+}
 const median = (a) => { if (!a.length) return null; const b = [...a].sort((x, y) => x - y); return b[Math.floor(b.length / 2)]; };
 
 function recordStock(code, update, list, sourceName = 'YATA') {
@@ -496,7 +519,7 @@ function recordStock(code, update, list, sourceName = 'YATA') {
     if (e.samples.length > 30) e.samples.shift();
     if (!e.history.length || update > e.history[e.history.length - 1][0]) {
       e.history.push([update, q, cost, sourceName]);
-      while (e.history.length > 96) e.history.shift();
+      e.history = compactStockHistory(e.history);
     }
     e.q = q; e.t = update; stockDirty = true;
   }
@@ -591,11 +614,12 @@ async function getTravelProfit() {
   const market = items.items || {};
   const nowS = Math.floor(Date.now() / 1000);
   const profile = travelPlanner.detectTravelProfile(me, me.travel);
-  const abroadItemCountries = new Map();
+  const abroadItemCountries = new Map(); // item id -> Set of country codes that sell it
   const countries = Object.entries(st.countries).map(([code, c]) => ({
     code, name: COUNTRIES[code]?.[0] || code, minutes: COUNTRIES[code]?.[1] || null, update: c.update, source: c.source,
     items: c.stocks.map((s) => {
-      abroadItemCountries.set(Number(s.id), code);
+      if (!abroadItemCountries.has(Number(s.id))) abroadItemCountries.set(Number(s.id), new Set());
+      abroadItemCountries.get(Number(s.id)).add(code);
       const mv = Number(market[s.id]?.market_value) || 0;
       const sp = Number(market[s.id]?.sell_price) || 0;
       const q = Number(s.quantity) || 0;
@@ -624,12 +648,15 @@ async function getTravelProfit() {
   } : null;
 
   ensureLogHistory();
+  // The purchase log does not say where an item was bought: the country is known only when a single country sells
+  // it. An item sold in several countries keeps an unknown country instead of a guess.
+  const soleCountry = (id) => { const set = abroadItemCountries.get(id); return set && set.size === 1 ? [...set][0] : null; };
   const flightEntries = [];
   for (const [idStr, buys] of Object.entries(history.purchases || {})) {
     const id = Number(idStr);
-    const code = abroadItemCountries.get(id) || null;
+    const code = soleCountry(id);
     for (const b of Array.isArray(buys) ? buys : []) {
-      if (b.src !== 'abroad' && !code) continue;
+      if (b.src !== 'abroad') continue; // market, bazaar and shop buys are not flights
       const mv = Number(market[id]?.market_value) || 0;
       const each = Number(b.each) || 0;
       const qty = Number(b.qty) || 1;
@@ -650,8 +677,8 @@ async function getTravelProfit() {
   }
   for (const [idStr, m] of Object.entries(history.manualCosts || {})) {
     const id = Number(idStr);
-    const code = abroadItemCountries.get(id) || null;
-    if (!code || !(m?.cost > 0)) continue;
+    if (!abroadItemCountries.has(id) || !(m?.cost > 0)) continue; // only items sold abroad
+    const code = soleCountry(id);
     const mv = Number(market[id]?.market_value) || 0;
     flightEntries.push({
       itemId: id,
@@ -682,7 +709,10 @@ async function getTravelProfit() {
     sources: st.sources,
     factionTraffic: Array.isArray(facAct.traffic) ? facAct.traffic : [],
     flightHistory: {
-      logAccess: Boolean(logStatus.ok),
+      // true: the last log read worked · false: it was refused or failed (see logError; 'ACCESS' = the key has no log
+      // access) · null: not read yet since the app started or the log key changed. No log request is made here.
+      logAccess: logStatus.ok === true ? true : logStatus.ok === false ? false : null,
+      logKeySet: Boolean(config.logKey),
       logError: logStatus.error || null,
       entries: flightEntries.slice(0, 30),
     },
@@ -1874,6 +1904,7 @@ async function getFactionOC(force = false) {
 /* Haftalık rapor: üyelerin kişisel istatistik farkı (son 7 gün). Torn günlük kayıt tutar; her üye için
    bugünün ve 7 gün önceki değer bir kez çekilip saklanır, sonraki günlerde yalnızca yeni gün çekilir. */
 const FAC_STATS = ['timeplayed', 'xantaken', 'criminaloffenses', 'bloodwithdrawn', 'organizedcrimes'];
+const FAC_KEEP_DAYS = 95; // daily member snapshots and gym records
 const facJob = { running: false, done: 0, total: 0, error: null, startedAt: 0, finishedAt: 0 };
 const facStore = () => { history.faction ||= { snaps: {}, gym: {} }; history.faction.snaps ||= {}; history.faction.gym ||= {}; return history.faction; };
 const utcDay = (ts) => new Date(ts * 1000).toISOString().slice(0, 10);
@@ -1903,8 +1934,10 @@ async function runFactionReport() {
     // Another player signed in (or the key changed): stop instead of walking the old faction with the new key.
     const keyChanged = () => gen !== keyGen;
     try {
-      const mem = await torn('v2/faction/members', 60_000);
-      const ids = (mem.members || []).map((m) => m.id);
+      // The shared roster cache: the report page has just loaded it, so this is normally no Torn request at all.
+      const roster = await rosterCache.load({ force: false });
+      if (keyChanged()) return;
+      const ids = (roster.members || []).map((m) => m.id).filter((id) => id > 0);
       const now = Math.floor(Date.now() / 1000);
       const today = utcDay(now);
       const past = utcDay(now - 7 * 86400);
@@ -1931,8 +1964,8 @@ async function runFactionReport() {
         st.gymError = null;
       } catch (e) { st.gymError = e.message; }
       facJob.done++;
-      // 40 günden eski kayıtları sil
-      const cut = utcDay(now - 40 * 86400);
+      // Records older than 95 days are dropped (the 90-day views need 90 days plus a little slack)
+      const cut = utcDay(now - FAC_KEEP_DAYS * 86400);
       for (const k of Object.keys(st.snaps)) if (k < cut) delete st.snaps[k];
       for (const k of Object.keys(st.gym)) if (k < cut) delete st.gym[k];
       st.builtAt = Date.now();
@@ -2001,6 +2034,55 @@ async function getFactionReport(start = false, windowDays = 7) {
   };
 }
 
+/* Per-member travel log entry: { id (the radar's transitionId), fromState, toState, destination, origin, seenFrom,
+   seenTo } — seenFrom/seenTo are the ISO times of the two roster observations the change happened between. */
+const isTravelLogEntry = (x) => Boolean(x && typeof x === 'object' && typeof x.id === 'string' && x.id);
+const travelLogEntry = (x) => ({
+  id: x.id, fromState: x.fromState ?? null, toState: x.toState ?? null, destination: x.destination ?? null,
+  origin: x.origin ?? null, seenFrom: x.seenFrom ?? null, seenTo: x.seenTo ?? null,
+});
+
+/* Battle Stats history of other members (st.memberBs[playerId] = [{ at, observedAt, source, verified, total }]).
+   One point per member per UTC day, taken only from totals already in memory (FFScouter replies fetched for another
+   page): no Torn or FFScouter request is made for it. A rank estimate is never stored. Own stats come from the daily
+   stat history instead. Members who left the faction are dropped; at most 400 days per member. */
+const MEMBER_BS_KEEP = 400;
+const bsDay = (ms) => { const d = new Date(Number(ms)); return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10); };
+function recordMemberBattleStats(members) {
+  const ids = new Set((members || []).map((m) => Number(m.id)).filter((id) => id > 0));
+  if (!ids.size) return false;
+  const st = facStore();
+  st.memberBs ||= {};
+  const meId = Number(myPlayerId()) || 0;
+  let dirty = false;
+  for (const pid of Object.keys(st.memberBs)) {
+    if (!ids.has(Number(pid)) || Number(pid) === meId) { delete st.memberBs[pid]; dirty = true; }
+  }
+  for (const pid of ids) {
+    if (pid === meId) continue;
+    const prev = Array.isArray(st.memberBs[pid]) ? st.memberBs[pid] : [];
+    let arr = prev.filter((p) => p && p.source !== 'rank_estimate' && Number(p.total) > 0 && Number(p.at) > 0);
+    let changed = arr.length !== prev.length;
+    const ff = ffCache.get(pid);
+    const total = Number(ff?.data?.bs);
+    if (total > 0) {
+      const at = Number(ff.data.updated) > 0 ? Number(ff.data.updated) * 1000 : ff.t;
+      const point = { at, observedAt: new Date(at).toISOString(), source: 'ffscouter', verified: false, total };
+      const last = arr[arr.length - 1];
+      if (last && bsDay(last.at) === bsDay(at)) {
+        // the day's point is replaced by a newer estimate, never a verified point by an estimate
+        if (!last.verified && at >= last.at && (last.total !== total || last.at !== at)) { arr[arr.length - 1] = point; changed = true; }
+      } else if (!last || at > last.at) { arr.push(point); changed = true; }
+    }
+    if (arr.length > MEMBER_BS_KEEP) { arr = arr.slice(-MEMBER_BS_KEEP); changed = true; }
+    if (changed) {
+      if (arr.length) st.memberBs[pid] = arr; else delete st.memberBs[pid];
+      dirty = true;
+    }
+  }
+  return dirty;
+}
+
 /* Faction Activity (members + hourly heatmap snapshots + 24h timeline + Travel Radar + Traffic + Transfers), Armory History, Chains, Upgrade Simulator */
 function recordFactionActivity(members, nowMs = Date.now(), factionId = null, radar = null) {
   if (!Array.isArray(members) || !members.length) return;
@@ -2048,28 +2130,36 @@ function recordFactionActivity(members, nowMs = Date.now(), factionId = null, ra
   st.activity.lastMembers = members.map((m) => ({ id: m.id, name: m.name, level: m.level, position: m.position, days: m.days }));
   st.activity.lastMembersAt = obsIso;
 
-  // N3 Member Travel transition log
+  // N3 Member Travel transition log (newest first, 30 per member). Entries of older versions carry no id: dropped.
+  const memberIds = new Set(members.map((m) => Number(m.id)).filter((id) => id > 0));
+  for (const [pid, arr] of Object.entries(st.activity.memberTravel)) {
+    const kept = Array.isArray(arr) ? arr.filter(isTravelLogEntry) : [];
+    // Members who left the faction take their travel log with them
+    if (!memberIds.has(Number(pid)) || !kept.length) { delete st.activity.memberTravel[pid]; dirty = true; }
+    else if (kept.length !== arr.length) { st.activity.memberTravel[pid] = kept; dirty = true; }
+  }
   if (Array.isArray(radar?.transitions) && radar.transitions.length) {
     for (const tr of radar.transitions) {
       const pid = Number(tr.playerId);
-      if (!pid) continue;
+      if (!pid || !tr.transitionId) continue;
       const arr = (st.activity.memberTravel[pid] ||= []);
-      if (!arr.some((x) => x.id === tr.id)) {
+      if (!arr.some((x) => x.id === tr.transitionId)) {
         arr.unshift({
-          id: tr.id,
+          id: String(tr.transitionId),
           fromState: tr.fromState,
           toState: tr.toState,
-          countryCode: tr.countryCode,
-          country: tr.country,
-          seenFrom: tr.seenFrom,
-          seenTo: tr.seenTo,
-          expiresAtMs: tr.expiresAtMs,
+          destination: tr.destination ?? null,
+          origin: tr.origin ?? null,
+          seenFrom: tr.seenFrom ?? null,
+          seenTo: tr.seenTo ?? null,
         });
         if (arr.length > 30) arr.length = 30;
         dirty = true;
       }
     }
   }
+
+  if (recordMemberBattleStats(members)) dirty = true;
 
   // N2 Faction Travel Traffic snapshot (deduplicated per player, at most 1 every 5m, 48h rolling)
   if (radar && Array.isArray(radar.travel) && nowMs - (st.activity.lastTrafficAt || 0) >= 5 * 60_000) {
@@ -2126,8 +2216,23 @@ function summarizeActivityCounts(members) {
   return counts;
 }
 
+// The overview (polled anyway) says the player is in no faction: faction pages answer without asking Torn.
+const knownFactionless = () => {
+  const f = history.lastOverview?.player?.faction;
+  return Boolean(history.lastOverview?.player && f && typeof f === 'object' && !Number(f.faction_id));
+};
+const notInFactionText = () => T('Bir faction\'da değilsin.', 'You are not in a faction.');
+
 async function getFactionActivity(force = false, opts = {}) {
   const myFacId = Number(history.lastOverview?.player?.faction?.faction_id) || null;
+  if (knownFactionless()) {
+    return {
+      factionId: null, notInFaction: true, error: notInFactionText(), code: 'NOT_IN_FACTION', sourceMode: 'local', freshness: null,
+      travel: [], travelSummary: { outbound: 0, abroad: 0, inbound: 0, unknown: 0, totalTravel: 0 }, transitions: [],
+      members: [], counts: summarizeActivityCounts([]), heatmap: factionTools.buildActivityHeatmap({}), timeline: [],
+      lastSampleAt: null, at: Date.now(),
+    };
+  }
   let hubFallbackReason = null;
 
   if (opts.preferShared && myFacId && config.features?.['app.premium'] !== false) {
@@ -2262,16 +2367,24 @@ async function getFactionUpgrades(force = false) {
 }
 
 /* N3 & N4: Personal Member Series + Detailed Faction Workspace (Members, Stats, Gym, Bank, Recruitment, Transfers, Alliance & Graffiti) */
+// Same day choice as the weekly report: 7d uses the exact day a week back; a longer span uses the closest day at or
+// before its start, or else the oldest older day. actualDays tells how many days the delta really covers and
+// complete is true only when that is at least 90% of the span, so a 10-day delta is never presented as 30 days.
+const spanComplete = (actualDays, spanDays) => actualDays > 0 && actualDays >= spanDays * 0.9;
 function computeSpanDiffs(members, st, spanDays) {
   const days = Object.keys(st.snaps || {}).filter((d) => Object.keys(st.snaps[d]).length).sort();
   const to = days[days.length - 1] || null;
   const targetFrom = to ? utcDay(dayTs(to) - spanDays * 86400) : null;
-  const from = to ? (st.snaps[targetFrom] ? targetFrom : (days.filter((d) => d <= targetFrom).pop() || (days[0] !== to ? days[0] : null))) : null;
+  const from = !to ? null
+    : st.snaps[targetFrom] ? targetFrom
+      : spanDays > 7 ? (days.filter((d) => d <= targetFrom).pop() || (days[0] !== to ? days[0] : null)) : null;
   const A = from && st.snaps[from], B = to && st.snaps[to];
+  const actualDays = A && B ? Math.round((dayTs(to) - dayTs(from)) / 86400) : 0;
   const gymDays = Object.keys(st.gym || {}).sort();
   const gTo = gymDays[gymDays.length - 1] || null;
   const gFrom = gTo ? (gymDays.filter((d) => d <= utcDay(dayTs(gTo) - spanDays * 86400)).pop() || gymDays[0]) : null;
   const G1 = gFrom && st.gym[gFrom], G2 = gTo && st.gym[gTo];
+  const gymActualDays = gFrom && gTo && gFrom !== gTo ? Math.round((dayTs(gTo) - dayTs(gFrom)) / 86400) : 0;
   const diff = (a, b, k) => (a && b && a[k] != null && b[k] != null ? b[k] - a[k] : null);
   const byId = new Map();
   for (const m of members) {
@@ -2290,8 +2403,10 @@ function computeSpanDiffs(members, st, spanDays) {
   return {
     from,
     to,
-    complete: Boolean(A && B),
-    actualDays: from && to ? Math.round((dayTs(to) - dayTs(from)) / 86400) : 0,
+    complete: spanComplete(actualDays, spanDays),
+    actualDays,
+    gymActualDays,
+    gymComplete: spanComplete(gymActualDays, spanDays),
     byId,
     rows: [...byId.values()],
   };
@@ -2319,7 +2434,8 @@ async function getLocalMemberSeries(playerId, searchParams) {
   const meId = Number(myPlayerId()) || 0;
 
   if (metric === 'travel') {
-    const localTr = Array.isArray(st.activity?.memberTravel?.[pid]) ? st.activity.memberTravel[pid] : [];
+    const localTr = (Array.isArray(st.activity?.memberTravel?.[pid]) ? st.activity.memberTravel[pid] : [])
+      .filter(isTravelLogEntry).map(travelLogEntry);
     return {
       playerId: pid,
       metric: 'travel',
@@ -2347,11 +2463,13 @@ async function getLocalMemberSeries(playerId, searchParams) {
         });
       }
     } else {
-      const savedBs = Array.isArray(st.memberBs?.[pid]) ? st.memberBs[pid] : [];
+      const savedBs = (Array.isArray(st.memberBs?.[pid]) ? st.memberBs[pid] : []).filter((pt) => pt && pt.source !== 'rank_estimate');
       for (const pt of savedBs) rawPoints.push(pt);
       const ff = ffCache.get(pid);
-      if (ff?.data?.bs > 0) {
-        const at = ff.data.updated ? Number(ff.data.updated) * 1000 : ff.t;
+      const ffAt = ff?.data?.bs > 0 ? (ff.data.updated ? Number(ff.data.updated) * 1000 : ff.t) : 0;
+      // the live FFScouter total unless the saved history already holds that day's point
+      if (ffAt && !savedBs.some((pt) => pt.source === 'ffscouter' && bsDay(pt.at) === bsDay(ffAt))) {
+        const at = ffAt;
         rawPoints.push({
           at,
           observedAt: new Date(at).toISOString(),
@@ -2423,28 +2541,92 @@ async function getLocalMemberSeries(playerId, searchParams) {
   };
 }
 
+/* Bank (donations) and applications need the position's "Faction API Access", not the Organised Crimes ability that
+   access.allowed stands for. Only Torn's permission codes mean "permission required": a check that failed for another
+   reason (rate limit, timeout, network) is { status: 'error', error } so the page can say so and offer a retry. */
+function factionDataAccess(access) {
+  if (access?.error) {
+    if (FAC_NO_ACCESS.has(Number(access.errorCode))) return { allowed: false, status: 'permission_required' };
+    return { allowed: false, status: 'error', error: T('Faction yetkilerin şu anda kontrol edilemedi. Biraz sonra tekrar dene.', 'Your faction permissions could not be checked right now. Please try again shortly.') };
+  }
+  const allowed = access?.inFaction !== false && access?.apiAccess === true;
+  return { allowed, status: allowed ? 'idle' : 'permission_required' };
+}
+// A Torn failure as the user reads it (the same texts as the API error handler).
+function userErrorText(e) {
+  if (e?.name === 'TimeoutError' || e?.name === 'AbortError') return T('Torn bağlantısı zaman aşımına uğradı. Tekrar deneyin.', 'The Torn connection timed out. Please try again.');
+  if (e instanceof TypeError && e.message === 'fetch failed') return T('Torn API bağlantısı kurulamadı. İnternet bağlantısını kontrol edin.', 'Could not connect to the Torn API. Check your internet connection.');
+  return String(e?.message || T('Bilinmeyen hata', 'Unknown error'));
+}
+
+/* Members table travel fields from a Travel Radar row (public/travel-radar.js): travelState, destination, origin
+   (country codes) and etaKind / etaAt / etaFrom / etaTo (ISO times). countryCode is where the member is or flies to;
+   for a flight home it is the country they come from. etaSec counts down to the exact arrival, or to the end of the
+   estimated window (etaSource 'exact' | 'estimate' | 'none'). */
+function radarTravelFields(row, nowMs = Date.now()) {
+  if (!row) return { countryCode: null, country: null, travelState: null, etaSec: null, etaSource: 'none' };
+  const state = row.travelState || null;
+  const code = state === 'inbound' ? row.origin : state === 'outbound' || state === 'abroad' ? row.destination : null;
+  const countryCode = code && code !== 'torn' ? code : null;
+  let etaSec = null, etaSource = 'none';
+  if (state === 'outbound' || state === 'inbound') {
+    const exact = Date.parse(row.etaAt || ''), windowEnd = Date.parse(row.etaTo || '');
+    if (row.etaKind === 'exact' && Number.isFinite(exact)) { etaSec = Math.max(0, Math.round((exact - nowMs) / 1000)); etaSource = 'exact'; }
+    else if (row.etaKind === 'estimate' && Number.isFinite(windowEnd)) { etaSec = Math.max(0, Math.round((windowEnd - nowMs) / 1000)); etaSource = 'estimate'; }
+  }
+  return { countryCode, country: countryCode ? travelRadar.countryName(countryCode) : null, travelState: state, etaSec, etaSource };
+}
+
+const emptyCoverage = () => ({ d7: { actualDays: 0, complete: false }, d30: { actualDays: 0, complete: false } });
+// Faction workspace for a player without a faction: the same sections, empty, and no Torn request.
+function notInFactionWorkspace(access, span, tenureFilter) {
+  const notIn = { allowed: false, status: 'not_in_faction' };
+  return {
+    factionId: null, notInFaction: true, error: notInFactionText(), code: 'NOT_IN_FACTION',
+    access: access || { inFaction: false, allowed: false }, freshness: null, coverage: emptyCoverage(), reportJob: { ...facJob },
+    membersTable: factionWorkspace.buildMembersTable({ members: [], freshness: null, hasOfficerAccess: false }),
+    statsView: factionWorkspace.buildFactionStatsView({ members: [], reportRows: [], windowDays: span, tenureFilter, range: { from: null, to: null, complete: false, actualDays: 0 } }),
+    gymView: factionWorkspace.buildFactionGymView({ members: [], gymSnaps: {}, windowDays: span }),
+    bank: { ...notIn, source: 'torn_donations', rows: [], totals: { money: 0, points: 0, debtors: 0 }, tornBankUrl: 'https://www.torn.com/factions.php?step=your#/tab=controls&option=give-to-user' },
+    recruitment: { ...notIn, source: 'torn_applications', applications: [], watchlist: [], watchlistSource: 'lrx_local' },
+    transfers: { source: 'roster_observation', entries: [] },
+    alliance: { source: 'lrx_local', alliances: [], graffiti: [] },
+    at: Date.now(),
+  };
+}
+
 async function getFactionWorkspace(force = false, searchParams = new URLSearchParams()) {
   const span = [7, 30, 90].includes(Number(searchParams.get('days'))) ? Number(searchParams.get('days')) : 7;
   const tenureFilter = searchParams.get('tenure') !== 'all';
   const section = String(searchParams.get('section') || 'all');
-  const [access, roster] = await Promise.all([
-    factionAccess(force).catch((e) => ({ inFaction: false, allowed: false, error: e.message })),
-    rosterCache.load({ force }),
+  if (knownFactionless()) return notInFactionWorkspace(null, span, tenureFilter);
+  const [access, rosterResult] = await Promise.all([
+    // A failed check is not "not in a faction": inFaction stays unknown (null) and errorCode keeps Torn's code.
+    factionAccess(force).catch((e) => ({ inFaction: null, allowed: false, apiAccess: null, error: userErrorText(e), errorCode: e?.code ?? null })),
+    rosterCache.load({ force }).then((roster) => ({ roster }), (error) => ({ error })),
   ]);
+  if (access.inFaction === false) return notInFactionWorkspace(access, span, tenureFilter);
+  if (rosterResult.error) throw rosterResult.error;
+  const { roster } = rosterResult;
   const factionId = roster.factionId || access?.faction?.id || Number(history.lastOverview?.player?.faction?.faction_id) || null;
   const members = roster.members || [];
   const st = facStore();
   const meId = Number(myPlayerId()) || 0;
+  if (recordMemberBattleStats(members)) saveHistory();
 
   const diff7 = computeSpanDiffs(members, st, 7);
   const diff30 = computeSpanDiffs(members, st, 30);
   const diffSpan = span === 7 ? diff7 : span === 30 ? diff30 : computeSpanDiffs(members, st, span);
+  // How many days the 7d / 30d member columns really cover (complete: at least 90% of the span)
+  const coverOf = (d) => ({ actualDays: d.actualDays, complete: d.complete, gymActualDays: d.gymActualDays, gymComplete: d.gymComplete });
+  const coverage = { d7: coverOf(diff7), d30: coverOf(diff30) };
 
   const travelByPlayer = new Map((roster.travel || []).map((t) => [Number(t.playerId), t]));
+  const nowMs = Date.now();
   const enriched = members.map((m) => {
     const r7 = diff7.byId.get(m.id);
     const r30 = diff30.byId.get(m.id);
-    const tr = travelByPlayer.get(m.id);
+    const travel = radarTravelFields(travelByPlayer.get(m.id), nowMs);
     let battleStats = null;
     if (m.id === meId && history.lastOverview?.battle?.totals) {
       const b = history.lastOverview.battle;
@@ -2482,11 +2664,7 @@ async function getFactionWorkspace(force = false, searchParams = new URLSearchPa
     }
     return {
       ...m,
-      countryCode: tr?.countryCode || null,
-      country: tr?.country || null,
-      travelState: tr?.state || null,
-      etaSec: tr?.etaSec ?? null,
-      etaSource: tr?.etaSource || 'none',
+      ...travel, // countryCode, country, travelState, etaSec, etaSource
       battleStats,
       activity7d: r7?.activity ?? null,
       xanax7d: r7?.xanax ?? null,
@@ -2517,16 +2695,17 @@ async function getFactionWorkspace(force = false, searchParams = new URLSearchPa
     windowDays: span,
   });
 
-  // Bank & Recruitment: only queried from Torn when requested and permitted, otherwise explicit status
+  // Bank & Recruitment: only queried from Torn when requested and permitted (Faction API Access), otherwise explicit status
+  const dataAccess = factionDataAccess(access);
+  const accessState = { allowed: dataAccess.allowed, status: dataAccess.status, ...(dataAccess.error ? { error: dataAccess.error } : {}) };
   let bank = {
-    allowed: Boolean(access.allowed),
-    status: access.allowed ? 'idle' : 'permission_required',
+    ...accessState,
     source: 'torn_donations',
     rows: [],
     totals: { money: 0, points: 0, debtors: 0 },
     tornBankUrl: 'https://www.torn.com/factions.php?step=your#/tab=controls&option=give-to-user',
   };
-  if (access.allowed && (section === 'bank' || section === 'all')) {
+  if (dataAccess.allowed && (section === 'bank' || section === 'all')) {
     const ttl = force ? 0 : 60_000;
     try {
       const dRes = await torn('faction/?selections=donations', ttl);
@@ -2558,7 +2737,7 @@ async function getFactionWorkspace(force = false, searchParams = new URLSearchPa
       if (FAC_NO_ACCESS.has(Number(e.code))) {
         bank = { ...bank, allowed: false, status: 'permission_required' };
       } else {
-        bank = { ...bank, status: 'error', error: e.message };
+        bank = { ...bank, status: 'error', error: userErrorText(e) };
       }
     }
   }
@@ -2571,14 +2750,13 @@ async function getFactionWorkspace(force = false, searchParams = new URLSearchPa
   facNotes.graffiti ||= [];
 
   let recruitment = {
-    allowed: Boolean(access.allowed),
-    status: access.allowed ? 'idle' : 'permission_required',
+    ...accessState,
     source: 'torn_applications',
     applications: [],
     watchlist: facNotes.watchlist,
     watchlistSource: 'lrx_local',
   };
-  if (access.allowed && (section === 'recruitment' || section === 'all')) {
+  if (dataAccess.allowed && (section === 'recruitment' || section === 'all')) {
     const ttl = force ? 0 : 60_000;
     try {
       const appRes = await torn('v2/faction/applications', ttl);
@@ -2598,7 +2776,7 @@ async function getFactionWorkspace(force = false, searchParams = new URLSearchPa
       if (FAC_NO_ACCESS.has(Number(e.code))) {
         recruitment = { ...recruitment, allowed: false, status: 'permission_required' };
       } else {
-        recruitment = { ...recruitment, status: 'error', error: e.message };
+        recruitment = { ...recruitment, status: 'error', error: userErrorText(e) };
       }
     }
   }
@@ -2607,6 +2785,7 @@ async function getFactionWorkspace(force = false, searchParams = new URLSearchPa
     factionId,
     access,
     freshness: roster.freshness,
+    coverage,
     reportJob: { ...facJob },
     membersTable,
     statsView,
@@ -2635,7 +2814,8 @@ function mutateFactionWorkspace(body = {}) {
   facNotes.watchlist ||= [];
   facNotes.alliances ||= [];
   facNotes.graffiti ||= [];
-  const authorName = String(history.lastOverview?.player?.name || 'Officer');
+  // Defaults are stored empty (author, watchlist tag, graffiti category): the page shows them in the user's language.
+  const authorName = String(history.lastOverview?.player?.name || '');
   const authorId = Number(myPlayerId()) || 0;
   const nowIso = travelRadar.isoUtc(Date.now());
   const action = String(body.action || '');
@@ -2644,7 +2824,7 @@ function mutateFactionWorkspace(body = {}) {
     const playerId = Number(body.playerId);
     const name = String(body.name || `#${playerId || ''}`).trim().slice(0, 60);
     const note = String(body.note || '').trim().slice(0, 280);
-    const tag = String(body.tag || 'Takip').trim().slice(0, 32);
+    const tag = String(body.tag || '').trim().slice(0, 32);
     if (!playerId && !name) throw Object.assign(new ApiError(T('Oyuncu ID veya isim gerekli.', 'Player ID or name required.'), 'BAD_INPUT'), { status: 400 });
     const entry = {
       id: `wl_${playerId || Date.now()}`,
@@ -2699,7 +2879,7 @@ function mutateFactionWorkspace(body = {}) {
   }
   if (action === 'graffiti_add') {
     const text = String(body.text || '').trim().slice(0, 500);
-    const category = String(body.category || 'Genel').trim().slice(0, 32);
+    const category = String(body.category || '').trim().slice(0, 32);
     if (!text) throw Object.assign(new ApiError(T('Graffiti metni boş olamaz.', 'Graffiti text cannot be empty.'), 'BAD_INPUT'), { status: 400 });
     const entry = {
       id: `gf_${Date.now()}`,
@@ -3116,6 +3296,34 @@ async function verifyTornKey(key) {
   return { user, info, missing };
 }
 
+/* Faction Hub (Premium service) error codes as the user reads them; the code itself stays in `code`. */
+function hubErrorText(code) {
+  switch (code) {
+    case 'PREMIUM_DISABLED': return T('Premium üyelik bağlantısı Ayarlar → Uygulama bölümünde kapalı; Faction Hub kullanılamaz.', 'The Premium membership connection is off in Settings → App, so the Faction Hub is not available.');
+    case 'PREMIUM_CONNECT_REQUIRED': case 'API_KEY_REQUIRED': return T('Faction Hub için önce Premium üyeliğini bağla.', 'Connect your Premium membership to use the Faction Hub.');
+    case 'PREMIUM_SERVICE_NOT_CONFIGURED': case 'PREMIUM_SERVICE_URL_INVALID': return T('Bu sürümde Premium servisi ayarlı değil.', 'The Premium service is not configured in this version.');
+    case 'PREMIUM_SERVICE_UNREACHABLE': return T('Premium servisine ulaşılamadı. İnternet bağlantını kontrol edip tekrar dene.', 'The Premium service could not be reached. Check your internet connection and try again.');
+    case 'PREMIUM_IDENTITY_CHANGED': return T('API key bu sırada değişti. Tekrar dene.', 'The API key changed in the meantime. Please try again.');
+    case 'FACTION_ACCESS_DENIED': return T('Faction Hub yalnızca bu faction\'ın üyelerine açık.', 'The Faction Hub is only open to members of this faction.');
+    case 'FACTION_OFFICER_REQUIRED': case 'ADMIN_REQUIRED': case 'FORBIDDEN': return T('Bu Faction Hub işlemi için yetkin yok.', 'You do not have permission for this Faction Hub action.');
+    case 'FACTION_PLAN_REQUIRED': case 'FACTION_PLAN_EXPIRED': case 'FACTION_PLAN_INACTIVE': return T('Bu aralık için faction takım planı gerekli.', 'This range needs an active faction team plan.');
+    case 'FACTION_NOT_TRACKED': case 'COLLECTOR_NOT_FOUND': return T('Bu faction Hub\'da henüz takip edilmiyor.', 'This faction is not tracked on the Hub yet.');
+    default: return T('Premium servisi isteği tamamlayamadı. Biraz sonra tekrar dene.', 'The Premium service could not complete the request. Please try again shortly.');
+  }
+}
+// Faction Hub proxy routes: like /api/premium/*, nothing (and never the API key) goes to the Premium service while
+// Settings → App → Premium membership connection is off. Bridge errors reach the page as text.
+async function hubRoute(res, run) {
+  if (config.features?.['app.premium'] === false) return send(res, 403, { error: hubErrorText('PREMIUM_DISABLED'), code: 'PREMIUM_DISABLED' });
+  try { return send(res, 200, await run()); }
+  catch (e) {
+    const code = typeof e?.code === 'string' && /^[A-Z0-9_]{1,80}$/.test(e.code) ? e.code : null;
+    // A bridge error carries only its code; anything else (a bad request body, say) keeps its own message.
+    if (code && (e.message === code || !e.message)) return send(res, e.status || 503, { error: hubErrorText(code), code });
+    return send(res, e.status || 502, { error: e.message || hubErrorText(null), code: code || 'PREMIUM_SERVICE_ERROR' });
+  }
+}
+
 async function handleApi(req, res, url) {
   const p = url.pathname;
   if (!secretsOpen) await secretsReady; // the saved keys are decrypted once Electron is ready
@@ -3234,27 +3442,27 @@ async function handleApi(req, res, url) {
     if (p === '/api/alerts/price' && req.method === 'POST') return send(res, 200, managePriceAlerts(await readBody(req)));
     if (p === '/api/ops/status' && req.method === 'GET') return send(res, 200, await getOpsStatus(url.searchParams.get('check') === '1'));
     if (p === '/api/ops/faction-collector/jobs' && req.method === 'POST') {
-      return send(res, 200, await premiumClient.factionHub('/v1/admin/faction-collector/jobs', { method: 'POST', body: await readBody(req) }));
+      return hubRoute(res, async () => premiumClient.factionHub('/v1/admin/faction-collector/jobs', { method: 'POST', body: await readBody(req) }));
     }
+    const hubFactionId = () => Number(url.searchParams.get('factionId')) || Number(history.lastOverview?.player?.faction?.faction_id) || 0;
     if (p === '/api/faction/hub/settings') {
-      const fid = Number(url.searchParams.get('factionId')) || Number(history.lastOverview?.player?.faction?.faction_id) || 0;
+      const fid = hubFactionId();
       if (!fid) return send(res, 400, { error: T('Faction kimliği bulunamadı.', 'Faction ID not found.') });
       const method = req.method === 'PATCH' || req.method === 'POST' ? 'PATCH' : 'GET';
-      const body = method === 'PATCH' ? await readBody(req) : undefined;
-      return send(res, 200, await premiumClient.factionHub(`/v1/factions/${fid}/settings`, { method, body }));
+      return hubRoute(res, async () => premiumClient.factionHub(`/v1/factions/${fid}/settings`, { method, body: method === 'PATCH' ? await readBody(req) : undefined }));
     }
     if (p === '/api/faction/hub/history' && req.method === 'GET') {
-      const fid = Number(url.searchParams.get('factionId')) || Number(history.lastOverview?.player?.faction?.faction_id) || 0;
+      const fid = hubFactionId();
       if (!fid) return send(res, 400, { error: T('Faction kimliği bulunamadı.', 'Faction ID not found.') });
       const q = new URLSearchParams();
       for (const k of ['from', 'to', 'grain']) if (url.searchParams.get(k)) q.set(k, url.searchParams.get(k));
       const suffix = q.toString() ? `?${q.toString()}` : '';
-      return send(res, 200, await premiumClient.factionHub(`/v1/factions/${fid}/history${suffix}`));
+      return hubRoute(res, () => premiumClient.factionHub(`/v1/factions/${fid}/history${suffix}`));
     }
     if (p === '/api/faction/hub/report' && req.method === 'GET') {
-      const fid = Number(url.searchParams.get('factionId')) || Number(history.lastOverview?.player?.faction?.faction_id) || 0;
+      const fid = hubFactionId();
       if (!fid) return send(res, 400, { error: T('Faction kimliği bulunamadı.', 'Faction ID not found.') });
-      return send(res, 200, await premiumClient.factionHub(`/v1/factions/${fid}/report`));
+      return hubRoute(res, () => premiumClient.factionHub(`/v1/factions/${fid}/report`));
     }
     if (p === '/api/feedback' && req.method === 'POST') {
       try { return send(res, 200, await sendFeedback(await readBody(req))); }
@@ -3424,6 +3632,10 @@ async function handleApi(req, res, url) {
   } catch (e) {
     if (e.name === 'TimeoutError' || e.name === 'AbortError') return send(res, 504, { error: T('Torn bağlantısı zaman aşımına uğradı. Tekrar deneyin.', 'The Torn connection timed out. Please try again.'), code: 'TIMEOUT' });
     if (e instanceof TypeError && e.message === 'fetch failed') return send(res, 502, { error: T('Torn API bağlantısı kurulamadı. İnternet bağlantısını kontrol edin.', 'Could not connect to the Torn API. Check your internet connection.'), code: 'NETWORK' });
+    // A Premium bridge error carries only its code: the user reads a sentence instead
+    if (typeof e.code === 'string' && e.message === e.code && /^(?:PREMIUM_|API_KEY_REQUIRED$|FACTION_|COLLECTOR_)/.test(e.code)) {
+      return send(res, e.status || 503, { error: hubErrorText(e.code), code: e.code });
+    }
     console.warn('[api]', p, e.message);
     return send(res, e.status || (e.code === 'NO_KEY' ? 412 : 502), { error: e.message, code: e.code });
   }
@@ -3607,4 +3819,4 @@ process.on('exit', flushData);
 // API key sahibinin oyuncu numarası (Torn sekmesindeki `uid` çerezini doğrulamak için)
 const myPlayerId = () => { const id = Number(history.lastOverview?.player?.id); return Number.isInteger(id) && id > 0 ? String(id) : null; };
 
-module.exports = { startServer, server, stockProductNames, ingestStockDeliveries, warMemberStatuses, profileWorkStats, warGroupLabels: warGroups.labels, flushData, myPlayerId, getCrimeValue, crimeValueForPage, purchaseCostsForPage, seasonalActive, seasonalList, halloweenForPage, ffScriptBridge: () => ({ url: `http://127.0.0.1:${server.address().port}/api/ff-script-request`, token: ffScriptProxy.token }) };
+module.exports = { startServer, server, stockProductNames, ingestStockDeliveries, warMemberStatuses, profileWorkStats, warGroupLabels: warGroups.labels, flushData, myPlayerId, getCrimeValue, crimeValueForPage, purchaseCostsForPage, seasonalActive, seasonalList, halloweenForPage, factionDataAccess, isTornSourceError, ffScriptBridge: () => ({ url: `http://127.0.0.1:${server.address().port}/api/ff-script-request`, token: ffScriptProxy.token }) };

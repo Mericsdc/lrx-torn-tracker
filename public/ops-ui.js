@@ -23,14 +23,50 @@
       day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'UTC',
     }) + ' TCT';
   };
+  // The Hub sends Unix seconds (plan end, audit time); a value already in milliseconds is kept.
+  const secMs = (v) => { const n = Number(v); return n > 0 ? (n < 1e11 ? n * 1000 : n) : 0; };
+
+  // Settings → App → Control & Operations ('app.ops', on by default). Off: no /api/ops request at all.
+  const opsOn = () => typeof feat !== 'function' || feat('app.ops') !== false;
+  // The panel asks the server only while Settings → General is on screen (never at app start or from another page).
+  function generalShown() {
+    if (state.view !== 'settings') return false;
+    const panel = $('#ops-control-panel')?.closest?.('.set-panel');
+    return !panel || panel.classList.contains('active');
+  }
+
+  // Bridge codes (PREMIUM_*) never reach the user as they are.
+  const OPS_ERRORS = {
+    PREMIUM_DISABLED: ['Premium üyelik bağlantısı Ayarlar → Uygulama bölümünde kapalı.', 'The Premium membership connection is off in Settings → App.'],
+    PREMIUM_CONNECT_REQUIRED: ['Önce Premium üyeliğini bağla.', 'Connect your Premium membership first.'],
+    PREMIUM_SERVICE_UNREACHABLE: ['Premium servisine ulaşılamadı. İnternet bağlantını kontrol edip tekrar dene.', 'The Premium service could not be reached. Check your connection and try again.'],
+    PREMIUM_SERVICE_NOT_CONFIGURED: ['Bu sürümde Premium servisi ayarlı değil.', 'The Premium service is not configured in this version.'],
+    FORBIDDEN: ['Bu işlem için Hub yetkin yok.', 'You do not have Hub permission for this action.'],
+  };
+  function opsErrorText(e) {
+    const msg = String(e?.message || '');
+    if (msg && !/^[A-Z0-9_]{3,80}$/.test(msg)) return msg;
+    const known = OPS_ERRORS[e?.code] || OPS_ERRORS[msg];
+    return known ? tr(known[0], known[1]) : tr('Premium servisi isteği tamamlayamadı. Biraz sonra tekrar dene.', 'The Premium service could not complete the request. Please try again shortly.');
+  }
+
+  function clearOps(box) {
+    ops.data = null; ops.err = null; ops.previewText = '';
+    box.innerHTML = '';
+    box.hidden = true;
+  }
 
   async function loadOpsPanel({ check = false } = {}) {
     const box = $('#ops-control-panel');
     if (!box) return;
+    if (!opsOn()) { clearOps(box); return; }
+    box.hidden = false;
+    if (!generalShown() || (ops.loading && !check)) return;
     ops.loading = true;
     renderOps();
     try {
       ops.data = await api(`/api/ops/status${check ? '?check=1' : ''}`);
+      ops.loadedAt = Date.now();
       ops.err = null;
     } catch (e) {
       ops.err = e;
@@ -59,7 +95,7 @@
       }
       await loadOpsPanel();
     } catch (e) {
-      toast(tr('İşlem başarısız: ', 'Action failed: ') + e.message);
+      toast(tr('İşlem başarısız: ', 'Action failed: ') + opsErrorText(e));
     } finally {
       ops.busyAction = false;
       renderOps();
@@ -89,6 +125,7 @@
   function renderOps() {
     const box = $('#ops-control-panel');
     if (!box) return;
+    if (!opsOn()) { clearOps(box); return; }
     if (ops.loading && !ops.data) {
       box.innerHTML = `<article class="glass card"><div class="card-head"><h3>🎛️ ${tr('Kontrol ve Operasyon Ekranı', 'Control & Operations')}</h3></div>${loadingBox()}</article>`;
       return;
@@ -97,7 +134,7 @@
       box.innerHTML = `<article class="glass card"><div class="card-head wrap">
         <h3>🎛️ ${tr('Kontrol ve Operasyon Ekranı', 'Control & Operations')}</h3>
         <button class="btn sm ghost" type="button" id="ops-refresh">↻ ${tr('Yükle', 'Load')}</button>
-      </div>${ops.err ? errorBox(ops.err) : `<p class="muted">${tr('Kaynak sağlığı, toplama kapsaması, bildirim kuyruğu ve erişim denetimi.', 'Source health, collection coverage, notification outbox and access audit.')}</p>`}</article>`;
+      </div>${ops.err ? errorBox({ message: opsErrorText(ops.err) }) : `<p class="muted">${tr('Kaynak sağlığı, toplama kapsaması, bildirim kuyruğu ve erişim denetimi.', 'Source health, collection coverage, notification outbox and access audit.')}</p>`}</article>`;
       return;
     }
 
@@ -193,10 +230,10 @@
     // 4. Access & Audit Panel
     const audits = (facSet?.audit || collectorSummary?.audit || []).slice(0, 12);
     const planChip = facSet?.plan?.active
-      ? `<span class="chip tq">${tr('Takım Planı Aktif', 'Team Plan Active')} · ${isoTime(facSet.plan.endsAt)}</span>`
+      ? `<span class="chip tq">${tr('Takım Planı Aktif', 'Team Plan Active')} · ${isoTime(secMs(facSet.plan.endsAt))}</span>`
       : `<span class="chip dim">${tr('Yerel / Ücretsiz', 'Local / Free')}</span>`;
     const auditRows = audits.map((a) => `<tr>
-      <td class="mono sub-text">${isoTime((a.createdAt || a.created_at) * 1000)}</td>
+      <td class="mono sub-text">${isoTime(secMs(a.createdAt || a.created_at))}</td>
       <td><span class="chip dim">${esc(a.action)}</span></td>
       <td class="mono">${esc(String(a.actorTornId ?? a.actor_torn_id ?? '—'))}</td>
       <td class="sub-text">${esc(a.reason || a.result || '')}</td>
@@ -232,6 +269,22 @@
   });
 
   window.loadOpsPanel = loadOpsPanel;
+  // Opening Settings with General active loads the panel (the General tab button loads it through showSettingsTab).
+  const prevShown = window.onViewShown;
+  window.onViewShown = (v) => {
+    prevShown?.(v);
+    if (v === 'settings' && (!ops.data || Date.now() - (ops.loadedAt || 0) > 60_000)) loadOpsPanel();
+  };
+  // Switching 'app.ops' off empties the panel at once; switching it on loads it if General is on screen.
+  if (typeof FEATURE_HOOKS !== 'undefined' && Array.isArray(FEATURE_HOOKS)) {
+    FEATURE_HOOKS.push(() => {
+      const box = $('#ops-control-panel');
+      if (!box) return;
+      if (!opsOn()) { if (ops.data || box.innerHTML) clearOps(box); return; }
+      box.hidden = false;
+      if (!ops.data && !ops.loading && generalShown()) loadOpsPanel();
+    });
+  }
   const prevLang = window.onLangChanged;
   window.onLangChanged = () => { prevLang?.(); if (ops.data) renderOps(); };
   window.addEventListener('lrx-premium-reset', () => { ops.data = null; renderOps(); });

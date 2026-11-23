@@ -119,7 +119,7 @@
   }
   // Every 15 s while the app runs; restarted when the Overview is shown, so a tile loads again a minute after it was shown.
   function cycle() { clearTimeout(timer); timer = setTimeout(() => { if (state.view === 'overview') { repaintAll(); refresh(); } cycle(); }, EVERY); }
-  function forget() { epoch++; slots = {}; }
+  function forget() { epoch++; slots = {}; window.LRXOverviewWidgets?.clearShared?.(); }
 
   // A click on a tile with data (not on edit controls, a button or a link) opens its page; so does Enter on its body.
   function openWidgetTarget(el) {

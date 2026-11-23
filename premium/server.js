@@ -60,9 +60,10 @@ function createHttpServer(config, dependencies = {}) {
       if (url.pathname === '/terms' && req.method === 'GET') return send(res, 200, {
         service: 'LRX Torn Tracker application premium', ...service.info().privacy,
         freeAccess: 'Access to Torn API data and existing features remains free. Remuneration concerns additional application-produced insights, when such benefits are offered.',
-        data: ['Verified Torn ID', 'Xanax transfer ID, sender, quantity and timestamp', 'Subscription period and administrator audit records', 'Opt-in analysis profiles and selected observations (at most 1000 per module, up to two years)'],
-        keyUsage: 'A submitted login key is sent only to Torn to verify its owner and is not stored. The receiver key is an operator-managed server secret.',
-        rights: 'Authenticated users can export their account data and request an erasure assessment. Payment disputes and duplicate-prevention retention must be assessed before erasing records.',
+        data: ['Verified Torn ID', 'Xanax transfer ID, sender, quantity and timestamp', 'Subscription period and administrator audit records', 'Opt-in analysis profiles and selected observations (at most 1000 per module, up to two years)',
+          'Shared Faction Hub, only for factions whose leader or co-leader connects a collector key: the encrypted collector key and its masked reference, hub settings including Discord webhook URLs, member names, levels, positions, activity, status and travel observations about every 5 minutes and travel changes (kept 30 days), hourly and daily activity counts (kept 180 days), Discord alert delivery records (kept 30 days) and hub audit records (kept 180 days)'],
+        keyUsage: "A submitted login key is sent only to Torn to verify its owner and is not stored. A faction collector key is stored only after a faction leader or co-leader connects it with explicit consent; it is encrypted at rest (AES-256-GCM), used only to read that faction's member list while the faction has an active plan, never shown again, and deleted when it is disconnected or its owner requests erasure. The receiver key is an operator-managed server secret.",
+        rights: 'Authenticated users can export their account data and request an erasure assessment. Payment disputes and duplicate-prevention retention must be assessed before erasing records. Faction hub records about the requesting player, and any collector key they connected, are included in the export; an erasure request deletes them at once, stops the faction hub from recording that player again and pauses any collector that used their key.',
       });
       if (['/v1/auth/torn', '/v1/auth/test'].includes(url.pathname) && req.method === 'POST') {
         if (url.pathname.endsWith('/test') && config.mode === 'live') fail('TEST_LOGIN_DISABLED', 403);
@@ -87,7 +88,7 @@ function createHttpServer(config, dependencies = {}) {
       const actor = service.auth.authenticate(req.headers.authorization);
       if (url.pathname === '/v1/auth/logout' && req.method === 'POST') { service.auth.logout(req.headers.authorization); return send(res, 200, { ok: true }); }
       if (url.pathname === '/v1/me' && req.method === 'GET') return send(res, 200, service.me(actor));
-      if (url.pathname === '/v1/me/data' && req.method === 'GET') return send(res, 200, { ...service.store.exportData(actor.tornId), advancedFeatures: service.features.exportData(actor) });
+      if (url.pathname === '/v1/me/data' && req.method === 'GET') return send(res, 200, service.exportData(actor));
       if (url.pathname === '/v1/features' && req.method === 'GET') return send(res, 200, { access: service.features.access(actor) });
       if (url.pathname.startsWith('/v1/features/') && req.method === 'POST') {
         const action = url.pathname.slice('/v1/features/'.length), body = await readBody(req);
@@ -95,10 +96,11 @@ function createHttpServer(config, dependencies = {}) {
         if (['save', 'select', 'remove', 'run', 'consent'].includes(action)) return send(res, 200, service.features[action](actor, body));
         fail('NOT_FOUND', 404);
       }
-      if (url.pathname === '/v1/me/erasure-request' && req.method === 'POST') return send(res, 200, service.store.requestErasure(actor));
+      if (url.pathname === '/v1/me/erasure-request' && req.method === 'POST') return send(res, 200, service.requestErasure(actor));
       if (url.pathname === '/v1/premium/receipt-export' && req.method === 'GET') return send(res, 200, service.exportReceipts(actor));
       if (url.pathname === '/v1/premium/access-check' && req.method === 'GET') { service.requirePremium(actor); return send(res, 200, { entitled: true }); }
-      // Shared Faction Hub endpoints (P1.3 / P3.1 / N3) — verified session + Torn faction role on every call
+      // Shared Faction Hub endpoints (P1.3 / P3.1 / N3) — verified session; faction role from the collected roster
+      // (connecting a key is verified against Torn with that key). No Torn request is made per hub read.
       const memSeriesMatch = /^\/v1\/factions\/(\d+)\/members\/(\d+)\/series$/.exec(url.pathname);
       if (memSeriesMatch) {
         if (req.method !== 'GET') fail('METHOD_NOT_ALLOWED', 405);

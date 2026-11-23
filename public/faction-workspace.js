@@ -63,9 +63,10 @@
 
   /* Strict Rule (N3): A single estimated Total (e.g. FFScouter bs_estimate) is NEVER
      synthetically divided into STR, SPD, DEX, DEF sub-stats. */
+  const VERIFIED_BS_SOURCES = new Set(['torn_self', 'member_shared', 'verified']);
   function normalizeBattleStatsPoint(raw = {}) {
     const source = String(raw.source || 'unknown');
-    const verified = Boolean(raw.verified || source === 'torn_self' || source === 'member_shared');
+    const verified = Boolean(raw.verified || VERIFIED_BS_SOURCES.has(source));
     const total = Number(raw.total ?? raw.bs) > 0 ? Number(raw.total ?? raw.bs) : null;
     const str = verified && Number(raw.str ?? raw.strength) >= 0 ? Number(raw.str ?? raw.strength) : null;
     const spd = verified && Number(raw.spd ?? raw.speed) >= 0 ? Number(raw.spd ?? raw.speed) : null;
@@ -210,6 +211,33 @@
     };
   }
 
+  /* Provenance of a battle stat total: verified numbers, an FFScouter estimate (one Total, never split),
+     or a rough midpoint read from the player's rank. */
+  function battleStatsBadge(bs) {
+    if (bs?.verified) return { kind: 'verified', label: ['Doğrulanmış', 'Verified'], source: bs.source };
+    if (bs?.total == null) return { kind: 'pending', label: ['Geçmiş birikiyor', 'Accumulating history'], source: null };
+    if (bs.source === 'rank_estimate') return { kind: 'rough', label: ['Kaba tahmin (rütbeden)', 'Rough estimate (from rank)'], source: 'rank_estimate' };
+    if (bs.source === 'ffscouter') return { kind: 'estimate', label: ['Tahmin (FFScouter)', 'Estimate (FFScouter)'], source: 'ffscouter' };
+    return { kind: 'estimate', label: ['Tahmin', 'Estimate'], source: bs.source };
+  }
+
+  // Travel of a roster row: the radar fields (travelState/destination/origin) or older countryCode/state fields.
+  function memberTravel(m) {
+    const state = m.travelState && m.travelState !== 'none_observed'
+      ? m.travelState
+      : m.state === 'Abroad' ? 'abroad' : m.state === 'Traveling' ? 'unknown' : null;
+    const code = m.countryCode || (state === 'inbound' ? m.origin : m.destination) || null;
+    if (!state && !m.countryCode) return null;
+    return {
+      state: state || 'unknown',
+      countryCode: code && code !== 'torn' ? code : null,
+      country: m.country || null,
+      etaSec: m.etaSec ?? null,
+      etaAt: m.etaAt || m.etaFrom || null,
+      etaSource: m.etaSource || m.etaKind || 'none',
+    };
+  }
+
   function buildMembersTable({
     members = [],
     freshness = null,
@@ -217,11 +245,8 @@
   } = {}) {
     const rows = (Array.isArray(members) ? members : []).map((m) => {
       const bs = m.battleStats ? normalizeBattleStatsPoint(m.battleStats) : null;
-      const bsBadge = bs?.verified
-        ? { kind: 'verified', label: ['Doğrulanmış', 'Verified'], source: bs.source }
-        : bs?.total != null
-          ? { kind: 'estimate', label: ['Tahmin (FFScouter)', 'Estimate (FFScouter)'], source: bs.source || 'ffscouter' }
-          : { kind: 'pending', label: ['Geçmiş birikiyor', 'Accumulating history'], source: null };
+      const bsBadge = battleStatsBadge(bs);
+      const restricted = (value, source) => evaluateRestrictedField({ hasPermission: hasOfficerAccess, hasSource: value != null, value, source });
 
       return {
         playerId: Number(m.id ?? m.playerId) || 0,
@@ -235,15 +260,7 @@
         gameState: String(m.state || 'Okay'),
         statusDesc: String(m.statusDesc || m.desc || ''),
         inOc: Boolean(m.inOc),
-        travel: m.countryCode || m.state === 'Traveling' || m.state === 'Abroad'
-          ? {
-              state: m.travelState || (m.state === 'Abroad' ? 'abroad' : 'outbound'),
-              countryCode: m.countryCode || null,
-              country: m.country || null,
-              etaSec: m.etaSec ?? null,
-              etaSource: m.etaSource || 'none',
-            }
-          : null,
+        travel: memberTravel(m),
         battleStats: {
           total: bs?.total ?? null,
           str: bs?.str ?? null,
@@ -260,11 +277,17 @@
         gym7d: m.gym7d ?? null,
         crimes7d: m.crimes7d ?? null,
         oc7d: m.oc7d ?? null,
+        activity30d: m.activity30d ?? null,
+        xanax30d: m.xanax30d ?? null,
+        gym30d: m.gym30d ?? null,
         warScore: m.warScore ?? null,
         restricted: {
-          activity: evaluateRestrictedField({ hasPermission: hasOfficerAccess, hasSource: m.activity7d != null, value: m.activity7d, source: 'torn_personalstats' }),
-          xanax: evaluateRestrictedField({ hasPermission: hasOfficerAccess, hasSource: m.xanax7d != null, value: m.xanax7d, source: 'torn_personalstats' }),
-          gym: evaluateRestrictedField({ hasPermission: hasOfficerAccess, hasSource: m.gym7d != null, value: m.gym7d, source: 'torn_contributors' }),
+          activity: restricted(m.activity7d, 'torn_personalstats'),
+          xanax: restricted(m.xanax7d, 'torn_personalstats'),
+          gym: restricted(m.gym7d, 'torn_contributors'),
+          activity30d: restricted(m.activity30d, 'torn_personalstats'),
+          xanax30d: restricted(m.xanax30d, 'torn_personalstats'),
+          gym30d: restricted(m.gym30d, 'torn_contributors'),
         },
       };
     });
@@ -276,6 +299,26 @@
     };
   }
 
+  /* How many days a period diff really spans. A 30d or 90d window built from 12 days of snapshots is
+     incomplete and must be labelled with those 12 days, never as the full window. */
+  function statsCoverage(windowDays, range = null) {
+    const requestedDays = Number(windowDays) || 0;
+    let actualDays = Number(range?.actualDays);
+    if (!(actualDays >= 0) && range?.from && range?.to) {
+      actualDays = Math.round((Date.parse(`${range.to}T00:00:00Z`) - Date.parse(`${range.from}T00:00:00Z`)) / 86400_000);
+    }
+    actualDays = Number.isFinite(actualDays) && actualDays > 0 ? Math.round(actualDays) : 0;
+    return { requestedDays, actualDays, complete: requestedDays > 0 && actualDays >= requestedDays };
+  }
+
+  // ['30g (12g veri)', '30d (12d data)'] for a short window, ['30g', '30d'] for a full one.
+  function windowLabel(days, coverage = null) {
+    const d = Number(days) || 0;
+    if (!coverage || coverage.complete !== false) return [`${d}g`, `${d}d`];
+    const got = Number(coverage.actualDays) || 0;
+    return got > 0 ? [`${d}g (${got}g veri)`, `${d}d (${got}d data)`] : [`${d}g (veri yok)`, `${d}d (no data)`];
+  }
+
   function buildFactionStatsView({
     members = [],
     reportRows = [],
@@ -284,6 +327,9 @@
     range = null,
   } = {}) {
     const span = [7, 30, 90].includes(Number(windowDays)) ? Number(windowDays) : 7;
+    const coverage = statsCoverage(span, range);
+    // The diff only covers `coverage.actualDays`: a member in the faction that long is fully attributed.
+    const effDays = coverage.actualDays > 0 ? Math.min(span, coverage.actualDays) : span;
     const byId = new Map((Array.isArray(reportRows) ? reportRows : []).map((r) => [Number(r.id), r]));
     const rows = [];
     let excludedNewMembers = 0;
@@ -294,7 +340,7 @@
       const pid = Number(m.id ?? m.playerId) || 0;
       const daysInFaction = Number(m.days ?? m.days_in_faction) || 0;
       const r = byId.get(pid) || {};
-      const tenureEligible = !tenureFilter || daysInFaction >= span;
+      const tenureEligible = !tenureFilter || daysInFaction >= effDays;
       if (!tenureEligible) excludedNewMembers++;
 
       const activitySec = tenureEligible && r.activity != null ? Number(r.activity) : null;
@@ -305,7 +351,7 @@
 
       if (tenureEligible && activitySec != null) {
         measuredCount++;
-        if (activitySec >= 300 * (span / 7)) activeCount++;
+        if (activitySec >= 300 * (effDays / 7)) activeCount++;
       }
 
       rows.push({
@@ -316,7 +362,7 @@
         days: daysInFaction,
         tenureEligible,
         tenureNote: !tenureEligible
-          ? [`Üyelik süresi (${daysInFaction}g) < ${span}g olduğu için dönem toplamına dahil edilmedi`, `Excluded from ${span}d delta because tenure (${daysInFaction}d) < ${span}d`]
+          ? [`Üyelik süresi (${daysInFaction}g) < ${effDays}g olduğu için dönem toplamına dahil edilmedi`, `Excluded from the ${effDays}d change because tenure (${daysInFaction}d) < ${effDays}d`]
           : null,
         activity: activitySec,
         xanax,
@@ -337,10 +383,12 @@
       return acc;
     }, { activity: 0, xanax: 0, gym: 0, crimes: 0, oc: 0 });
 
+    const minPlayed = Math.round(5 * (effDays / 7));
     return {
       windowDays: span,
       tenureFilter,
       range,
+      coverage,
       activeRate: {
         pct: activeRatePct,
         numerator: activeCount,
@@ -348,8 +396,8 @@
         totalMembers: members.length,
         excludedNewMembers,
         filterLabel: tenureFilter
-          ? [`Üyelik ≥ ${span}g · En az ${Math.round(5 * (span / 7))} dk oynama`, `Tenure ≥ ${span}d · At least ${Math.round(5 * (span / 7))}m played`]
-          : [`Tüm üyeler · En az ${Math.round(5 * (span / 7))} dk oynama`, `All members · At least ${Math.round(5 * (span / 7))}m played`],
+          ? [`Üyelik ≥ ${effDays}g · En az ${minPlayed} dk oynama`, `Tenure ≥ ${effDays}d · At least ${minPlayed}m played`]
+          : [`Tüm üyeler · En az ${minPlayed} dk oynama`, `All members · At least ${minPlayed}m played`],
         source: 'torn_personalstats_timeplayed',
       },
       totals,
@@ -463,6 +511,9 @@
     RANGE_TO_MS,
     evaluateRestrictedField,
     normalizeBattleStatsPoint,
+    battleStatsBadge,
+    statsCoverage,
+    windowLabel,
     buildMemberSeries,
     buildMembersTable,
     buildFactionStatsView,

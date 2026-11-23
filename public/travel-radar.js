@@ -40,6 +40,27 @@
     'south africa': 'sou', sa: 'sou', sou: 'sou',
   });
 
+  // Torn names the country by its demonym in hospital / jail descriptions abroad ("In a Swiss hospital for 20 mins").
+  const DEMONYMS = Object.freeze({
+    mexican: 'mex',
+    caymanian: 'cay',
+    canadian: 'can',
+    hawaiian: 'haw',
+    british: 'uni', english: 'uni',
+    argentinian: 'arg', argentine: 'arg', argentinean: 'arg',
+    swiss: 'swi',
+    japanese: 'jap',
+    chinese: 'chi',
+    emirati: 'uae', emirian: 'uae',
+    'south african': 'sou',
+  });
+
+  // Flight-time multipliers of the fastest (Business) and slowest (Standard) tickets. A member's ticket is unknown,
+  // so an estimated landing window has to cover both; a window wider than this is not shown at all.
+  const FASTEST_TICKET = 0.3;
+  const SLOWEST_TICKET = 1;
+  const MAX_ETA_WINDOW_MS = 3 * 3600_000;
+
   const VALID_TRAVEL_STATES = Object.freeze(['outbound', 'abroad', 'inbound', 'none_observed', 'unknown']);
 
   const isoUtc = (ms) => {
@@ -51,6 +72,14 @@
     if (!raw) return null;
     const cleaned = String(raw).trim().toLowerCase().replace(/^the\s+/, '').replace(/[.!?,]+$/, '');
     return COUNTRY_ALIASES[cleaned] || null;
+  }
+
+  // A country name or a demonym ("Swiss", "South African") -> country code.
+  function resolvePlace(raw) {
+    const code = resolveCountryCode(raw);
+    if (code) return code;
+    const cleaned = String(raw || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    return DEMONYMS[cleaned] || null;
   }
 
   function countryName(code) {
@@ -99,11 +128,11 @@
       return { travelState: 'unknown', origin: null, destination: null, rawDescription: desc };
     }
 
-    // 3. In hospital/jail in <Country> or In a <Country> hospital
-    m = /^in\s+(?:hospital|jail)\s+in\s+(.+)$/i.exec(desc)
-      || /^in\s+a\s+(.+?)\s+(?:hospital|jail)$/i.exec(desc);
+    // 3. In hospital/jail in <Country>, or In a/an <Country or demonym> hospital/jail [for 20 mins]
+    m = /^in\s+(?:hospital|jail)\s+in\s+(.+?)(?:\s+for\s+.+)?$/i.exec(desc)
+      || /^in\s+an?\s+(.+?)\s+(?:hospital|jail)\b/i.exec(desc);
     if (m) {
-      const code = resolveCountryCode(m[1]);
+      const code = resolvePlace(m[1]);
       if (code && code !== 'torn') {
         return { travelState: 'abroad', origin: null, destination: code, rawDescription: '' };
       }
@@ -151,12 +180,18 @@
       const mins = COUNTRIES[countryCode]?.minutes || 0;
       const seenFromMs = Number(tr.seenFromMs) || 0;
       const seenToMs = Number(tr.seenToMs) || 0;
-      const mult = Number(opts.flightMultiplier) > 0 ? Number(opts.flightMultiplier) : 1;
+      // Only a known ticket gives one flight time; otherwise the window runs from the fastest to the slowest ticket.
+      const known = Number(opts.flightMultiplier) > 0;
+      const lo = known ? Number(opts.flightMultiplier) : FASTEST_TICKET;
+      const hi = known ? Number(opts.flightMultiplier) : SLOWEST_TICKET;
       if (mins > 0 && seenFromMs > 0 && seenToMs >= seenFromMs) {
-        const flightMs = Math.round(mins * mult * 60_000);
-        etaKind = 'estimate';
-        etaFrom = isoUtc(seenFromMs + flightMs);
-        etaTo = isoUtc(seenToMs + flightMs);
+        const fromMs = seenFromMs + Math.round(mins * lo * 60_000);
+        const toMs = seenToMs + Math.round(mins * hi * 60_000);
+        if (toMs - fromMs <= MAX_ETA_WINDOW_MS) {
+          etaKind = 'estimate';
+          etaFrom = isoUtc(fromMs);
+          etaTo = isoUtc(toMs);
+        }
       }
     }
 
@@ -195,7 +230,7 @@
     source = 'torn_roster',
     staleAfterMs = STALE_THRESHOLD_MS,
     nowMs = Date.now(),
-    flightMultiplier = 1,
+    flightMultiplier = null, // the members' tickets are unknown: ETA windows cover every ticket
   } = {}) {
     const obsMs = Number(observedAtMs) > 0 ? Number(observedAtMs) : nowMs;
     const recMs = Number(receivedAtMs) > 0 ? Number(receivedAtMs) : obsMs;
@@ -304,9 +339,14 @@
     STALE_THRESHOLD_MS,
     CACHE_TTL_MS,
     COUNTRIES,
+    DEMONYMS,
+    FASTEST_TICKET,
+    SLOWEST_TICKET,
+    MAX_ETA_WINDOW_MS,
     VALID_TRAVEL_STATES,
     isoUtc,
     resolveCountryCode,
+    resolvePlace,
     countryName,
     normalizeActivity,
     normalizeHealth,

@@ -83,6 +83,8 @@ The built-in **synthetic transfer** form never calls Torn or sends items. The pu
 | `PREMIUM_MODE` | `test`; `live` uses a separate DB |
 | `PREMIUM_HOST`, `PREMIUM_PORT` | `127.0.0.1`, `3740`; test must bind loopback |
 | `PREMIUM_DB_PATH` | `data/premium-{mode}.sqlite` |
+| `PREMIUM_FACTION_DB_PATH` | `faction-hub-{mode}.sqlite` next to `PREMIUM_DB_PATH`; the Shared Faction Hub database. Back it up together with the premium DB |
+| `PREMIUM_FACTION_KEY_SECRET` | Fixed public value in test mode; **required in live** (random, at least 32 characters) to encrypt connected faction keys. Without it only the Faction Hub stays disabled |
 | `PREMIUM_RECEIVER_TORN_ID` | `4037017`; must match DB and actual receiver key owner |
 | `PREMIUM_ADMIN_TORN_IDS` | `4037017`; comma-separated verified owner IDs |
 | `PREMIUM_TEST_AUTH_TOKEN` | Empty; random ≥32 characters required for local test login |

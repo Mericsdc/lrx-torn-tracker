@@ -25,6 +25,65 @@
 
   const COUNTRY_ORDER = Object.freeze(Object.keys(COUNTRY_META));
 
+  const BLOCK_IDS = Object.freeze(['summary', 'countries', 'traffic', 'history', 'planner', 'destinations']);
+
+  /* Torn City Time is UTC. "HH:MM" for a moment on today's TCT date, "23 Nov HH:MM" otherwise
+     (yesterday's flights, tomorrow's restocks, flight-history rows up to 60 days old). */
+  const MONTHS = Object.freeze({
+    en: Object.freeze(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']),
+    tr: Object.freeze(['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara']),
+  });
+  const pad2 = (n) => String(n).padStart(2, '0');
+  // Plain "HH:MM" TCT, for places that are always within the next 24 h (dial, timeline axis).
+  function tctHm(sec) {
+    const s = Number(sec);
+    if (!Number.isFinite(s) || s <= 0) return '—';
+    const d = new Date(s * 1000);
+    return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
+  }
+  function formatTct(sec, { nowSec = Math.floor(Date.now() / 1000), lang = 'en' } = {}) {
+    const s = Number(sec);
+    if (!Number.isFinite(s) || s <= 0) return '—';
+    const d = new Date(s * 1000);
+    const hm = tctHm(s);
+    if (Math.floor(s / 86400) === Math.floor(Number(nowSec) / 86400)) return hm;
+    return `${d.getUTCDate()} ${MONTHS[lang === 'tr' ? 'tr' : 'en'][d.getUTCMonth()]} ${hm}`;
+  }
+
+  /* Saved block selection: nothing saved (or unreadable) -> every block; a saved list, even an empty one, is kept. */
+  function parseBlockPrefs(raw, defaults = BLOCK_IDS) {
+    if (raw == null) return new Set(defaults);
+    let list;
+    try { list = JSON.parse(raw); } catch { return new Set(defaults); }
+    if (!Array.isArray(list)) return new Set(defaults);
+    return new Set(list.filter((id) => defaults.includes(id)));
+  }
+
+  /* A pinned plan is over once its last flight is back home: its arcs would otherwise reappear at
+     the same clock positions the next day with every stop flagged as missed. */
+  function pinnedPlanExpired(pinned, nowSec = Math.floor(Date.now() / 1000)) {
+    if (!pinned) return false;
+    const stops = Array.isArray(pinned.stops) ? pinned.stops : [];
+    if (!stops.length) return true;
+    return Math.max(...stops.map((s) => Number(s.returnAt) || 0)) < Number(nowSec);
+  }
+
+  /* "By Country" view: item rows grouped per country, countries in flight-time order, rows keep the page's sort. */
+  function groupRowsByCountry(rows = []) {
+    const byCode = new Map();
+    for (const r of rows || []) {
+      const code = String(r?.c?.code || '').toLowerCase();
+      let g = byCode.get(code);
+      if (!g) {
+        g = { code, name: r?.c?.name || COUNTRY_META[code]?.name || code, oneWay: Number(r?.oneWay) || 0, rows: [], bestPerHour: 0 };
+        byCode.set(code, g);
+      }
+      g.rows.push(r);
+      g.bestPerHour = Math.max(g.bestPerHour, Number(r?.perHour) || 0);
+    }
+    return [...byCode.values()].sort((a, b) => a.oneWay - b.oneWay || a.name.localeCompare(b.name));
+  }
+
   /* Reference price & fee breakdown for Market (-5%), Bazaar (0%), and NPC (0% only when sellPrice > 0).
      Supports both channelBreakdown(cost, market, sellPrice) -> array of channels
      and channelBreakdown(itemObj) -> array of channels. */
@@ -195,43 +254,44 @@
       const oneWayMin = Math.max(1, Math.round(baseMin * flightMultiplier));
       const update = Number(raw?.update) || 0;
       const ageSec = update > 0 ? Math.max(0, nowSec - update) : null;
-      const stale = ageSec == null || ageSec > STALE_STOCK_SEC;
       const hasData = Boolean(raw && Array.isArray(raw.items) && raw.items.length > 0 && update > 0);
+      // A country with no observation is Unknown only; "stale" is about an old observation.
+      const stale = hasData && ageSec > STALE_STOCK_SEC;
 
       let candidates = hasData ? raw.items : [];
       if (itemId) candidates = candidates.filter((i) => Number(i.id) === itemId);
       if (itemType && itemType !== 'all') candidates = candidates.filter((i) => i.type === itemType);
       if (query) candidates = candidates.filter((i) => String(i.name || '').toLowerCase().includes(query));
 
-      let bestItem = null;
-      let bestTripProfit = 0;
-      let bestPerHour = 0;
-      for (const it of candidates) {
+      const scored = candidates.map((it) => {
         const unitNet = (Number(it.market) > 0 ? Math.round(Number(it.market) * 0.95) - (Number(it.cost) || 0) : Number(it.profit) || 0);
         const units = it.qty > 0 ? Math.min(capacity, Number(it.qty)) : capacity;
         const tripProfit = Math.max(0, unitNet) * units;
-        const perHour = Math.round(tripProfit / ((oneWayMin * 2) / 60));
-        if (!bestItem || perHour > bestPerHour) {
-          bestItem = it;
-          bestTripProfit = tripProfit;
-          bestPerHour = perHour;
-        }
-      }
+        return { it, unitNet, tripProfit, perHour: Math.round(tripProfit / ((oneWayMin * 2) / 60)) };
+      });
+      // A focused item is judged on its own. Otherwise only profitable items count, and one you can buy now
+      // is shown before a better one that is sold out.
+      const pool = itemId ? scored : scored.filter((s) => s.unitNet > 0);
+      const inStock = pool.filter((s) => Number(s.it.qty) > 0);
+      const pick = (list) => list.reduce((b, s) => (!b || s.perHour > b.perHour ? s : b), null);
+      const best = pick(inStock) || pick(pool);
+      const bestItem = best?.it || null;
+      const bestTripProfit = best?.tripProfit || 0;
+      const bestPerHour = best?.perHour || 0;
 
       let stockState = 'unknown';
       let stockQty = null;
       if (hasData) {
-        if (itemId && bestItem) {
+        if (!candidates.length) stockState = 'no_item'; // nothing here matches the item / type / search filter
+        else if (!best) stockState = 'no_profit';
+        else {
           stockQty = Math.max(0, Number(bestItem.qty) || 0);
-          stockState = stockQty > 0 ? 'in_stock' : 'sold_out';
-        } else if (!itemId) {
-          const totalInStock = candidates.reduce((s, i) => s + Math.max(0, Number(i.qty) || 0), 0);
-          stockQty = bestItem ? Math.max(0, Number(bestItem.qty) || 0) : totalInStock;
           stockState = stockQty > 0 ? 'in_stock' : 'sold_out';
         }
       }
 
-      const nextRestockSec = bestItem?.nextRestock || candidates.find((i) => i.nextRestock)?.nextRestock || null;
+      // Only the shown item's restock (the server sends none for an item in stock).
+      const nextRestockSec = bestItem && !(Number(bestItem.qty) > 0) ? (Number(bestItem.nextRestock) || null) : null;
       const restockCountdownSec = nextRestockSec ? (nextRestockSec - nowSec) : null;
 
       return {
@@ -252,6 +312,7 @@
         stockState,
         stockQty,
         stockCount: stockQty,
+        inStockCount: inStock.length,
         bestItem: bestItem ? {
           id: Number(bestItem.id),
           name: String(bestItem.name || ''),
@@ -310,8 +371,11 @@
       prevSource = src;
     }
 
-    const forecastPoints = [];
-    if (metric === 'forecast' || metric === 'stock') {
+    // Forecast only in the Forecast view (the Stock view ends at now). Depletion follows the observed sell rate;
+    // a restock is drawn only with the last restock size actually observed, never an invented quantity.
+    let forecastPoints = [];
+    const FORECAST_MAX_SEC = 12 * 3600;
+    if (metric === 'forecast') {
       const curQ = Math.max(0, Number(item?.qty) || 0);
       const lastT = points.length ? points[points.length - 1].t : nowSec;
       if (curQ > 0 && Number(item?.rate) > 0) {
@@ -319,10 +383,31 @@
         forecastPoints.push({ t: lastT, v: curQ, kind: 'forecast_start' });
         forecastPoints.push({ t: emptySec, v: 0, kind: 'forecast_empty' });
       } else if (curQ === 0 && Number(item?.nextRestock) > nowSec) {
-        const peakQ = points.reduce((m, p) => Math.max(m, p.qty), 100) || 100;
-        forecastPoints.push({ t: nowSec, v: 0, kind: 'forecast_wait' });
-        forecastPoints.push({ t: Number(item.nextRestock), v: peakQ, kind: 'forecast_restock' });
+        let prev = null;
+        let restockSize = 0;
+        for (const row of [...rawHistory].sort((a, b) => Number(a[0]) - Number(b[0]))) {
+          const q = Math.max(0, Number(row[1]) || 0);
+          if (prev != null && q > prev) restockSize = q;
+          prev = q;
+        }
+        if (restockSize > 0) {
+          const rAt = Number(item.nextRestock);
+          forecastPoints.push({ t: nowSec, v: 0, kind: 'forecast_wait' });
+          forecastPoints.push({ t: rAt, v: 0, kind: 'forecast_wait' });
+          forecastPoints.push({ t: rAt, v: restockSize, kind: 'forecast_restock' });
+        }
       }
+      // A forecast beyond 12 h is cut at the edge (interpolated), never squeezed against it.
+      const edge = nowSec + FORECAST_MAX_SEC;
+      const clipped = [];
+      for (let i = 0; i < forecastPoints.length; i++) {
+        const p = forecastPoints[i];
+        if (p.t <= edge) { clipped.push(p); continue; }
+        const a = forecastPoints[i - 1];
+        if (a && a.t < edge) clipped.push({ t: edge, v: a.v + ((p.v - a.v) * (edge - a.t)) / (p.t - a.t), kind: 'forecast_cut' });
+        break;
+      }
+      forecastPoints = clipped.length >= 2 ? clipped : [];
     }
 
     return {
@@ -335,6 +420,7 @@
       restockEvents,
       sourceChanges,
       forecastPoints,
+      forecastEndSec: forecastPoints.length ? forecastPoints[forecastPoints.length - 1].t : null,
     };
   }
 
@@ -360,7 +446,9 @@
       const oneWayMin = Math.max(1, Math.round((Number(c.minutes) || meta.minutes) * flightMultiplier));
       const arriveSec = nowSec + oneWayMin * 60;
       const ageSec = c.update ? Math.max(0, nowSec - Number(c.update)) : null;
-      const stale = ageSec == null || ageSec > STALE_STOCK_SEC;
+      // Never observed is "not observed", not "stale" (same rule as the country cards)
+      const observed = ageSec != null;
+      const stale = observed && ageSec > STALE_STOCK_SEC;
 
       for (const it of c.items || []) {
         if (itemId && Number(it.id) !== Number(itemId)) continue;
@@ -386,9 +474,10 @@
         const units = qty > 0 ? Math.min(capacity, qty) : capacity;
         const modeledTripProfit = Math.max(0, unitNet) * units;
         const perHour = Math.round(modeledTripProfit / ((oneWayMin * 2) / 60));
+        // Sold out with no known restock: there is no departure time to suggest
         const bestDepartureSec = qty > 0
           ? nowSec
-          : (nextRestock ? Math.max(nowSec, nextRestock - oneWayMin * 60) : nowSec);
+          : (nextRestock ? Math.max(nowSec, nextRestock - oneWayMin * 60) : null);
 
         rows.push({
           key: `${code}:${it.id}`,
@@ -401,6 +490,7 @@
           itemType: String(it.type || ''),
           oneWayMin,
           qty,
+          observed,
           stale,
           restockWindowSec: nextRestock,
           restockSrc: it.restockSrc || null,
@@ -425,7 +515,9 @@
     for (const code of COUNTRY_ORDER) {
       byCountry[code] = { outbound: 0, abroad: 0, inbound: 0 };
     }
-    const total = { outbound: 0, abroad: 0, inbound: 0, unknown: 0 };
+    // Each member counts once: unknown = an unreadable route only. An inbound member whose origin is not known
+    // is Inbound (counted in All routes) but in no country; `unattributed` says how many such members there are.
+    const total = { outbound: 0, abroad: 0, inbound: 0, unknown: 0, unattributed: 0 };
 
     for (const r of Array.isArray(travelRows) ? travelRows : []) {
       const pid = Number(r?.playerId ?? r?.id);
@@ -437,24 +529,17 @@
       const code = String(r?.countryCode ?? (st === 'inbound' ? r?.origin : r?.destination) ?? '').toLowerCase();
       const knownCountry = Boolean(code && byCountry[code]);
 
-      if (st === 'outbound') {
-        total.outbound++;
-        if (knownCountry) byCountry[code].outbound++;
-        else total.unknown++;
-      } else if (st === 'abroad') {
-        total.abroad++;
-        if (knownCountry) byCountry[code].abroad++;
-        else total.unknown++;
-      } else if (st === 'inbound') {
-        total.inbound++;
-        if (knownCountry) byCountry[code].inbound++;
-        else total.unknown++;
+      if (st === 'outbound' || st === 'abroad' || st === 'inbound') {
+        total[st]++;
+        if (knownCountry) byCountry[code][st]++;
+        else total.unattributed++;
       } else if (st === 'unknown') {
         total.unknown++;
       }
     }
 
     return {
+      v: 2,
       at: Number(observedAtMs) || Date.now(),
       observedAt: new Date(Number(observedAtMs) || Date.now()).toISOString(),
       total,
@@ -478,9 +563,22 @@
       .filter((s) => s && Number(s.at) >= fromMs && Number(s.at) <= nowMs + 60_000)
       .sort((a, b) => a.at - b.at);
 
+    // Snapshots saved before v2 also counted every member without a known country as unknown; that share is
+    // exactly the total minus the per-country counts, so it is taken back out.
+    const unknownOf = (s) => {
+      const raw = Number(s.total?.unknown ?? s.unknown) || 0;
+      if (Number(s.v) >= 2 || !s.total || !s.byCountry) return raw;
+      let unattributed = 0;
+      for (const k of ['outbound', 'abroad', 'inbound']) {
+        const inCountries = Object.values(s.byCountry).reduce((sum, c) => sum + (Number(c?.[k]) || 0), 0);
+        unattributed += Math.max(0, (Number(s.total[k]) || 0) - inCountries);
+      }
+      return Math.max(0, raw - unattributed);
+    };
     const series = valid.map((s) => {
       const c = cleanCode !== '*' ? (s.byCountry?.[cleanCode] || { outbound: 0, abroad: 0, inbound: 0 }) : (s.total || { outbound: 0, abroad: 0, inbound: 0 });
-      const unknown = Number(s.total?.unknown ?? s.unknown) || 0;
+      // An unknown route belongs to no country: a single-country view has no Unknown count.
+      const unknown = cleanCode === '*' ? unknownOf(s) : null;
       const outbound = Number(c.outbound) || 0;
       const abroad = Number(c.abroad) || 0;
       const inbound = Number(c.inbound) || 0;
@@ -515,7 +613,7 @@
 
     const latest = sampleCount
       ? series[sampleCount - 1]
-      : { outbound: 0, abroad: 0, inbound: 0, unknown: 0, active: 0 };
+      : { outbound: 0, abroad: 0, inbound: 0, unknown: cleanCode === '*' ? 0 : null, active: 0 };
 
     const periodDelta = sampleCount >= 2
       ? (series[sampleCount - 1].active - series[0].active)
@@ -560,6 +658,37 @@
       series,
       segments,
     };
+  }
+
+  /* Traffic chart geometry: a step line per contiguous segment and a dot for a lone sample
+     (a one-point "M x,y" path draws nothing). */
+  function buildTrafficChart(tf, { W = 680, H = 140, padL = 34, padR = 12, padT = 12, padB = 22 } = {}) {
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const series = Array.isArray(tf?.series) ? tf.series : [];
+    const maxV = Math.max(4, ...series.map((s) => Number(s.active) || 0));
+    const minT = Number(tf?.fromMs) || 0;
+    const spanT = Math.max(1, (Number(tf?.toMs) || 0) - minT);
+    const xOf = (ms) => Math.max(padL, Math.min(padL + plotW, padL + ((ms - minT) / spanT) * plotW));
+    const yOf = (v) => padT + plotH - (Math.min(maxV, Math.max(0, Number(v) || 0)) / maxV) * plotH;
+    const paths = [];
+    const dots = [];
+    for (const seg of Array.isArray(tf?.segments) ? tf.segments : []) {
+      if (!seg.length) continue;
+      if (seg.length === 1) {
+        dots.push({ x: Number(xOf(seg[0].at).toFixed(1)), y: Number(yOf(seg[0].active).toFixed(1)), at: seg[0].at, active: seg[0].active });
+        continue;
+      }
+      let d = '';
+      for (let i = 0; i < seg.length; i++) {
+        const x = xOf(seg[i].at).toFixed(1);
+        const y = yOf(seg[i].active).toFixed(1);
+        if (i === 0) d += `M${x},${y}`;
+        else d += ` L${x},${yOf(seg[i - 1].active).toFixed(1)} L${x},${y}`;
+      }
+      paths.push(d);
+    }
+    return { W, H, padL, padR, padT, padB, plotW, plotH, maxV, paths, dots };
   }
 
   /* ---------- N2: 24-Hour Clock Dial & Pinned Plan Validator ---------- */
@@ -665,6 +794,13 @@
     STALE_STOCK_SEC,
     COUNTRY_META,
     COUNTRY_ORDER,
+    BLOCK_IDS,
+    tctHm,
+    formatTct,
+    parseBlockPrefs,
+    pinnedPlanExpired,
+    groupRowsByCountry,
+    buildTrafficChart,
     channelBreakdown,
     classifyAvailability,
     buildItemSummary,

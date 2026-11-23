@@ -31,10 +31,25 @@
       const key = `lrx.priceAlert.${ev.ruleId}.${ev.observedAt}`;
       let seen = null; try { seen = localStorage.getItem(key); } catch {}
       if (seen) continue;
-      try { localStorage.setItem(key, String(Date.now())); } catch {}
       const dirTxt = ev.direction === 'below' ? tr('altına düştü', 'dropped below') : tr('üzerine çıktı', 'crossed above');
-      notify(key, `🔔 ${ev.label || ev.assetId}`, `$${ev.price.toFixed(2)} ${dirTxt} $${ev.threshold.toFixed(2)}`, { url: STOCKS_URL });
+      // Remembered only once the notification went out: a failed one is tried again on the next refresh.
+      try { notify(key, `🔔 ${ev.label || ev.assetId}`, `$${Number(ev.currentPrice).toFixed(2)} ${dirTxt} $${Number(ev.threshold).toFixed(2)}`, { url: STOCKS_URL }); }
+      catch (e) { console.warn('[stocks] price alert notification failed:', e); continue; }
+      try { localStorage.setItem(key, String(Date.now())); } catch {}
+      prunePriceAlertKeys();
     }
+  }
+
+  // One dedupe key is kept per fired alert; keys older than 30 days can no longer match a new event.
+  function prunePriceAlertKeys(now = Date.now()) {
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (!k || !k.startsWith('lrx.priceAlert.')) continue;
+        const at = Number(localStorage.getItem(k));
+        if (!Number.isFinite(at) || now - at > 30 * 86400_000) localStorage.removeItem(k);
+      }
+    } catch {}
   }
 
   async function fetchStocksPage(force = false) {
@@ -101,7 +116,7 @@
       .join('');
 
     const trigBanner = triggered.length ? `<div class="stk-alert-fired">
-      ${triggered.map((ev) => `<button type="button" class="chip warn stk-alert-jump" data-stk-jump="${esc(ev.assetId)}">🔔 ${esc(ev.label || ev.assetId)}: $${ev.price.toFixed(2)} (${ev.direction === 'below' ? '≤' : '≥'} $${ev.threshold.toFixed(2)}) ↗</button>`).join('')}
+      ${triggered.map((ev) => `<button type="button" class="chip warn stk-alert-jump" data-stk-jump="${esc(ev.assetId)}">🔔 ${esc(ev.label || ev.assetId)}: $${Number(ev.currentPrice).toFixed(2)} (${ev.direction === 'below' ? '≤' : '≥'} $${Number(ev.threshold).toFixed(2)}) ↗</button>`).join('')}
     </div>` : '';
 
     const ruleChips = rules.length ? `<div class="chip-row stk-alert-list">

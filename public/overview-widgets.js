@@ -24,22 +24,29 @@
     travel_history: ['Uçuş / Alış Özeti', 'Flight / Purchase Summary'],
   };
 
-  // Shared response cache for widgets reading the same endpoint within the same refresh cycle (50 s TTL).
+  // Shared response cache for widgets reading the same endpoint within the same refresh cycle (50 s TTL). It is kept
+  // per player and emptied on a Premium identity reset, so after an account switch no tile shows the previous account.
   const sharedCache = new Map();
-  function sharedLoad(key, loader) {
-    const now = Date.now();
+  let sharedGen = 0, sharedFor = null;
+  const sharedPlayer = () => Number(state.overview?.player?.id) || 0;
+  function clearShared() { sharedGen++; sharedCache.clear(); sharedFor = null; }
+  function sharedLoad(name, loader) {
+    const who = sharedPlayer();
+    if (sharedFor !== who) { clearShared(); sharedFor = who; }
+    const key = `${who}:${name}`, gen = sharedGen, now = Date.now();
     const hit = sharedCache.get(key);
     if (hit && (hit.promise || now - hit.at < 50_000)) return hit.promise || Promise.resolve(hit.value);
     const promise = Promise.resolve().then(loader).then((value) => {
-      sharedCache.set(key, { at: Date.now(), value, promise: null });
+      if (gen === sharedGen) sharedCache.set(key, { at: Date.now(), value, promise: null });
       return value;
     }).catch((err) => {
-      sharedCache.delete(key);
+      if (gen === sharedGen && sharedCache.get(key)?.promise === promise) sharedCache.delete(key);
       throw err;
     });
     sharedCache.set(key, { at: now, value: undefined, promise });
     return promise;
   }
+  window.addEventListener?.('lrx-premium-reset', clearShared);
 
   /* ---------- markup: the one-liner (S), then the lines M and L add ---------- */
   const main = (line, sub = '') => `<p class="ow-t-main">${line}</p>${sub ? `<p class="ow-t-sub muted">${sub}</p>` : ''}`;
@@ -190,13 +197,17 @@
   }
 
   /* ---------- N5: Faction & Travel Workspace Overview Widgets ---------- */
+  // A player without a faction: the server's (already translated) message instead of empty numbers.
+  const noFaction = (d) => (d?.notInFaction ? main(esc(d.error || tr("Bir faction'da değilsin.", 'You are not in a faction.'))) : '');
   function factionMember(d, size) {
+    if (d?.notInFaction) return noFaction(d);
     const meId = Number(state.overview?.player?.id) || 0;
     const rows = d?.membersTable?.rows || [];
-    const me = rows.find((r) => r.playerId === meId) || rows[0];
-    if (!me) return main(tr('Üye verisi yok', 'No member data'));
+    if (!rows.length) return main(tr('Üye verisi yok', 'No member data'));
+    const me = meId ? rows.find((r) => r.playerId === meId) : null;
+    if (!me) return main(tr('Üye kaydın henüz bulunamadı', 'Your member row was not found yet'), tr('Faction listesi yenilenince görünür.', 'It shows once the faction roster refreshes.'));
     const ar = d?.statsView?.activeRate;
-    const rateTxt = ar?.pct != null ? `%${ar.pct} ${tr('aktiflik', 'active rate')}` : `${me.days} ${tr('gün', 'days')}`;
+    const rateTxt = ar?.pct != null ? tr(`%${ar.pct} aktiflik`, `${ar.pct}% active rate`) : `${me.days} ${tr('gün', 'days')}`;
     return main(`${esc(me.name)} · ${esc(me.position)}`, rateTxt)
       + more(size, [
         [tr('7g Oynama', '7d Activity'), me.activity7d != null ? human(me.activity7d) : '—'],
@@ -206,6 +217,7 @@
   }
 
   function factionActivity(d, size) {
+    if (d?.notInFaction) return noFaction(d);
     const c = d?.counts || {};
     const hm = d?.heatmap || {};
     const line = `🟢 ${n0(c.online || 0)} · 🟡 ${n0(c.idle || 0)} · ⚫ ${n0(c.offline || 0)}`;
@@ -222,11 +234,15 @@
   }
 
   function factionStats(d, size) {
+    if (d?.notInFaction) return noFaction(d);
     const sv = d?.statsView || {};
     const ar = sv.activeRate || {};
     const top = [...(sv.rows || [])].filter((r) => r.activity != null).sort((a, b) => b.activity - a.activity);
-    const line = ar.pct != null ? `%${ar.pct} ${tr('Aktiflik', 'Active')}` : `${n0(ar.totalMembers || 0)} ${tr('Üye', 'Members')}`;
-    const sub = `${tr('Payda', 'Denom')}: ${ar.numerator || 0}/${ar.denominator || 0} (${sv.windowDays || 7}${tr('g', 'd')})`;
+    const line = ar.pct != null ? tr(`%${ar.pct} Aktiflik`, `${ar.pct}% Active`) : `${n0(ar.totalMembers || 0)} ${tr('Üye', 'Members')}`;
+    const days = sv.windowDays || 7;
+    const cov = sv.coverage || window.LRXFactionWorkspace?.statsCoverage?.(days, sv.range) || null;
+    const span = window.LRXFactionWorkspace?.windowLabel?.(days, cov) || [`${days}g`, `${days}d`];
+    const sub = `${tr('Payda', 'Denom')}: ${ar.numerator || 0}/${ar.denominator || 0} (${tr(span[0], span[1])})`;
     return main(line, sub) + more(
       size,
       [
@@ -237,18 +253,36 @@
     );
   }
 
+  // Radar rows (travel-radar.js): travelState, destination/origin country codes and ISO etaAt / etaFrom–etaTo.
+  const RADAR_STATE = { outbound: ['Gidiş', 'Outbound'], abroad: ['Yurt dışı', 'Abroad'], inbound: ['Dönüş', 'Inbound'], unknown: ['Bilinmiyor', 'Unknown'] };
+  const radarState = (t) => tr(...(RADAR_STATE[t.travelState] || RADAR_STATE.unknown));
+  function radarCountry(t) {
+    const code = t.travelState === 'inbound' ? t.origin : t.destination;
+    if (!code || code === 'torn') return null;
+    return window.LRXTravelRadar?.countryName?.(code) || String(code).toUpperCase();
+  }
+  function radarEtaMs(t) {
+    if (t.travelState !== 'outbound' && t.travelState !== 'inbound') return null;
+    const ms = Date.parse(t.etaAt || t.etaFrom || '');
+    return Number.isFinite(ms) ? ms : null;
+  }
+  function radarEta(t) {
+    const ms = radarEtaMs(t);
+    if (ms == null) return esc(radarState(t));
+    const left = (ms - Date.now()) / 1000;
+    if (left <= 0) return tr('iniyor', 'landing');
+    return t.etaAt ? human(left) : `~${human(left)}`;
+  }
   function factionRadar(d, size) {
+    if (d?.notInFaction) return noFaction(d);
     const sum = d?.travelSummary || {};
-    const trList = [...(d?.travel || [])].sort((a, b) => (a.etaSec ?? 9e9) - (b.etaSec ?? 9e9));
+    const trList = [...(d?.travel || [])].sort((a, b) => (radarEtaMs(a) ?? Infinity) - (radarEtaMs(b) ?? Infinity));
     const line = `🛫 ${n0(sum.outbound || 0)} · 🌍 ${n0(sum.abroad || 0)} · 🛬 ${n0(sum.inbound || 0)}`;
     const sub = `${n0(sum.totalTravel || trList.length)} ${tr('aktif seyahat', 'active travelers')}`;
-    const mRows = trList.slice(0, 3).map((t) => [
-      `${esc(t.displayName)} (${esc(t.country || t.countryCode || '?')})`,
-      t.etaSec != null ? human(t.etaSec) : esc(t.state),
-    ]);
+    const mRows = trList.slice(0, 3).map((t) => [`${esc(t.displayName)} (${esc(radarCountry(t) || radarState(t))})`, radarEta(t)]);
     const byC = new Map();
     for (const t of trList) {
-      const k = t.country || t.countryCode || tr('Bilinmiyor', 'Unknown');
+      const k = radarCountry(t) || tr('Bilinmiyor', 'Unknown');
       byC.set(k, (byC.get(k) || 0) + 1);
     }
     const lRows = [...byC.entries()].slice(0, 3).map(([c, cnt]) => [esc(c), `${cnt} ${tr('üye', 'members')}`]);
@@ -407,7 +441,7 @@
     },
   };
 
-  window.LRXOverviewWidgets = Object.freeze({ titles: Object.freeze(titles), premium: Object.freeze(premium) });
+  window.LRXOverviewWidgets = Object.freeze({ titles: Object.freeze(titles), premium: Object.freeze(premium), clearShared });
   // Premium page → Open: this module has no workbench; it is the Overview's edit mode.
   window.PremiumOpeners = window.PremiumOpeners || {};
   window.PremiumOpeners.overview_widgets = () => { showView('overview'); window.LRXOverviewEdit?.start(); };

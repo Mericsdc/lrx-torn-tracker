@@ -5,8 +5,11 @@ const { createWorker } = require('./worker');
 const { normalizeEvents } = require('./parser');
 const crypto = require('node:crypto');
 const { createFeatureService } = require('./feature-service');
-const { createFactionHub } = require('./faction-hub');
+const { createFactionHub, createUnavailableFactionHub, RETENTION } = require('./faction-hub');
 const featureCatalog = require('../public/feature-catalog');
+
+const API_KEY_STORAGE = "Login keys are sent only to Torn to verify their owner and are not stored. A faction collector key is stored only when a faction leader or co-leader connects it to the Shared Faction Hub with explicit consent: it is encrypted at rest (AES-256-GCM), used only to read that faction's member list while the faction has an active plan, and deleted when it is disconnected or its owner requests erasure.";
+const FACTION_HUB_RETENTION = { memberObservationsDays: RETENTION.rawDays, travelTransitionsDays: RETENTION.rawDays, activityRollupsDays: RETENTION.rollupDays, alertDeliveryRecordsDays: RETENTION.outboxDays, auditRecordsDays: RETENTION.auditDays };
 
 function createPremiumService(config, dependencies = {}) {
   const store = createStore(dependencies.filename || config.dbPath, { mode: config.mode, receiverId: config.receiverId, now: dependencies.now });
@@ -15,7 +18,16 @@ function createPremiumService(config, dependencies = {}) {
   const auth = createAuth(store, client, config);
   const features = createFeatureService(store);
   const worker = createWorker(store, client, config, { random: dependencies.random, maxPages: dependencies.maxPages });
-  const factionHub = createFactionHub(config, dependencies);
+  // The Shared Faction Hub is optional: if it cannot start (no key secret, unreadable database) only the hub is
+  // disabled and its routes answer 503 FACTION_HUB_UNAVAILABLE; login and payments keep working.
+  let factionHub;
+  try {
+    factionHub = createFactionHub(config, { ...dependencies, apiBudget: dependencies.apiBudget || store.apiBudget });
+  } catch (error) {
+    const reason = /^FACTION_[A-Z0-9_]+$/.test(error?.code || '') ? error.code : 'FACTION_HUB_START_FAILED';
+    try { store.recordError(reason); } catch {}
+    factionHub = createUnavailableFactionHub(reason);
+  }
   function info() {
     const settings = store.settings(), checkpoint = store.checkpoint();
     const gate = worker.gate();
@@ -25,13 +37,23 @@ function createPremiumService(config, dependencies = {}) {
       enabled: !!settings.enabled, livePayments: gate.livePayments && !!settings.enabled,
       paymentBlockReason: gate.reason || (!settings.enabled ? 'PAYMENTS_PAUSED' : null),
       check: { interval: settings.check_interval, lastCheckedAt: checkpoint.last_checked_at, lastSuccessAt: checkpoint.last_success_at, nextCheckAt: checkpoint.next_check_at, error: checkpoint.last_error_code, gapDetected: !!checkpoint.gap_detected },
-      privacy: { controller: config.controllerName || 'Local test service', contact: config.privacyContact || null, termsUrl: config.publicUrl ? config.publicUrl + '/terms' : null, storesApiKeys: false, reviewRetentionDays: config.reviewRetentionDays, recordRetentionPolicy: config.recordRetentionPolicy || null, purpose: 'Verified account identity, application subscriptions and payment reconciliation' },
+      privacy: { controller: config.controllerName || 'Local test service', contact: config.privacyContact || null, termsUrl: config.publicUrl ? config.publicUrl + '/terms' : null, storesApiKeys: true, apiKeyStorage: API_KEY_STORAGE, reviewRetentionDays: config.reviewRetentionDays, recordRetentionPolicy: config.recordRetentionPolicy || null, factionHubRetention: FACTION_HUB_RETENTION, purpose: 'Verified account identity, application subscriptions, payment reconciliation and, for factions whose leader or co-leader connects it, the Shared Faction Hub' },
       freeApiAccess: true, premiumBenefits: featureCatalog.premium, featureAccess: features.access(null),
     };
   }
   function me(actor) {
     store.expire();
     return { ...info(), connected: true, account: { ...store.player(actor.tornId), admin: actor.admin, verified: true }, subscription: store.entitlement(actor.tornId), balance: store.balance(actor.tornId), ...(actor.admin ? { receivedTotal: store.receivedTotal() } : {}), transactions: store.historyFor(actor.tornId), featureAccess: features.access(actor) };
+  }
+  // Personal export and erasure also cover the caller's own Shared Faction Hub records.
+  function exportData(actor) {
+    return { ...store.exportData(actor.tornId), advancedFeatures: features.exportData(actor), factionHub: factionHub.exportUserData(actor.tornId) };
+  }
+  function requestErasure(actor) {
+    const request = store.requestErasure(actor);
+    let hub;
+    try { hub = factionHub.eraseUserData(actor.tornId); } catch (error) { hub = { erased: false, code: /^[A-Z0-9_]+$/.test(error?.code || '') ? error.code : 'FACTION_HUB_ERASURE_FAILED' }; }
+    return { ...request, factionHub: hub };
   }
   function requirePremium(actor) {
     const entitlement = store.entitlement(actor.tornId);
@@ -116,6 +138,6 @@ function createPremiumService(config, dependencies = {}) {
     }
     fail('NOT_FOUND', 404);
   }
-  return { store, auth, worker, factionHub, config, features, info, me, requirePremium, exportReceipts, adminAction, close: async () => { await worker.stop(); await factionHub.close(); store.close(); } };
+  return { store, auth, worker, factionHub, config, features, info, me, exportData, requestErasure, requirePremium, exportReceipts, adminAction, close: async () => { await worker.stop(); await factionHub.close(); store.close(); } };
 }
 module.exports = { createPremiumService };

@@ -24,14 +24,31 @@
   const CHAIN_URL = T + 'factions.php?step=your#/war/chain';
   const UPGRADES_URL = T + 'factions.php?step=your#/tab=upgrades';
 
+  // What the user is typing into the add forms (recruitment watchlist, alliance, graffiti), kept here so that
+  // every re-render (60 s tick, 2-minute reload, report progress) writes it back into the inputs.
+  const freshDrafts = () => ({
+    wl: { id: '', name: '', tag: '', note: '' },
+    al: { name: '', tag: '', id: '', rel: 'ally', note: '' },
+    gf: { cat: '', text: '' },
+  });
+  const DRAFT_FIELDS = {
+    'fac-wl-id': ['wl', 'id'], 'fac-wl-name': ['wl', 'name'], 'fac-wl-tag': ['wl', 'tag'], 'fac-wl-note': ['wl', 'note'],
+    'fac-al-name': ['al', 'name'], 'fac-al-tag': ['al', 'tag'], 'fac-al-id': ['al', 'id'], 'fac-al-rel': ['al', 'rel'], 'fac-al-note': ['al', 'note'],
+    'fac-gf-cat': ['gf', 'cat'], 'fac-gf-text': ['gf', 'text'],
+  };
+
   const fac = {
     tab: lsGet('tt.fac.tab', 'oc'),
     scopeKey: '',
-    facSeq: 0, actSeq: 0, repSeq: 0, armSeq: 0, chSeq: 0, upgSeq: 0, wsSeq: 0, memberSeq: 0,
+    facSeq: 0, actSeq: 0, radSeq: 0, repSeq: 0, armSeq: 0, chSeq: 0, upgSeq: 0, wsSeq: 0, memberSeq: 0,
     d: null, err: null,
     rep: null, repErr: null, repTimer: null, repDays: Number(lsGet('tt.fac.repDays', '7')) === 30 ? 30 : 7,
+    // act: the local Torn roster reply (Activity tab, and the Radar on the Local source).
+    // radShared: the Faction Hub reply, used only by the Radar on the Shared source (its members have no days/last).
     act: null, actErr: null, actQ: '', actFilter: 'all', actSort: 'last', cmpA: 0, cmpB: 0,
+    radShared: null, radSharedErr: null,
     radState: 'all', radCountry: 'all', radAct: 'all', radQ: '', radSource: 'local',
+    drafts: freshDrafts(),
     arm: null, armErr: null, armCat: 'all', armQ: '',
     ch: null, chErr: null,
     upg: null, upgErr: null, upgSel: null, upgRespectOverride: null, upgBranch: 'all',
@@ -58,11 +75,13 @@
       fac.d = null; fac.err = null;
       fac.rep = null; fac.repErr = null; clearTimeout(fac.repTimer);
       fac.act = null; fac.actErr = null;
+      fac.radShared = null; fac.radSharedErr = null;
       fac.arm = null; fac.armErr = null;
       fac.ch = null; fac.chErr = null;
       fac.upg = null; fac.upgErr = null; fac.upgSel = null;
       fac.ws = null; fac.wsErr = null; fac.openMemberId = 0; fac.memberSeries = null;
-      fac.facSeq++; fac.actSeq++; fac.repSeq++; fac.armSeq++; fac.chSeq++; fac.upgSeq++; fac.wsSeq++; fac.memberSeq++;
+      fac.drafts = freshDrafts();
+      fac.facSeq++; fac.actSeq++; fac.radSeq++; fac.repSeq++; fac.armSeq++; fac.chSeq++; fac.upgSeq++; fac.wsSeq++; fac.memberSeq++;
     }
     if (k !== '0:0') fac.scopeKey = k;
   }
@@ -85,6 +104,16 @@
     if (Number.isNaN(d.getTime())) return '—';
     return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}:${String(d.getUTCSeconds()).padStart(2, '0')} TCT`;
   };
+  // HH:MM for a time today (TCT = UTC), "20 Nov 14:05" for any other day.
+  const isoWhen = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    const hm = isoHm(iso);
+    if (d.toISOString().slice(0, 10) === new Date(nowTct()).toISOString().slice(0, 10)) return hm;
+    const day = d.toLocaleDateString(state.lang === 'en' ? 'en-GB' : 'tr-TR', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+    return `${day} ${hm}`;
+  };
   const ageText = (sec) => {
     const s = Math.max(0, Math.floor(Number(sec) || 0));
     if (s < 60) return tr(`${s} sn önce`, `${s}s ago`);
@@ -92,6 +121,77 @@
     if (m < 60) return tr(`${m} dk önce`, `${m}m ago`);
     return tr(`${Math.floor(m / 60)} sa ${m % 60} dk önce`, `${Math.floor(m / 60)}h ${m % 60}m ago`);
   };
+  // Torn's last action (unix seconds) in the UI language. Torn's own English text ("10 minutes ago") is the fallback
+  // only when there is no timestamp. Returns escaped HTML.
+  const lastSeen = (ts, rel = '') => {
+    const t = Number(ts) || 0;
+    if (t < 1e9) return esc(rel || '—');
+    const s = Math.max(0, Math.floor(nowTct() / 1000 - t));
+    if (s < 60) return tr('şimdi', 'just now');
+    const m = Math.floor(s / 60);
+    if (m < 60) return tr(`${m} dk önce`, `${m} ${m === 1 ? 'minute' : 'minutes'} ago`);
+    const h = Math.floor(m / 60);
+    if (h < 24) return tr(`${h} sa önce`, `${h} ${h === 1 ? 'hour' : 'hours'} ago`);
+    const d = Math.floor(h / 24);
+    return tr(`${d} gün önce`, `${d} ${d === 1 ? 'day' : 'days'} ago`);
+  };
+  // Seconds since an ISO observation time; falls back to the age the server computed when there is none.
+  const ageSince = (iso, fallbackSec = null) => {
+    const ms = Date.parse(iso || '');
+    return Number.isFinite(ms) ? Math.max(0, Math.floor((Date.now() - ms) / 1000)) : fallbackSec;
+  };
+
+  /* Travel states (travel-radar.js) in the Radar tab's wording, shared by the Radar and the member drawer. */
+  const TRAVEL_STATE = {
+    outbound: ['blue', '↗', ['Gidiş', 'Outbound']],
+    abroad: ['tq', '🌍', ['Yurt dışı', 'Abroad']],
+    inbound: ['green', '↙', ['Dönüş', 'Inbound']],
+    none_observed: ['dim', '•', ['Torn\'da', 'In Torn']],
+    unknown: ['warn', '?', ['Bilinmiyor', 'Unknown']],
+  };
+  const travelStateText = (s) => tr(...(TRAVEL_STATE[s] || TRAVEL_STATE.unknown)[2]);
+  const countryName = (code) => window.LRXTravelRadar?.countryName?.(code) || (code ? String(code).toUpperCase() : '');
+  // "Torn → Japan", "Japan → Torn", "Japan" (abroad), "Torn" (back home); '' when the route is not known.
+  function travelRoute(stateKey, origin, destination) {
+    if (stateKey === 'outbound') return destination && destination !== 'torn' ? `Torn → ${countryName(destination)}` : '';
+    if (stateKey === 'inbound') return origin && origin !== 'torn' ? `${countryName(origin)} → Torn` : 'Torn';
+    if (stateKey === 'abroad') return destination && destination !== 'torn' ? countryName(destination) : '';
+    if (stateKey === 'none_observed') return 'Torn';
+    return '';
+  }
+
+  // Window labels such as "30d (12d data)" when the stored history is shorter than the window.
+  const windowText = (days, cov) => {
+    const pair = window.LRXFactionWorkspace?.windowLabel?.(days, cov) || [`${days}g`, `${days}d`];
+    return tr(pair[0], pair[1]);
+  };
+  // Gym columns come from the contributors history, which can cover fewer days than the personal stats.
+  const gymCoverage = (cov) => (cov && cov.gymActualDays !== undefined ? { actualDays: cov.gymActualDays, complete: cov.gymComplete } : cov);
+
+  // A player without a faction gets the server's (already translated) message instead of empty sections.
+  const notInFactionBox = (d) => `<div class="alert info">${esc(d?.error || tr('Bir faction\'da değilsin.', 'You are not in a faction.'))}</div>`;
+  // Shared first lines of the workspace tabs: loading, the fetch error or the factionless message; '' when ready.
+  function wsGate() {
+    if (!fac.ws) return fac.wsErr ? errorBox(fac.wsErr) : loadingBox();
+    if (fac.ws.notInFaction) return notInFactionBox(fac.ws);
+    return '';
+  }
+
+  // Labels saved by older versions as Turkish data ('Takip', 'Genel', 'Officer') and the new empty defaults.
+  const wlTagText = (t) => (!t || t === 'Takip' ? tr('Takip', 'Watching') : t);
+  const gfCatText = (c) => (!c || c === 'Genel' ? tr('Genel', 'General') : c);
+  const authorText = (a) => (!a || a === 'Officer' ? tr('Yetkili', 'Officer') : a);
+
+  const SOURCE_LABEL = {
+    torn_self: ['Doğrulanmış (Torn API)', 'Verified (Torn API)'],
+    verified: ['Doğrulanmış', 'Verified'],
+    member_shared: ['Doğrulanmış (üye paylaşımı)', 'Verified (shared by member)'],
+    ffscouter: ['FFScouter tahmini', 'FFScouter estimate'],
+    rank_estimate: ['Kaba tahmin (rütbeden)', 'Rough estimate (from rank)'],
+    torn_personalstats: ['Torn kişisel istatistikleri', 'Torn personal stats'],
+    torn_contributors: ['Torn faction katkı listesi', 'Torn faction contributors'],
+  };
+  const sourceText = (s) => (SOURCE_LABEL[s] ? tr(...SOURCE_LABEL[s]) : String(s || '—'));
   const STATE_TR = { Traveling: ['uçakta', 'Traveling'], Abroad: ['yurt dışında', 'Abroad'], Hospital: ['hastanede', 'In Hospital'], Jail: ['hapiste', 'In Jail'], Federal: ['federal hapiste', 'In Federal Jail'], Okay: ['müsait', 'Okay'] };
   const stateText = (s) => { const t = STATE_TR[s]; return t ? tr(t[0], t[1]) : esc(s || ''); };
   const ROLE_TR = { leader: ['Lider', 'Leader'], 'co-leader': ['Eş lider', 'Co-leader'] };
@@ -153,15 +253,13 @@
     clearTimeout(fac.repTimer);
     if (fac.rep?.job?.running && state.view === 'faction') fac.repTimer = setTimeout(() => fetchReport().then(render), 4000);
   }
+  const authRevoked = (e) => e?.status === 401 || e?.status === 403 || e?.code === 'NO_KEY' || e?.code === 'KEY_ACCESS';
+  // The local Torn roster (Activity tab and the Local radar). Its transitions drive the travel radar notifications.
   async function fetchActivity(force = false) {
     syncScope();
     const seq = ++fac.actSeq;
-    const qs = [];
-    if (force) qs.push('force=1');
-    if (fac.radSource === 'shared') qs.push('source=shared');
-    const suffix = qs.length ? `?${qs.join('&')}` : '';
     try {
-      const res = await api(`/api/faction/activity${suffix}`);
+      const res = await api(`/api/faction/activity${force ? '?force=1' : ''}`);
       if (seq !== fac.actSeq) return fac.act;
       fac.act = res; fac.actErr = null;
       checkTravelRadarNotify(res);
@@ -169,10 +267,30 @@
       if (seq !== fac.actSeq) return fac.act;
       fac.actErr = e;
       // Auth/permission revocation never keeps stale private data on screen
-      if (e?.status === 401 || e?.status === 403 || e?.code === 'NO_KEY' || e?.code === 'KEY_ACCESS') fac.act = null;
+      if (authRevoked(e)) fac.act = null;
     }
     return fac.act;
   }
+  // The Faction Hub view for the Radar's Shared source, kept apart from fac.act so the Activity tab never reads it.
+  async function fetchSharedRadar(force = false) {
+    syncScope();
+    const seq = ++fac.radSeq;
+    try {
+      const res = await api(`/api/faction/activity?source=shared${force ? '&force=1' : ''}`);
+      if (seq !== fac.radSeq) return fac.radShared;
+      fac.radShared = res; fac.radSharedErr = null;
+      checkTravelRadarNotify(res);
+    } catch (e) {
+      if (seq !== fac.radSeq) return fac.radShared;
+      fac.radSharedErr = e;
+      if (authRevoked(e)) fac.radShared = null;
+    }
+    return fac.radShared;
+  }
+  const radarShared = () => fac.radSource === 'shared';
+  const radarData = () => (radarShared() ? fac.radShared : fac.act);
+  const radarErr = () => (radarShared() ? fac.radSharedErr : fac.actErr);
+  const fetchRadar = (force = false) => (radarShared() ? fetchSharedRadar(force) : fetchActivity(force));
   async function fetchWorkspace(force = false, section = 'all') {
     syncScope();
     const seq = ++fac.wsSeq;
@@ -185,7 +303,7 @@
     } catch (e) {
       if (seq !== fac.wsSeq) return fac.ws;
       fac.wsErr = e;
-      if (e?.status === 401 || e?.status === 403 || e?.code === 'NO_KEY' || e?.code === 'KEY_ACCESS') fac.ws = null;
+      if (authRevoked(e)) fac.ws = null;
     }
     return fac.ws;
   }
@@ -247,9 +365,14 @@
     return fac.upg;
   }
   const WS_TABS = new Set(['members', 'stats', 'gym', 'bank', 'recruitment', 'transfers', 'alliance']);
-  async function loadTabData(tab, force = false) {
-    if ((tab === 'activity' || tab === 'radar') && (force || !fac.act)) { await fetchActivity(force); render(); }
-    else if (WS_TABS.has(tab)) {
+  // `refresh` (the 2-minute loop) refetches the live roster views even when they are loaded; the server's
+  // 2-minute roster cache keeps that to at most one Torn roster call per cycle.
+  async function loadTabData(tab, force = false, { refresh = false } = {}) {
+    if (tab === 'activity') {
+      if (force || refresh || !fac.act) { await fetchActivity(force); render(); }
+    } else if (tab === 'radar') {
+      if (force || refresh || !radarData()) { await fetchRadar(force); render(); }
+    } else if (WS_TABS.has(tab)) {
       const needBank = tab === 'bank' && (!fac.ws || fac.ws.bank?.status === 'idle');
       const needRec = tab === 'recruitment' && (!fac.ws || fac.ws.recruitment?.status === 'idle');
       if (force || !fac.ws || needBank || needRec) {
@@ -264,7 +387,7 @@
     else if (tab === 'chains' && (force || !fac.ch)) { await fetchChains(force); render(); }
     else if (tab === 'upgrades' && (force || !fac.upg)) { await fetchUpgrades(force); render(); }
   }
-  async function loadFaction(force = false) {
+  async function loadFaction(force = false, opts = {}) {
     syncScope();
     const el = $('#faction-body');
     if (!fac.d && el) el.innerHTML = loadingBox();
@@ -272,14 +395,30 @@
     render();
     const tab = activeTab();
     if (fac.d?.access?.allowed) { fetchReport().then(render); }
-    if (fac.d?.access?.inFaction && tab !== 'oc') await loadTabData(tab, force);
+    if (fac.d?.access?.inFaction && tab !== 'oc') await loadTabData(tab, force, { refresh: Boolean(opts?.refresh) });
   }
 
   /* ---------- Bildirimler ---------- */
+  // Radar keys are one per observed transition; once a snapshot has passed they are never read again.
+  const RADAR_KEY = 'lrx.radar.';
+  const RADAR_KEY_MAX_AGE_MS = 2 * 86400_000;
+  function pruneRadarKeys(now = Date.now()) {
+    try {
+      const old = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k || !k.startsWith(RADAR_KEY)) continue;
+        const at = Number(localStorage.getItem(k));
+        if (!(at > 0) || now - at > RADAR_KEY_MAX_AGE_MS) old.push(k);
+      }
+      for (const k of old) localStorage.removeItem(k);
+    } catch {}
+  }
   function notifyOnce(key, title, body, url) {
     let seen = null; try { seen = localStorage.getItem(key); } catch {}
     if (seen) return;
     try { localStorage.setItem(key, String(Date.now())); } catch {}
+    if (key.startsWith(RADAR_KEY)) pruneRadarKeys();
     if (feat('notify')) notify(key, title, body, url ? { url } : {});
   }
   function checkTravelRadarNotify(data) {
@@ -364,7 +503,9 @@
   }
 
   function lockedCard(a) {
-    const why = !a.inFaction ? tr('Bir faction\'da değilsin.', 'You are not in a faction.')
+    // inFaction null means the check failed (unknown), which is not the same as having no faction
+    const why = a.inFaction === false ? tr('Bir faction\'da değilsin.', 'You are not in a faction.')
+      : a.inFaction == null ? tr('Faction üyeliğin şu anda kontrol edilemedi. Biraz sonra tekrar dene.', 'Your faction membership could not be checked right now. Please try again shortly.')
       : a.apiAccess === false
         ? tr(`Pozisyonun (${esc(a.position)}) için "Faction API Access" izni yok. Torn bu izin olmadan OC verisini vermez.`, `Your position (${esc(a.position)}) does not have the "Faction API Access" permission. Torn does not share OC data without it.`)
         : tr(`Pozisyonun (${esc(a.position)}) için "Organised Crimes" yetkisi yok.`, `Your position (${esc(a.position)}) does not have the "Organised Crimes" permission.`);
@@ -378,7 +519,7 @@
   function notInOcCard(oc) {
     const rows = oc.notInOc.map((m) => `<tr>
       <td>${nameBtn(m.id, m.name)}</td><td class="num">${m.level}</td><td>${esc(m.position)}</td>
-      <td><i class="fac-dot ${m.lastStatus === 'Online' ? 'on' : m.lastStatus === 'Idle' ? 'idle' : ''}"></i>${esc(m.lastRel)}</td>
+      <td><i class="fac-dot ${m.lastStatus === 'Online' ? 'on' : m.lastStatus === 'Idle' ? 'idle' : ''}"></i>${lastSeen(m.last, m.lastRel)}</td>
       <td>${m.state && m.state !== 'Okay' ? `<span class="chip ${m.state === 'Hospital' || m.state === 'Jail' ? 'danger' : 'blue'}">${stateText(m.state)}</span>` : `<span class="muted">${stateText('Okay')}</span>`}</td>
       <td class="num">${m.days}</td></tr>`).join('');
     return `<article class="glass card">
@@ -603,8 +744,10 @@
   /* ---------- Sekme 2: Aktivite Dashboard (/dashboard/activity) ---------- */
   function renderActivityTab() {
     if (!fac.act) return fac.actErr ? errorBox(fac.actErr) : loadingBox();
+    if (fac.act.notInFaction) return notInFactionBox(fac.act);
     const d = fac.act;
-    const c = d.counts || {};
+    // Every count defaults to 0 so a partial reply never prints "undefined"
+    const c = Object.fromEntries(['total', 'online', 'idle', 'offline', 'okay', 'hospital', 'traveling', 'abroad', 'jail', 'inOc'].map((k) => [k, Number(d.counts?.[k]) || 0]));
     const total = Math.max(1, c.total || 0);
     const hm = d.heatmap || { grid: [], maxAvg: 0, totalSamples: 0 };
     const dows = state.lang === 'en' ? DOW_EN : DOW_TR;
@@ -623,9 +766,9 @@
         </span>
       </div>
       <div class="storage-bar fac-act-bar">
-        <i style="width:${(c.online / total) * 100}%;background:var(--ok)" title="Online: ${c.online}"></i>
-        <i style="width:${(c.idle / total) * 100}%;background:var(--warn)" title="Idle: ${c.idle}"></i>
-        <i style="width:${(c.offline / total) * 100}%;background:var(--muted-2)" title="Offline: ${c.offline}"></i>
+        <i style="width:${(c.online / total) * 100}%;background:var(--ok)" title="${tr('Çevrimiçi', 'Online')}: ${c.online}"></i>
+        <i style="width:${(c.idle / total) * 100}%;background:var(--warn)" title="${tr('Beklemede', 'Idle')}: ${c.idle}"></i>
+        <i style="width:${(c.offline / total) * 100}%;background:var(--muted-2)" title="${tr('Çevrimdışı', 'Offline')}: ${c.offline}"></i>
       </div>
       <div class="chip-row fac-state-chips">
         <span class="chip ok">✓ ${tr('Müsait', 'Okay')}: ${c.okay}</span>
@@ -669,7 +812,16 @@
     </article>`;
 
     // Side-by-side Member Comparison
-    const members = d.members || [];
+    const members = (d.members || []).map((m) => ({
+      ...m,
+      name: String(m.name || `#${m.id}`),
+      position: String(m.position || ''),
+      level: Number(m.level) || 0,
+      days: m.days != null && Number.isFinite(Number(m.days)) ? Number(m.days) : null,
+      last: Number(m.last) || 0,
+      lastRel: String(m.lastRel || ''),
+    }));
+    const per = `(${fac.repDays}${tr('g', 'd')})`;
     const mA = members.find((m) => m.id === fac.cmpA) || members[0];
     const mB = members.find((m) => m.id === fac.cmpB) || members[1] || members[0];
     const rA = mA ? repById.get(mA.id) : null;
@@ -693,11 +845,11 @@
         <tbody>
           ${cmpMetric(tr('Seviye', 'Level'), mA?.level, mB?.level)}
           ${cmpMetric(tr('Faction günü', 'Days in faction'), mA?.days, mB?.days)}
-          ${cmpMetric(`${tr('Oynama süresi', 'Time played')} (${fac.repDays}${tr('g', 'd')})`, rA?.activity, rB?.activity, hms)}
-          ${cmpMetric(`Xanax (${fac.repDays}${tr('g', 'd')})`, rA?.xanax, rB?.xanax)}
-          ${cmpMetric(`Gym E (${fac.repDays}${tr('g', 'd')})`, rA?.gym, rB?.gym)}
-          ${cmpMetric(`${tr('Suç', 'Crimes')} (${fac.repDays}${tr('g', 'd')})`, rA?.crimes, rB?.crimes)}
-          ${cmpMetric(`OC (${fac.repDays}${tr('g', 'd')})`, rA?.oc, rB?.oc)}
+          ${cmpMetric(`${tr('Oynama süresi', 'Time played')} ${per}`, rA?.activity, rB?.activity, hms)}
+          ${cmpMetric(`Xanax ${per}`, rA?.xanax, rB?.xanax)}
+          ${cmpMetric(`Gym E ${per}`, rA?.gym, rB?.gym)}
+          ${cmpMetric(`${tr('Suç', 'Crimes')} ${per}`, rA?.crimes, rB?.crimes)}
+          ${cmpMetric(`OC ${per}`, rA?.oc, rB?.oc)}
         </tbody>
       </table></div>
     </article>` : '';
@@ -715,7 +867,7 @@
     const sorters = {
       last: (a, b) => b.last - a.last,
       level: (a, b) => b.level - a.level,
-      days: (a, b) => b.days - a.days,
+      days: (a, b) => (b.days ?? -1) - (a.days ?? -1),
       activity: (a, b) => (repById.get(b.id)?.activity ?? -1) - (repById.get(a.id)?.activity ?? -1),
       xanax: (a, b) => (repById.get(b.id)?.xanax ?? -1) - (repById.get(a.id)?.xanax ?? -1),
       gym: (a, b) => (repById.get(b.id)?.gym ?? -1) - (repById.get(a.id)?.gym ?? -1),
@@ -730,9 +882,9 @@
         <td>${nameBtn(m.id, m.name)}</td>
         <td class="num mono">${m.level}</td>
         <td>${esc(m.position)}</td>
-        <td><i class="fac-dot ${m.lastStatus === 'Online' ? 'on' : m.lastStatus === 'Idle' ? 'idle' : ''}"></i>${esc(m.lastRel)}</td>
+        <td><i class="fac-dot ${m.lastStatus === 'Online' ? 'on' : m.lastStatus === 'Idle' ? 'idle' : ''}"></i>${lastSeen(m.last, m.lastRel)}</td>
         <td>${m.state && m.state !== 'Okay' ? `<span class="chip ${m.state === 'Hospital' || m.state === 'Jail' ? 'danger' : 'blue'}">${stateText(m.state)}</span>` : `<span class="muted">${stateText('Okay')}</span>`}</td>
-        <td class="num mono">${m.days}</td>
+        <td class="num mono">${n0(m.days)}</td>
         <td>${m.inOc ? `<span class="chip green">OC</span>` : `<span class="chip dim">—</span>`}</td>
         ${hasStats ? `<td class="num mono">${r?.activity != null ? hms(r.activity) : '—'}</td><td class="num mono">${r?.xanax != null ? n0(r.xanax) : '—'}</td><td class="num mono">${r?.gym != null ? n0(r.gym) : '—'}</td>` : ''}
       </tr>`;
@@ -754,9 +906,9 @@
             ${opt('last', tr('Son görülme', 'Last seen'), fac.actSort)}
             ${opt('level', tr('Seviye', 'Level'), fac.actSort)}
             ${opt('days', tr('Faction günü', 'Days'), fac.actSort)}
-            ${hasStats ? opt('activity', `${tr('Oynama süresi', 'Time played')} (${fac.repDays}d)`, fac.actSort) : ''}
-            ${hasStats ? opt('xanax', `Xanax (${fac.repDays}d)`, fac.actSort) : ''}
-            ${hasStats ? opt('gym', `Gym E (${fac.repDays}d)`, fac.actSort) : ''}
+            ${hasStats ? opt('activity', `${tr('Oynama süresi', 'Time played')} ${per}`, fac.actSort) : ''}
+            ${hasStats ? opt('xanax', `Xanax ${per}`, fac.actSort) : ''}
+            ${hasStats ? opt('gym', `Gym E ${per}`, fac.actSort) : ''}
           </select>
         </div>
       </div>
@@ -764,7 +916,7 @@
         <thead><tr>
           <th>${tr('Üye', 'Member')}</th><th class="num">Lv</th><th>${tr('Pozisyon', 'Position')}</th>
           <th>${tr('Son görülme', 'Last seen')}</th><th>${tr('Durum', 'Status')}</th><th class="num">${tr('Gün', 'Days')}</th><th>OC</th>
-          ${hasStats ? `<th class="num">${tr('Süre', 'Played')} (${fac.repDays}d)</th><th class="num">Xanax</th><th class="num">Gym E</th>` : ''}
+          ${hasStats ? `<th class="num">${tr('Süre', 'Played')} ${per}</th><th class="num">Xanax</th><th class="num">Gym E</th>` : ''}
         </tr></thead>
         <tbody>${rosterRows || `<tr><td colspan="${hasStats ? 10 : 7}" class="muted">${tr('Eşleşen üye yok.', 'No matching members.')}</td></tr>`}</tbody>
       </table></div>
@@ -775,16 +927,18 @@
 
   /* ---------- Sekme 2.5: Faction Travel Radar (P0.3) ---------- */
   function renderRadarTab() {
-    if (!fac.act && !fac.actErr) return loadingBox();
-    if (!fac.act && fac.actErr) {
-      return `<article class="glass card">${errorBox(fac.actErr)}
+    const d = radarData();
+    const err = radarErr();
+    if (!d && !err) return loadingBox();
+    if (!d && err) {
+      return `<article class="glass card">${errorBox(err)}
         <div class="fac-radar-retry"><button class="btn sm ghost" type="button" id="fac-rad-refresh">↻ ${tr('Tekrar dene', 'Retry')}</button></div>
       </article>`;
     }
-    const d = fac.act;
+    if (d.notInFaction) return notInFactionBox(d);
     const travel = Array.isArray(d.travel) ? d.travel : [];
-    const sum = d.travelSummary || { outbound: 0, abroad: 0, inbound: 0, unknown: 0, totalTravel: travel.length };
-    const countryTitle = (code) => window.LRXTravelRadar?.countryName?.(code) || (code ? String(code).toUpperCase() : '');
+    const sum = { outbound: 0, abroad: 0, inbound: 0, unknown: 0, totalTravel: travel.length, ...(d.travelSummary || {}) };
+    const countryTitle = countryName;
 
     // Summary filter cards (clickable)
     const sumCard = (key, icon, label, val, cls) => `<button type="button" class="glass fac-rad-kpi ${cls}${fac.radState === key ? ' active' : ''}" data-fac-rad-state="${key}" aria-pressed="${fac.radState === key}">
@@ -821,13 +975,8 @@
 
     const hasFilters = fac.radState !== 'all' || fac.radCountry !== 'all' || fac.radAct !== 'all' || Boolean(q);
     const stateBadge = (r) => {
-      const map = {
-        outbound: ['blue', '↗', tr('Gidiş', 'Outbound')],
-        abroad: ['tq', '🌍', tr('Yurt dışı', 'Abroad')],
-        inbound: ['green', '↙', tr('Dönüş', 'Inbound')],
-        unknown: ['warn', '?', tr('Bilinmiyor', 'Unknown')],
-      };
-      const [cls, ic, lbl] = map[r.travelState] || ['dim', '•', r.travelState];
+      const [cls, ic] = TRAVEL_STATE[r.travelState] || TRAVEL_STATE.unknown;
+      const lbl = travelStateText(r.travelState);
       const health = r.healthStatus && r.healthStatus !== 'okay' && r.healthStatus !== 'unknown'
         ? ` <span class="chip danger">${esc(stateText(r.healthStatus[0].toUpperCase() + r.healthStatus.slice(1)))}</span>`
         : '';
@@ -840,9 +989,7 @@
       if (r.travelState === 'unknown') {
         return `<span class="muted">${esc(r.rawDescription || tr('Rota tanınmadı', 'Unrecognized route'))}</span>`;
       }
-      const routeTxt = r.travelState === 'outbound' ? `Torn → ${cName}`
-        : r.travelState === 'inbound' ? `${cName} → Torn`
-          : cName || '—';
+      const routeTxt = travelRoute(r.travelState, r.origin, r.destination) || cName || '—';
       const travelBtn = cc && cc !== 'torn' && feat('page.travel') && !viewHidden('travel')
         ? `<button type="button" class="fac-rad-country" data-travel-country="${esc(cc)}" title="${esc(tr('Seyahat Kârı\'nda bu ülkeyi aç', 'Open this country in Travel Profit'))}"><span lang="en">${esc(routeTxt)}</span> ↗</button>`
         : `<span lang="en"><b>${esc(routeTxt)}</b></span>`;
@@ -861,11 +1008,13 @@
       return `<span class="muted">${tr('Bilinmiyor', 'Unknown')}</span>`;
     };
 
+    // Radar rows carry Torn's English "last action" text; the roster in the same reply has the timestamp
+    const lastById = new Map((d.members || []).map((m) => [Number(m.id), Number(m.last) || 0]));
     const rowsHtml = filtered.map((r) => `<tr>
       <td>${nameBtn(r.playerId, r.displayName)}<div class="sub-text">Lv ${r.level}${r.position ? ` · ${esc(r.position)}` : ''}${r.inOc ? ' · OC' : ''}</div></td>
       <td>${stateBadge(r)}</td>
       <td>${routeCell(r)}</td>
-      <td><i class="fac-dot ${r.activityStatus === 'Online' ? 'on' : r.activityStatus === 'Idle' ? 'idle' : ''}"></i><span>${esc(r.activityStatus)}</span>${r.lastRel ? `<div class="sub-text">${esc(r.lastRel)}</div>` : ''}</td>
+      <td><i class="fac-dot ${r.activityStatus === 'Online' ? 'on' : r.activityStatus === 'Idle' ? 'idle' : ''}"></i><span>${r.activityStatus === 'Online' ? tr('Çevrimiçi', 'Online') : r.activityStatus === 'Idle' ? tr('Beklemede', 'Idle') : r.activityStatus === 'Offline' ? tr('Çevrimdışı', 'Offline') : esc(r.activityStatus || '—')}</span>${r.lastRel || lastById.get(Number(r.playerId)) ? `<div class="sub-text">${lastSeen(lastById.get(Number(r.playerId)), r.lastRel)}</div>` : ''}</td>
       <td>${etaCell(r)}</td>
     </tr>`).join('');
 
@@ -1133,6 +1282,8 @@
   }
 
   /* ---------- N3: Faction Üyeler Tablosu + Satır İçi Çekmece + Kişisel Grafikler ---------- */
+  // Battle stat provenance chip: [class, short mark] for verified / FFScouter estimate / rough rank estimate
+  const BS_BADGE = { verified: ['green', '✓'], estimate: ['blue', '~'], rough: ['warn', '≈'] };
   function renderMemberSeriesSvg(ser) {
     if (!ser) return '';
     if (ser.metric === 'travel') {
@@ -1147,11 +1298,16 @@
           <th>${tr('Rota / Ülke', 'Route / Country')}</th>
         </tr></thead>
         <tbody>
-          ${trs.slice(0, 12).map((t) => `<tr>
-            <td class="mono">${isoHm(t.seenFrom)} → ${isoHm(t.seenTo)} TCT</td>
-            <td><span class="chip blue">${esc(t.fromState || '—')} → ${esc(t.toState || '—')}</span></td>
-            <td>${esc(t.country || t.countryCode || 'Torn')}</td>
-          </tr>`).join('')}
+          ${trs.slice(0, 12).map((t) => {
+            const [cls] = TRAVEL_STATE[t.toState] || TRAVEL_STATE.unknown;
+            // Country = where the leg goes (or comes from, when inbound); older entries may carry countryCode
+            const route = travelRoute(t.toState, t.origin ?? (t.toState === 'inbound' ? t.countryCode : null), t.destination ?? (t.toState !== 'inbound' ? t.countryCode : null));
+            return `<tr>
+            <td class="mono">${isoWhen(t.seenFrom)} → ${isoWhen(t.seenTo)} TCT</td>
+            <td><span class="chip ${cls}">${travelStateText(t.fromState)} → ${travelStateText(t.toState)}</span></td>
+            <td>${route ? `<span lang="en">${esc(route)}</span>` : '<span class="muted">—</span>'}</td>
+          </tr>`;
+          }).join('')}
         </tbody>
       </table></div>`;
     }
@@ -1167,7 +1323,7 @@
       const p0 = pts[0];
       return `<div class="fac-single-pt">
         <div class="fac-single-val mono">${n0(p0.rawValue ?? p0.value)}</div>
-        <div class="sub-text">${esc(tr(ser.notice[0], ser.notice[1]))} · ${tr('Kaynak', 'Source')}: <b>${esc(p0.source)}</b> · ${isoHm(p0.observedAt)} TCT</div>
+        <div class="sub-text">${esc(tr(ser.notice[0], ser.notice[1]))} · ${tr('Kaynak', 'Source')}: <b>${esc(sourceText(p0.source))}</b> · ${isoWhen(p0.observedAt)} TCT</div>
       </div>`;
     }
 
@@ -1189,15 +1345,15 @@
 
     const dots = pts.slice(-36).map((p) => {
       const x = xOf(p.at).toFixed(1), y = yOf(p.value).toFixed(1);
-      const tip = `${p.source} · ${new Date(p.at).toISOString().slice(0, 10)} · ${n0(p.value)}`;
+      const tip = `${sourceText(p.source)} · ${new Date(p.at).toISOString().slice(0, 10)} · ${n0(p.value)}`;
       return `<circle cx="${x}" cy="${y}" r="3" tabindex="0" class="fac-ser-dot" aria-label="${esc(tip)}"><title>${esc(tip)}</title></circle>`;
     }).join('');
 
     return `<svg class="fac-ser-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${tr('Üye kişisel gelişim grafiği', 'Member personal progression chart')}">
       <line x1="${padL}" y1="${padT}" x2="${padL + plotW}" y2="${padT}" class="fac-step-grid"/>
       <line x1="${padL}" y1="${padT + plotH}" x2="${padL + plotW}" y2="${padT + plotH}" class="fac-step-grid"/>
-      <text x="${padL - 6}" y="${padT + 4}" text-anchor="end" class="fac-step-lbl">${n0(maxV)}</text>
-      <text x="${padL - 6}" y="${padT + plotH}" text-anchor="end" class="fac-step-lbl">${n0(minV)}</text>
+      <text x="${padL - 6}" y="${padT + 4}" text-anchor="end" class="fac-step-lbl"><title>${n0(maxV)}</title>${compact(maxV)}</text>
+      <text x="${padL - 6}" y="${padT + plotH}" text-anchor="end" class="fac-step-lbl"><title>${n0(minV)}</title>${compact(minV)}</text>
       <text x="${padL}" y="${H - 5}" class="fac-step-lbl">${new Date(minT).toISOString().slice(0, 10)}</text>
       <text x="${padL + plotW}" y="${H - 5}" text-anchor="end" class="fac-step-lbl">${new Date(maxT).toISOString().slice(0, 10)}</text>
       ${segPaths}
@@ -1209,7 +1365,7 @@
     const ms = fac.memberSeries && fac.memberSeries.playerId === row.playerId ? fac.memberSeries : null;
     const ser = ms?.data || null;
     const bs = row.battleStats || {};
-    const bsBadgeClass = bs.badge === 'verified' ? 'green' : bs.badge === 'estimate' ? 'blue' : 'dim';
+    const bsBadgeClass = BS_BADGE[bs.badge]?.[0] || 'dim';
     const subStats = fac.memMetric === 'battlestats'
       ? [['total', 'Total'], ['str', 'STR'], ['spd', 'SPD'], ['dex', 'DEX'], ['def', 'DEF']]
       : fac.memMetric === 'activity'
@@ -1251,7 +1407,7 @@
         ${ser.metric !== 'travel' ? `<div class="fac-drawer-kpis">
           <span class="chip">${tr('Son değer', 'Latest')}: <b class="mono">${ser.latestValue != null ? n0(ser.latestValue) : '—'}</b></span>
           <span class="chip">${tr('Dönem değişimi', 'Period change')}: <b class="mono ${(ser.totalGain || 0) >= 0 ? 'pos' : 'neg'}">${ser.totalGain != null ? `${ser.totalGain >= 0 ? '+' : ''}${n0(ser.totalGain)}` : '—'}</b></span>
-          <span class="chip" title="${tr('Yalnızca aynı kaynaktan karşılaştırılabilir iki nokta ve gerçek süre farkı varsa hesaplanır', 'Calculated only between two comparable points from the same source and real elapsed time')}">${tr('Günlük ort.', 'Daily avg')}: <b class="mono">${ser.dailyAverage != null ? `${ser.dailyAverage >= 0 ? '+' : ''}${n0(Math.round(ser.dailyAverage))}/g` : '—'}</b></span>
+          <span class="chip" title="${tr('Yalnızca aynı kaynaktan karşılaştırılabilir iki nokta ve gerçek süre farkı varsa hesaplanır', 'Calculated only between two comparable points from the same source and real elapsed time')}">${tr('Günlük ort.', 'Daily avg')}: <b class="mono">${ser.dailyAverage != null ? `${ser.dailyAverage >= 0 ? '+' : ''}${n0(Math.round(ser.dailyAverage))}${tr('/gün', '/day')}` : '—'}</b></span>
           <span class="chip dim">${tr('Nokta / Segment', 'Points / Segments')}: <b class="mono">${ser.points?.length || 0} / ${ser.segments?.length || 0}</b></span>
         </div>` : ''}
         ${renderMemberSeriesSvg(ser)}
@@ -1260,7 +1416,7 @@
   }
 
   function renderMembersTab() {
-    if (!fac.ws) return fac.wsErr ? errorBox(fac.wsErr) : loadingBox();
+    const gate = wsGate(); if (gate) return gate;
     const mt = fac.ws.membersTable || { rows: [], columns: [] };
     const cols = fac.memCols;
     const q = fac.memQ.trim().toLowerCase();
@@ -1281,12 +1437,21 @@
     };
     list.sort(sorters[fac.memSort] || sorters.last);
 
+    // 7d / 30d columns name the days the stored history really covers (coverage from the members section)
+    const cov = fac.ws.coverage || {};
+    const w7 = windowText(7, cov.d7), w30 = windowText(30, cov.d30);
+    const g7 = windowText(7, gymCoverage(cov.d7)), g30 = windowText(30, gymCoverage(cov.d30));
+    const wsAt = Number(fac.ws.at) || 0;
+    const etaElapsed = wsAt ? Math.max(0, Math.round((Date.now() - wsAt) / 1000)) : 0;
     const optCols = [
       ['battlestats', tr('Battle Stats', 'Battle Stats')],
       ['oc', 'OC'],
       ['activity7d', tr('7g Aktivite', '7d Activity')],
       ['xanax7d', tr('7g Xanax', '7d Xanax')],
       ['gym7d', tr('7g Gym', '7d Gym')],
+      ['activity30d', tr('30g Aktivite', '30d Activity')],
+      ['xanax30d', tr('30g Xanax', '30d Xanax')],
+      ['gym30d', tr('30g Gym', '30d Gym')],
     ];
     const colCount = 7 + optCols.filter(([k]) => cols.has(k)).length;
 
@@ -1312,11 +1477,11 @@
         </div>
       </div>
       <div class="fac-toolbar">
-        <input class="input sm" id="fac-mem-q" placeholder="${tr('Üye, pozisyon veya ID ara…', 'Search member, position or ID…')}" value="${esc(fac.memQ)}">
-        <div class="btn-group">
-          ${[['all', tr('Tümü', 'All')], ['online', tr('Çevrimiçi', 'Online')], ['idle', tr('Beklemede', 'Idle')], ['offline', tr('Çevrimdışı', 'Offline')], ['away', tr('Uzaktakiler', 'Away')]].map(([k, lbl]) => `<button type="button" class="btn sm ghost${fac.memFilter === k ? ' active' : ''}" data-fac-mf="${k}">${lbl}</button>`).join('')}
+        <input class="input sm" id="fac-mem-q" type="search" placeholder="${tr('Üye, pozisyon veya ID ara…', 'Search member, position or ID…')}" value="${esc(fac.memQ)}">
+        <div class="btn-group" role="group" aria-label="${esc(tr('Durum filtresi', 'Status filter'))}">
+          ${[['all', tr('Tümü', 'All')], ['online', tr('Çevrimiçi', 'Online')], ['idle', tr('Beklemede', 'Idle')], ['offline', tr('Çevrimdışı', 'Offline')], ['away', tr('Uzaktakiler', 'Away')]].map(([k, lbl]) => `<button type="button" class="pill sm${fac.memFilter === k ? ' active' : ''}" aria-pressed="${fac.memFilter === k}" data-fac-mf="${k}">${lbl}</button>`).join('')}
         </div>
-        <select id="fac-mem-sort">
+        <select id="fac-mem-sort" aria-label="${esc(tr('Sıralama', 'Sort'))}">
           <option value="last"${fac.memSort === 'last' ? ' selected' : ''}>${tr('Son görülme', 'Last seen')}</option>
           <option value="level"${fac.memSort === 'level' ? ' selected' : ''}>${tr('Seviye', 'Level')}</option>
           <option value="days"${fac.memSort === 'days' ? ' selected' : ''}>${tr('Faction günü', 'Days in faction')}</option>
@@ -1324,7 +1489,7 @@
           <option value="activity"${fac.memSort === 'activity' ? ' selected' : ''}>${tr('7g Aktivite', '7d Activity')}</option>
         </select>
       </div>
-      <div class="tbl-wrap"><table class="tbl compact fac-mem-tbl">
+      <div class="tbl-wrap fac-mem-wrap"><table class="tbl compact fac-mem-tbl">
         <thead><tr>
           <th></th>
           <th>${tr('Üye', 'Member')}</th>
@@ -1335,20 +1500,32 @@
           <th class="num">${tr('Son Görülme', 'Last Seen')}</th>
           ${cols.has('battlestats') ? `<th class="num">Battle Stats</th>` : ''}
           ${cols.has('oc') ? `<th>OC</th>` : ''}
-          ${cols.has('activity7d') ? `<th class="num">${tr('7g Süre', '7d Time')}</th>` : ''}
-          ${cols.has('xanax7d') ? `<th class="num">7g Xanax</th>` : ''}
-          ${cols.has('gym7d') ? `<th class="num">7g Gym E</th>` : ''}
+          ${cols.has('activity7d') ? `<th class="num">${w7} ${tr('Süre', 'Time')}</th>` : ''}
+          ${cols.has('xanax7d') ? `<th class="num">${w7} Xanax</th>` : ''}
+          ${cols.has('gym7d') ? `<th class="num">${g7} Gym E</th>` : ''}
+          ${cols.has('activity30d') ? `<th class="num">${w30} ${tr('Süre', 'Time')}</th>` : ''}
+          ${cols.has('xanax30d') ? `<th class="num">${w30} Xanax</th>` : ''}
+          ${cols.has('gym30d') ? `<th class="num">${g30} Gym E</th>` : ''}
         </tr></thead>
         <tbody>
           ${list.map((m) => {
             const isOpen = fac.openMemberId === m.playerId;
             const dotCls = m.activityStatus === 'online' ? 'pos' : m.activityStatus === 'idle' ? 'warn' : 'muted';
             const bs = m.battleStats || {};
+            const bsLabel = tr(bs.label?.[0] || 'Birikiyor', bs.label?.[1] || 'Accumulating');
+            const [bsCls, bsMark] = BS_BADGE[bs.badge] || BS_BADGE.estimate;
             const bsCell = bs.total != null
-              ? `<span class="mono">${n0(bs.total)}</span> <span class="chip ${bs.badge === 'verified' ? 'green' : 'blue'}">${bs.badge === 'verified' ? '✓' : '~'}</span>`
-              : `<span class="chip dim">${esc(tr(bs.label?.[0] || 'Birikiyor', bs.label?.[1] || 'Accumulating'))}</span>`;
-            const travelTag = m.travel?.country
-              ? ` · <span class="chip blue">✈ ${esc(m.travel.country)}${m.travel.etaSec != null ? ` (${hms(m.travel.etaSec)})` : ''}</span>`
+              ? `<span class="mono">${n0(bs.total)}</span> <span class="chip ${bsCls}" title="${esc(bsLabel)}" aria-label="${esc(bsLabel)}">${bsMark}</span>`
+              : `<span class="chip dim">${esc(bsLabel)}</span>`;
+            const tv = m.travel;
+            const tvCountry = tv ? (tv.countryCode ? countryName(tv.countryCode) : tv.country || '') : '';
+            // etaSec counts down from the moment the server built the reply (ws.at); an estimate ends its window
+            const tvLeft = !tv ? null
+              : tv.etaSec != null ? Number(tv.etaSec) - etaElapsed
+                : tv.etaAt ? Math.round((Date.parse(tv.etaAt) - Date.now()) / 1000) : null;
+            const tvEta = tvLeft != null && tvLeft > 0 ? ` (${tv.etaSource === 'estimate' ? '~' : ''}${human(tvLeft)})` : '';
+            const travelTag = tvCountry
+              ? ` · <span class="chip blue" title="${esc(travelStateText(tv.state))}">✈ <span lang="en">${esc(tvCountry)}</span>${tvEta}</span>`
               : '';
             const mainTr = `<tr class="fac-mem-row ${isOpen ? 'is-open' : ''}" data-fac-member-row="${m.playerId}" tabindex="0" role="button" aria-expanded="${isOpen}">
               <td class="fac-exp-cell"><button type="button" class="btn sm ghost fac-exp-btn" data-fac-member-btn="${m.playerId}" aria-expanded="${isOpen}" aria-label="${esc(m.name)}">${isOpen ? '▾' : '▸'}</button></td>
@@ -1357,12 +1534,15 @@
               <td>${esc(m.position)}</td>
               <td class="num mono">${m.days}</td>
               <td><span class="chip ${m.gameState === 'Okay' ? 'green' : m.gameState === 'Hospital' ? 'danger' : 'warn'}">${stateText(m.gameState)}</span>${travelTag}</td>
-              <td class="num muted">${esc(m.lastActionRel || '—')}</td>
+              <td class="num muted">${lastSeen(m.lastActionTs, m.lastActionRel)}</td>
               ${cols.has('battlestats') ? `<td class="num">${bsCell}</td>` : ''}
               ${cols.has('oc') ? `<td>${m.inOc ? `<span class="chip green">OC</span>` : `<span class="muted">—</span>`}</td>` : ''}
               ${cols.has('activity7d') ? `<td class="num">${renderRestrictedOrVal(m.restricted?.activity, hms)}</td>` : ''}
               ${cols.has('xanax7d') ? `<td class="num">${renderRestrictedOrVal(m.restricted?.xanax, n0)}</td>` : ''}
               ${cols.has('gym7d') ? `<td class="num">${renderRestrictedOrVal(m.restricted?.gym, n0)}</td>` : ''}
+              ${cols.has('activity30d') ? `<td class="num">${renderRestrictedOrVal(m.restricted?.activity30d, hms)}</td>` : ''}
+              ${cols.has('xanax30d') ? `<td class="num">${renderRestrictedOrVal(m.restricted?.xanax30d, n0)}</td>` : ''}
+              ${cols.has('gym30d') ? `<td class="num">${renderRestrictedOrVal(m.restricted?.gym30d, n0)}</td>` : ''}
             </tr>`;
             const drawerTr = isOpen ? `<tr class="fac-drawer-tr"><td colspan="${colCount}">${renderMemberDrawer(m)}</td></tr>` : '';
             return mainTr + drawerTr;
@@ -1376,7 +1556,10 @@
   function renderWorkspaceStatusBar(sourceLabelTr, sourceLabelEn) {
     const a = fac.d?.access || {};
     const role = a.role ? tr(...ROLE_TR[a.role]) : a.allowed ? tr('Yetkili', 'Officer') : tr('Üye', 'Member');
-    const age = fac.ws?.freshness?.ageSec != null ? ageText(fac.ws.freshness.ageSec) : '—';
+    // Counted from the observation time, so the 60 s re-render advances it between fetches
+    const f = fac.ws?.freshness;
+    const ageSec = ageSince(f?.observedAt, f?.ageSec ?? null);
+    const age = ageSec != null ? ageText(ageSec) : '—';
     return `<div class="fac-ws-status">
       <span><b>${tr('Kaynak', 'Source')}:</b> ${tr(sourceLabelTr, sourceLabelEn)}</span>
       <span><b>${tr('Veri yaşı', 'Data age')}:</b> ${age}</span>
@@ -1386,10 +1569,14 @@
   }
 
   function renderStatsTab() {
-    if (!fac.ws) return fac.wsErr ? errorBox(fac.wsErr) : loadingBox();
+    const gate = wsGate(); if (gate) return gate;
     const sv = fac.ws.statsView || {};
     const ar = sv.activeRate || {};
     const metric = fac.wsMetric || 'activity';
+    const span = sv.windowDays || fac.wsDays;
+    // A 30d/90d window built from fewer days of snapshots is labelled with the days it really covers
+    const cov = sv.coverage || window.LRXFactionWorkspace?.statsCoverage?.(span, sv.range) || null;
+    const spanTxt = windowText(span, cov);
     const rows = [...(sv.rows || [])].filter((r) => !fac.wsTenure || r.tenureEligible);
     rows.sort((a, b) => (Number(b[metric]) || -1) - (Number(a[metric]) || -1));
 
@@ -1405,24 +1592,26 @@
             ${[7, 30, 90].map((d) => `<button type="button" class="pill sm ${fac.wsDays === d ? 'active' : ''}" data-fac-ws-days="${d}">${d}${tr('g', 'd')}</button>`).join('')}
           </div>
           <button type="button" class="pill sm ${fac.wsTenure ? 'active' : ''}" id="fac-ws-tenure">
-            🛡 ${fac.wsTenure ? tr(`Üyelik ≥ ${fac.wsDays}g filtresi açık`, `Tenure ≥ ${fac.wsDays}d filter ON`) : tr('Tüm üyeler (filtre kapalı)', 'All members (filter OFF)')}
+            🛡 ${fac.wsTenure
+              ? (ar.filterLabel ? `${tr('Filtre açık', 'Filter ON')}: ${esc(tr(ar.filterLabel[0], ar.filterLabel[1]))}` : tr(`Üyelik ≥ ${fac.wsDays}g filtresi açık`, `Tenure ≥ ${fac.wsDays}d filter ON`))
+              : tr('Tüm üyeler (filtre kapalı)', 'All members (filter OFF)')}
           </button>
           <button type="button" class="btn sm ghost" id="fac-rep-refresh">⟳ ${tr('Snapshot Topla', 'Collect Snapshots')}</button>
         </div>
       </div>
       <div class="grid kpis">
         <div class="glass kpi">
-          <div class="label">${tr('Aktiflik Oranı', 'Active Rate')} (${sv.windowDays || fac.wsDays}${tr('g', 'd')})</div>
-          <div class="value tq">${ar.pct != null ? `%${ar.pct}` : '—'}</div>
+          <div class="label">${tr('Aktiflik Oranı', 'Active Rate')} (${spanTxt})</div>
+          <div class="value tq">${ar.pct != null ? tr(`%${ar.pct}`, `${ar.pct}%`) : '—'}</div>
           <div class="hint">${tr('Payda', 'Denominator')}: <b>${ar.numerator || 0} / ${ar.denominator || 0}</b> ${tr('ölçülen', 'measured')} (${tr('Toplam', 'Total')}: ${ar.totalMembers || 0}${ar.excludedNewMembers ? `, ${ar.excludedNewMembers} ${tr('yeni üye hariç', 'new excluded')}` : ''})</div>
         </div>
         <div class="glass kpi">
-          <div class="label">${tr('Toplam Oynama Süresi', 'Total Time Played')}</div>
+          <div class="label">${tr('Toplam Oynama Süresi', 'Total Time Played')} (${spanTxt})</div>
           <div class="value mono">${hms(sv.totals?.activity || 0)}</div>
-          <div class="hint">${sv.range?.from ? `${dayLabel(sv.range.from)} → ${dayLabel(sv.range.to)}` : tr('Snapshot bekleniyor', 'Waiting for snapshots')}</div>
+          <div class="hint">${sv.range?.from ? `${dayLabel(sv.range.from)} → ${dayLabel(sv.range.to)}${cov && !cov.complete ? ` · ${tr(`${cov.actualDays} günlük kayıt var, ${span} gün birikiyor`, `${cov.actualDays} of ${span} days recorded so far`)}` : ''}` : tr('Snapshot bekleniyor', 'Waiting for snapshots')}</div>
         </div>
         <div class="glass kpi">
-          <div class="label">${tr('Toplam Xanax / Gym E', 'Total Xanax / Gym E')}</div>
+          <div class="label">${tr('Toplam Xanax / Gym E', 'Total Xanax / Gym E')} (${spanTxt})</div>
           <div class="value mono">${n0(sv.totals?.xanax || 0)} <small class="muted">/ ${n0(sv.totals?.gym || 0)}</small></div>
           <div class="hint">${tr('Suç', 'Crimes')}: ${n0(sv.totals?.crimes || 0)} · OC: ${n0(sv.totals?.oc || 0)}</div>
         </div>
@@ -1463,7 +1652,7 @@
   }
 
   function renderGymTab() {
-    if (!fac.ws) return fac.wsErr ? errorBox(fac.wsErr) : loadingBox();
+    const gate = wsGate(); if (gate) return gate;
     const gv = fac.ws.gymView || {};
     const rows = gv.rows || [];
     return `<article class="glass card">
@@ -1497,7 +1686,7 @@
             <td>${esc(r.position)}</td>
             <td class="num mono pos">${r.periodGain != null ? `+${n0(r.periodGain)}` : '—'}</td>
             <td class="num mono">${r.currentTotal != null ? n0(r.currentTotal) : '—'}</td>
-            <td class="num mono">%${r.sharePct}</td>
+            <td class="num mono">${r.sharePct != null ? tr(`%${r.sharePct}`, `${r.sharePct}%`) : '—'}</td>
           </tr>`).join('')}
         </tbody>
       </table></div>` : emptyBox(tr('Henüz Gym katkısı kaydı yok', 'No Gym contribution records yet'), tr('OC & Özet veya Stats sekmesinden Snapshot Topla düğmesine basarak ilk kaydı oluşturabilirsin.', 'Click Collect Snapshots on OC & Overview or Stats tab to record the initial snapshot.'))}
@@ -1505,7 +1694,7 @@
   }
 
   function renderBankTab() {
-    if (!fac.ws) return fac.wsErr ? errorBox(fac.wsErr) : loadingBox();
+    const gate = wsGate(); if (gate) return gate;
     const b = fac.ws.bank || {};
     return `<article class="glass card">
       ${renderWorkspaceStatusBar('Torn API faction/donations (Salt Okunur)', 'Torn API faction/donations (Read-Only)')}
@@ -1516,10 +1705,12 @@
         </div>
         <button type="button" class="btn sm ghost" data-open-url="${esc(b.tornBankUrl || 'https://www.torn.com/factions.php?step=your#/tab=controls')}" data-tab-label="Faction Bank">↗ ${tr('Torn Faction Bank\'ta Aç', 'Open Torn Faction Bank')}</button>
       </div>
-      ${!b.allowed || b.status === 'permission_required'
-        ? `<div class="alert warn">🔒 ${tr('İzin gerekli: Faction Banka bakiyelerini görmek için pozisyonunda "Faction API Access" yetkisi bulunmalıdır.', 'Permission required: Your faction position needs "Faction API Access" to view Faction Bank balances.')}</div>`
+      ${b.status === 'not_in_faction' ? notInFactionBox(b)
         : b.status === 'error'
-          ? `<div class="alert danger">${esc(b.error || 'Error')}</div>`
+          ? `<div class="alert danger">${esc(b.error || tr('Banka bakiyeleri okunamadı.', 'Could not read the bank balances.'))}</div>`
+        : !b.allowed || b.status === 'permission_required'
+          ? `<div class="alert warn">🔒 ${tr('İzin gerekli: Faction Banka bakiyelerini görmek için pozisyonunda "Faction API Access" yetkisi bulunmalıdır.', 'Permission required: Your faction position needs "Faction API Access" to view Faction Bank balances.')}</div>`
+        : b.status === 'idle' ? (fac.wsErr ? errorBox(fac.wsErr) : loadingBox())
           : `
             <div class="grid kpis">
               ${kpi(tr('Toplam Nakit Bakiyesi', 'Total Money Balance'), money(b.totals?.money || 0), `${b.rows?.length || 0} ${tr('kayıtlı hesap', 'recorded accounts')}`, 'pos')}
@@ -1546,10 +1737,11 @@
   }
 
   function renderRecruitmentTab() {
-    if (!fac.ws) return fac.wsErr ? errorBox(fac.wsErr) : loadingBox();
+    const gate = wsGate(); if (gate) return gate;
     const rec = fac.ws.recruitment || {};
     const apps = rec.applications || [];
     const wl = rec.watchlist || [];
+    const dr = fac.drafts.wl;
     return `<article class="glass card">
       ${renderWorkspaceStatusBar('Torn API v2/faction/applications + LRX Yerel Aday Listesi', 'Torn API v2/faction/applications + LRX Local Watchlist')}
       <div class="card-head wrap">
@@ -1558,8 +1750,12 @@
           <span class="muted">${tr('Aktif başvurular salt okunur listelenir; kabul/ret işlemi Torn üzerinden yapılır', 'Active applications are listed read-only; accept/decline on Torn')}</span>
         </div>
       </div>
-      ${!rec.allowed || rec.status === 'permission_required'
-        ? `<div class="alert warn">🔒 ${tr('İzin gerekli: Aktif başvuruları okumak için pozisyonunda "Faction API Access" yetkisi gerekir. Alt kısımdaki Aday İzleme Listesini yerel olarak kullanabilirsin.', 'Permission required: "Faction API Access" is required to read active applications. You can still use the local Recruitment Watchlist below.')}</div>`
+      ${rec.status === 'not_in_faction' ? notInFactionBox(rec)
+        : rec.status === 'error'
+          ? `<div class="alert danger">${esc(rec.error || tr('Başvurular okunamadı.', 'Could not read the applications.'))}</div>`
+        : !rec.allowed || rec.status === 'permission_required'
+          ? `<div class="alert warn">🔒 ${tr('İzin gerekli: Aktif başvuruları okumak için pozisyonunda "Faction API Access" yetkisi gerekir. Alt kısımdaki Aday İzleme Listesini yerel olarak kullanabilirsin.', 'Permission required: "Faction API Access" is required to read active applications. You can still use the local Recruitment Watchlist below.')}</div>`
+        : rec.status === 'idle' ? (fac.wsErr ? errorBox(fac.wsErr) : loadingBox())
         : apps.length ? `<div class="tbl-wrap"><table class="tbl compact">
           <thead><tr>
             <th>${tr('Aday', 'Applicant')}</th>
@@ -1572,7 +1768,7 @@
               <td>${nameBtn(a.playerId, a.name)}</td>
               <td class="num mono">${a.level}</td>
               <td>${esc(a.message || '—')}</td>
-              <td><span class="chip blue">${esc(a.status)}</span></td>
+              <td><span class="chip blue">${!a.status || a.status === 'active' ? tr('Aktif', 'Active') : esc(a.status)}</span></td>
             </tr>`).join('')}
           </tbody>
         </table></div>` : `<div class="sub-text">${tr('Şu anda bekleyen faction başvurusu yok.', 'No pending faction applications right now.')}</div>`}
@@ -1580,15 +1776,15 @@
     <article class="glass card">
       <div class="card-head wrap">
         <div>
-          <h3>🔭 ${tr('Recruitment Aday İzleme Listesi', 'Recruitment Candidate Watchlist')} <span class="chip">${wl.length}</span></h3>
-          <span class="muted">${tr('Kaynak: LRX Yerel Kayıt · Takip edilen adaylar ve yetkili notları', 'Source: LRX Local Record · Tracked candidates and officer notes')}</span>
+          <h3>🔭 ${tr('Aday İzleme Listesi', 'Recruitment Candidate Watchlist')} <span class="chip">${wl.length}</span></h3>
+          <span class="muted">${tr('Takip ettiğin adaylar ve notların yalnızca bu bilgisayarda saklanır; faction\'ın diğer üyeleriyle paylaşılmaz.', 'Candidates and notes you track are stored only on this computer; they are not shared with the rest of the faction.')}</span>
         </div>
       </div>
       <div class="fac-form-row">
-        <input class="input sm mono" id="fac-wl-id" type="number" placeholder="${tr('Oyuncu ID', 'Player ID')}">
-        <input class="input sm" id="fac-wl-name" placeholder="${tr('Oyuncu adı', 'Player name')}">
-        <input class="input sm" id="fac-wl-tag" placeholder="${tr('Durum (ör. Davet edildi)', 'Tag (e.g. Invited)')}">
-        <input class="input sm" id="fac-wl-note" placeholder="${tr('Not…', 'Note…')}">
+        <input class="input sm mono" id="fac-wl-id" type="number" min="1" placeholder="${tr('Oyuncu ID', 'Player ID')}" value="${esc(dr.id)}">
+        <input class="input sm" id="fac-wl-name" maxlength="60" placeholder="${tr('Oyuncu adı', 'Player name')}" value="${esc(dr.name)}">
+        <input class="input sm" id="fac-wl-tag" maxlength="32" placeholder="${tr('Etiket (ör. Davet edildi)', 'Tag (e.g. Invited)')}" value="${esc(dr.tag)}">
+        <input class="input sm" id="fac-wl-note" maxlength="280" placeholder="${tr('Not…', 'Note…')}" value="${esc(dr.note)}">
         <button type="button" class="btn sm primary" id="fac-wl-add">+ ${tr('Aday Ekle', 'Add Candidate')}</button>
       </div>
       ${wl.length ? `<div class="tbl-wrap"><table class="tbl compact">
@@ -1602,10 +1798,10 @@
         <tbody>
           ${wl.map((w) => `<tr>
             <td>${w.playerId ? nameBtn(w.playerId, w.name) : `<b>${esc(w.name)}</b>`}</td>
-            <td><span class="chip blue">${esc(w.tag || 'Takip')}</span></td>
+            <td><span class="chip blue">${esc(wlTagText(w.tag))}</span></td>
             <td>${esc(w.note || '—')}</td>
-            <td class="sub-text">${esc(w.authorName || '—')} · ${isoHm(w.updatedAt)} TCT</td>
-            <td class="num"><button type="button" class="btn sm ghost" data-fac-wl-del="${esc(w.id)}">✕</button></td>
+            <td class="sub-text">${esc(authorText(w.authorName))} · ${isoWhen(w.updatedAt)} TCT</td>
+            <td class="num"><button type="button" class="btn sm ghost" data-fac-wl-del="${esc(w.id)}" aria-label="${esc(tr('Listeden çıkar', 'Remove from list'))}">✕</button></td>
           </tr>`).join('')}
         </tbody>
       </table></div>` : `<div class="sub-text">${tr('İzleme listesinde henüz aday yok.', 'No candidates in the watchlist yet.')}</div>`}
@@ -1613,14 +1809,14 @@
   }
 
   function renderTransfersTab() {
-    if (!fac.ws) return fac.wsErr ? errorBox(fac.wsErr) : loadingBox();
+    const gate = wsGate(); if (gate) return gate;
     const entries = fac.ws.transfers?.entries || [];
     return `<article class="glass card">
       ${renderWorkspaceStatusBar('Torn API Roster Gözlem Farkı', 'Torn API Roster Observation Diff')}
       <div class="card-head wrap">
         <div>
           <h3>⇄ ${tr('Faction Transfers (Katılan & Ayrılan Üyeler)', 'Faction Transfers (Joined & Left Members)')} <span class="chip">${entries.length}</span></h3>
-          <span class="muted">${tr('Her kayıt olayın tespit edildiği gözlem aralığını [seenFrom – seenTo] gösterir; uydurma tam saniye damgası üretilmez', 'Each entry shows the observation interval [seenFrom – seenTo] in which the transfer was detected; never a fabricated exact timestamp')}</span>
+          <span class="muted">${tr('Her kayıt, değişikliğin fark edildiği iki roster gözlemi arasındaki aralığı gösterir; kesin bir saat uydurulmaz', 'Each entry shows the window between the two roster observations in which the change was detected; an exact time is never made up')}</span>
         </div>
       </div>
       ${entries.length ? `<div class="tbl-wrap"><table class="tbl compact">
@@ -1629,7 +1825,7 @@
           <th>${tr('Üye', 'Member')}</th>
           <th class="num">Lv</th>
           <th>${tr('Pozisyon', 'Position')}</th>
-          <th>${tr('Gözlem Aralığı [seenFrom → seenTo]', 'Observation Interval [seenFrom → seenTo]')}</th>
+          <th>${tr('Gözlem Aralığı (TCT)', 'Observation Window (TCT)')}</th>
         </tr></thead>
         <tbody>
           ${entries.map((t) => `<tr>
@@ -1637,7 +1833,7 @@
             <td>${nameBtn(t.playerId, t.name)}</td>
             <td class="num mono">${t.level || '—'}</td>
             <td>${esc(t.position || '—')}</td>
-            <td class="mono">${isoHm(t.observation_interval?.seenFrom)} → ${isoHm(t.observation_interval?.seenTo)} TCT <span class="chip dim">${tr('Gözlem aralığı', 'Obs. window')}</span></td>
+            <td class="mono">${isoWhen(t.observation_interval?.seenFrom)} → ${isoWhen(t.observation_interval?.seenTo)} TCT <span class="chip dim">${tr('Gözlem aralığı', 'Obs. window')}</span></td>
           </tr>`).join('')}
         </tbody>
       </table></div>` : emptyBox(tr('Henüz katılan veya ayrılan üye gözlemlenmedi', 'No joined or left members observed yet'), tr('Roster yenilendikçe kadro değişimleri gözlem aralığıyla otomatik kaydedilir.', 'As the roster refreshes, membership changes are automatically recorded with their observation window.'))}
@@ -1645,7 +1841,7 @@
   }
 
   function renderAllianceTab() {
-    if (!fac.ws) return fac.wsErr ? errorBox(fac.wsErr) : loadingBox();
+    const gate = wsGate(); if (gate) return gate;
     const al = fac.ws.alliance?.alliances || [];
     const gf = fac.ws.alliance?.graffiti || [];
     const relLabel = {
@@ -1654,25 +1850,28 @@
       nap: ['blue', tr('Saldırmazlık (NAP)', 'Non-Aggression (NAP)')],
       rival: ['danger', tr('Rakip / Hedef', 'Rival / Hostile')],
     };
+    const da = fac.drafts.al, dg = fac.drafts.gf;
+    const relOpt = (v, label) => `<option value="${v}"${da.rel === v ? ' selected' : ''}>${label}</option>`;
     return `<article class="glass card">
-      ${renderWorkspaceStatusBar('LRX Yerel Ekip Kaydı (Torn API verisi değildir)', 'LRX Local Team Record (Not Torn API data)')}
+      ${renderWorkspaceStatusBar('Yalnızca bu bilgisayardaki LRX kaydı (Torn API verisi değildir)', 'LRX record on this computer only (not Torn API data)')}
+      <div class="alert info fac-local-note">💾 ${tr('İlişkiler ve graffiti notları yalnızca bu bilgisayarda saklanır. Faction\'ın diğer üyeleri bunları görmez; uygulama hiçbir yere göndermez.', 'Relations and graffiti notes are stored only on this computer. Other faction members do not see them; the app does not send them anywhere.')}</div>
       <div class="card-head wrap">
         <div>
-          <h3>🤝 ${tr('Alliance & Family İlişkileri', 'Alliance & Family Relations')} <span class="chip">${al.length}</span></h3>
-          <span class="muted">${tr('Müttefik, aile, NAP ve rakip faction kayıtları (Kaynak: LRX Yerel Kayıt)', 'Ally, family, NAP and rival faction directory (Source: LRX Local Record)')}</span>
+          <h3>🤝 ${tr('Müttefik & Aile İlişkileri', 'Alliance & Family Relations')} <span class="chip">${al.length}</span></h3>
+          <span class="muted">${tr('Müttefik, aile, NAP ve rakip faction notların (yalnızca bu bilgisayarda)', 'Your ally, family, NAP and rival faction notes (on this computer only)')}</span>
         </div>
       </div>
       <div class="fac-form-row">
-        <input class="input sm" id="fac-al-name" placeholder="${tr('Faction adı', 'Faction name')}">
-        <input class="input sm mono" id="fac-al-tag" placeholder="${tr('Tag', 'Tag')}">
-        <input class="input sm mono" id="fac-al-id" type="number" placeholder="${tr('Faction ID', 'Faction ID')}">
-        <select id="fac-al-rel">
-          <option value="ally">${tr('Müttefik', 'Ally')}</option>
-          <option value="family">${tr('Aile / Family', 'Family')}</option>
-          <option value="nap">${tr('NAP', 'NAP')}</option>
-          <option value="rival">${tr('Rakip', 'Rival')}</option>
+        <input class="input sm" id="fac-al-name" maxlength="80" placeholder="${tr('Faction adı', 'Faction name')}" value="${esc(da.name)}">
+        <input class="input sm mono" id="fac-al-tag" maxlength="16" placeholder="${tr('Etiket', 'Tag')}" value="${esc(da.tag)}">
+        <input class="input sm mono" id="fac-al-id" type="number" min="1" placeholder="${tr('Faction ID', 'Faction ID')}" value="${esc(da.id)}">
+        <select id="fac-al-rel" aria-label="${esc(tr('İlişki', 'Relation'))}">
+          ${relOpt('ally', tr('Müttefik', 'Ally'))}
+          ${relOpt('family', tr('Aile', 'Family'))}
+          ${relOpt('nap', tr('Saldırmazlık (NAP)', 'NAP'))}
+          ${relOpt('rival', tr('Rakip', 'Rival'))}
         </select>
-        <input class="input sm" id="fac-al-note" placeholder="${tr('Not…', 'Note…')}">
+        <input class="input sm" id="fac-al-note" maxlength="280" placeholder="${tr('Not…', 'Note…')}" value="${esc(da.note)}">
         <button type="button" class="btn sm primary" id="fac-al-add">+ ${tr('İlişki Ekle', 'Add Relation')}</button>
       </div>
       ${al.length ? `<div class="tbl-wrap"><table class="tbl compact">
@@ -1690,8 +1889,8 @@
               <td><b>${esc(x.name)}</b> ${x.tag ? `<span class="mono muted">[${esc(x.tag)}]</span>` : ''}</td>
               <td><span class="chip ${cls}">${lbl}</span></td>
               <td>${esc(x.note || '—')}</td>
-              <td class="sub-text">${esc(x.authorName || '—')} · ${isoHm(x.updatedAt)} TCT</td>
-              <td class="num"><button type="button" class="btn sm ghost" data-fac-al-del="${esc(x.id)}">✕</button></td>
+              <td class="sub-text">${esc(authorText(x.authorName))} · ${isoWhen(x.updatedAt)} TCT</td>
+              <td class="num"><button type="button" class="btn sm ghost" data-fac-al-del="${esc(x.id)}" aria-label="${esc(tr('İlişkiyi sil', 'Delete relation'))}">✕</button></td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -1700,25 +1899,25 @@
     <article class="glass card">
       <div class="card-head wrap">
         <div>
-          <h3>🎨 ${tr('Faction Graffiti & Ortak Not Duvarı', 'Faction Graffiti & Shared Note Wall')} <span class="chip">${gf.length}</span></h3>
-          <span class="muted">${tr('Yazar ve zaman damgalı faction içi duyuru / strateji notları', 'Author- and timestamp-tagged internal faction notes and graffiti')}</span>
+          <h3>🎨 ${tr('Faction Graffiti & Not Defteri', 'Faction Graffiti & Notebook')} <span class="chip">${gf.length}</span></h3>
+          <span class="muted">${tr('Yazar ve zaman damgalı chain / savaş / strateji notların (yalnızca bu bilgisayarda)', 'Your author- and time-stamped chain, war and strategy notes (on this computer only)')}</span>
         </div>
       </div>
       <div class="fac-form-row">
-        <input class="input sm" id="fac-gf-cat" placeholder="${tr('Kategori (ör. Chain, Savaş)', 'Category (e.g. Chain, War)')}">
-        <input class="input sm" id="fac-gf-text" placeholder="${tr('Graffiti veya faction notu yaz…', 'Write graffiti or faction note…')}">
-        <button type="button" class="btn sm primary" id="fac-gf-add">+ ${tr('Duvara Yaz', 'Post Note')}</button>
+        <input class="input sm" id="fac-gf-cat" maxlength="32" placeholder="${tr('Kategori (ör. Chain, Savaş)', 'Category (e.g. Chain, War)')}" value="${esc(dg.cat)}">
+        <input class="input sm" id="fac-gf-text" maxlength="500" placeholder="${tr('Graffiti veya faction notu yaz…', 'Write graffiti or faction note…')}" value="${esc(dg.text)}">
+        <button type="button" class="btn sm primary" id="fac-gf-add">+ ${tr('Not Ekle', 'Add Note')}</button>
       </div>
       ${gf.length ? `<div class="fac-graffiti-grid">
         ${gf.map((g) => `<div class="glass fac-graffiti-card">
           <div class="fac-graffiti-top">
-            <span class="chip tq">${esc(g.category || 'Genel')}</span>
-            <button type="button" class="btn sm ghost" data-fac-gf-del="${esc(g.id)}">✕</button>
+            <span class="chip tq">${esc(gfCatText(g.category))}</span>
+            <button type="button" class="btn sm ghost" data-fac-gf-del="${esc(g.id)}" aria-label="${esc(tr('Notu sil', 'Delete note'))}">✕</button>
           </div>
           <p class="fac-graffiti-text">${esc(g.text)}</p>
-          <div class="sub-text">✍ <b>${esc(g.authorName || 'Officer')}</b> · ${isoHm(g.createdAt)} TCT</div>
+          <div class="sub-text">✍ <b>${esc(authorText(g.authorName))}</b> · ${isoWhen(g.createdAt)} TCT</div>
         </div>`).join('')}
-      </div>` : `<div class="sub-text">${tr('Graffiti duvarı henüz boş.', 'The Graffiti wall is empty.')}</div>`}
+      </div>` : `<div class="sub-text">${tr('Henüz not yok.', 'No notes yet.')}</div>`}
     </article>`;
   }
 
@@ -1830,6 +2029,17 @@
   }
 
   /* ---------- Olaylar ---------- */
+  // POSTs a local note change; true when it was saved. Errors become a toast, never an unhandled rejection.
+  async function mutateWorkspace(body, apply) {
+    try {
+      const res = await api('/api/faction/workspace', { method: 'POST', body: JSON.stringify(body) });
+      apply(res || {});
+      return true;
+    } catch (err) {
+      toast(err?.message || tr('Kaydedilemedi.', 'Could not save.'));
+      return false;
+    }
+  }
   const host = $('#faction-body');
   host?.addEventListener('click', async (e) => {
     if (e.target.closest('a.fac-prof-ext')) {
@@ -1930,59 +2140,43 @@
       render();
       return;
     }
+    // Add / remove a local note. Defaults are sent empty ('') and translated when shown; a failure is a toast.
     if (e.target.closest('#fac-wl-add')) {
-      const playerId = Number($('#fac-wl-id')?.value) || 0;
-      const name = $('#fac-wl-name')?.value?.trim() || '';
-      const tag = $('#fac-wl-tag')?.value?.trim() || 'Takip';
-      const note = $('#fac-wl-note')?.value?.trim() || '';
-      try {
-        const res = await api('/api/faction/workspace', { method: 'POST', body: JSON.stringify({ action: 'watchlist_add', playerId, name, tag, note }) });
-        if (fac.ws?.recruitment) fac.ws.recruitment.watchlist = res.watchlist || [];
-        render();
-      } catch (err) { toast(err.message); }
+      const d = fac.drafts.wl;
+      const body = { action: 'watchlist_add', playerId: Number(d.id) || 0, name: d.name.trim(), tag: d.tag.trim(), note: d.note.trim() };
+      if (await mutateWorkspace(body, (res) => { if (fac.ws?.recruitment) fac.ws.recruitment.watchlist = res.watchlist || []; })) fac.drafts.wl = freshDrafts().wl;
+      render();
       return;
     }
     const wlDel = e.target.closest('[data-fac-wl-del]');
     if (wlDel) {
-      const res = await api('/api/faction/workspace', { method: 'POST', body: JSON.stringify({ action: 'watchlist_remove', id: wlDel.dataset.facWlDel }) });
-      if (fac.ws?.recruitment) fac.ws.recruitment.watchlist = res.watchlist || [];
+      await mutateWorkspace({ action: 'watchlist_remove', id: wlDel.dataset.facWlDel }, (res) => { if (fac.ws?.recruitment) fac.ws.recruitment.watchlist = res.watchlist || []; });
       render();
       return;
     }
     if (e.target.closest('#fac-al-add')) {
-      const name = $('#fac-al-name')?.value?.trim() || '';
-      const tag = $('#fac-al-tag')?.value?.trim() || '';
-      const targetFactionId = Number($('#fac-al-id')?.value) || null;
-      const relation = $('#fac-al-rel')?.value || 'ally';
-      const note = $('#fac-al-note')?.value?.trim() || '';
-      try {
-        const res = await api('/api/faction/workspace', { method: 'POST', body: JSON.stringify({ action: 'alliance_add', name, tag, targetFactionId, relation, note }) });
-        if (fac.ws?.alliance) fac.ws.alliance.alliances = res.alliances || [];
-        render();
-      } catch (err) { toast(err.message); }
+      const d = fac.drafts.al;
+      const body = { action: 'alliance_add', name: d.name.trim(), tag: d.tag.trim(), targetFactionId: Number(d.id) || null, relation: d.rel || 'ally', note: d.note.trim() };
+      if (await mutateWorkspace(body, (res) => { if (fac.ws?.alliance) fac.ws.alliance.alliances = res.alliances || []; })) fac.drafts.al = freshDrafts().al;
+      render();
       return;
     }
     const alDel = e.target.closest('[data-fac-al-del]');
     if (alDel) {
-      const res = await api('/api/faction/workspace', { method: 'POST', body: JSON.stringify({ action: 'alliance_remove', id: alDel.dataset.facAlDel }) });
-      if (fac.ws?.alliance) fac.ws.alliance.alliances = res.alliances || [];
+      await mutateWorkspace({ action: 'alliance_remove', id: alDel.dataset.facAlDel }, (res) => { if (fac.ws?.alliance) fac.ws.alliance.alliances = res.alliances || []; });
       render();
       return;
     }
     if (e.target.closest('#fac-gf-add')) {
-      const category = $('#fac-gf-cat')?.value?.trim() || 'Genel';
-      const text = $('#fac-gf-text')?.value?.trim() || '';
-      try {
-        const res = await api('/api/faction/workspace', { method: 'POST', body: JSON.stringify({ action: 'graffiti_add', category, text }) });
-        if (fac.ws?.alliance) fac.ws.alliance.graffiti = res.graffiti || [];
-        render();
-      } catch (err) { toast(err.message); }
+      const d = fac.drafts.gf;
+      const body = { action: 'graffiti_add', category: d.cat.trim(), text: d.text.trim() };
+      if (await mutateWorkspace(body, (res) => { if (fac.ws?.alliance) fac.ws.alliance.graffiti = res.graffiti || []; })) fac.drafts.gf = freshDrafts().gf;
+      render();
       return;
     }
     const gfDel = e.target.closest('[data-fac-gf-del]');
     if (gfDel) {
-      const res = await api('/api/faction/workspace', { method: 'POST', body: JSON.stringify({ action: 'graffiti_remove', id: gfDel.dataset.facGfDel }) });
-      if (fac.ws?.alliance) fac.ws.alliance.graffiti = res.graffiti || [];
+      await mutateWorkspace({ action: 'graffiti_remove', id: gfDel.dataset.facGfDel }, (res) => { if (fac.ws?.alliance) fac.ws.alliance.graffiti = res.graffiti || []; });
       render();
       return;
     }
@@ -2023,13 +2217,15 @@
     if (e.target.closest('#fac-rep-refresh')) { await fetchReport(true); if (WS_TABS.has(activeTab())) await fetchWorkspace(true, activeTab()); render(); return; }
     const rd = e.target.closest('[data-fac-rep-days]');
     if (rd) { fac.repDays = Number(rd.dataset.facRepDays) === 30 ? 30 : 7; lsSet('tt.fac.repDays', String(fac.repDays)); await fetchReport(false); render(); return; }
-    if (e.target.closest('#fac-act-refresh') || e.target.closest('#fac-rad-refresh')) { await fetchActivity(true); render(); return; }
+    if (e.target.closest('#fac-act-refresh')) { await fetchActivity(true); render(); return; }
+    if (e.target.closest('#fac-rad-refresh')) { await fetchRadar(true); render(); return; }
     if (e.target.closest('#fac-arm-refresh')) { await fetchArmory(true); render(); return; }
     if (e.target.closest('#fac-ch-refresh')) { await fetchChains(true); render(); return; }
     const radSrc = e.target.closest('[data-fac-rad-src]');
     if (radSrc) {
       fac.radSource = radSrc.dataset.facRadSrc === 'shared' ? 'shared' : 'local';
-      await fetchActivity(false);
+      render();
+      await fetchRadar(false);
       render();
       return;
     }
@@ -2054,7 +2250,15 @@
     if (e.target.closest('#fac-upg-reset')) { fac.upgSel = { ...(fac.upg?.currentLevels || {}) }; fac.upgRespectOverride = null; render(); return; }
     if (e.target.closest('#fac-upg-clear')) { fac.upgSel = {}; render(); return; }
   });
+  // Draft inputs only update state (no re-render while typing); render() writes them back as value="…".
+  const keepDraft = (el) => {
+    const f = DRAFT_FIELDS[el?.id];
+    if (!f) return false;
+    fac.drafts[f[0]][f[1]] = String(el.value ?? '');
+    return true;
+  };
   host?.addEventListener('input', (e) => {
+    if (keepDraft(e.target)) return;
     if (e.target.id === 'fac-mem-q') { fac.memQ = e.target.value; render(); return; }
     if (e.target.id === 'fac-act-q') { fac.actQ = e.target.value; render(); return; }
     if (e.target.id === 'fac-rad-q') { fac.radQ = e.target.value; render(); return; }
@@ -2072,6 +2276,7 @@
     }
   });
   host?.addEventListener('change', (e) => {
+    if (keepDraft(e.target)) return;
     if (e.target.id === 'fac-mem-sort') { fac.memSort = e.target.value; render(); }
     else if (e.target.id === 'fac-act-sort') { fac.actSort = e.target.value; render(); }
     else if (e.target.id === 'fac-rad-country') { fac.radCountry = e.target.value || 'all'; render(); }
@@ -2099,14 +2304,21 @@
     openInTab(row.dataset.openUrl, { activate: true, label: row.dataset.tabLabel || null, reuse: true });
   });
 
+  // A text field or select in the Faction page has focus: a periodic redraw would close an open dropdown
+  // or break an IME composition, so the 60 s redraw waits (drafts are kept in state either way).
+  const typingInFaction = () => {
+    const ae = document.activeElement;
+    return Boolean(ae && host?.contains?.(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName || '') && ae.type !== 'range');
+  };
   // Sayfa açıkken dakikada bir yeniden çiz (geri sayımlar & yaş), 2 dakikada bir veriyi tazele
   setInterval(() => {
-    if (state.view === 'faction' && trackerVisible()) {
+    if (state.view === 'faction' && trackerVisible() && !typingInFaction()) {
       const t = activeTab();
       if (t === 'oc' || t === 'radar' || t === 'activity' || WS_TABS.has(t)) render();
     }
   }, 60_000);
-  setInterval(() => { if (state.view === 'faction' && trackerVisible()) loadFaction(); }, 2 * 60_000);
+  // The 2-minute reload also refetches the Activity / Radar roster, so radar notifications fire without a manual refresh
+  setInterval(() => { if (state.view === 'faction' && trackerVisible()) loadFaction(false, { refresh: true }); }, 2 * 60_000);
 
   Object.assign(EXTRA_LOADERS, { faction: loadFaction });
   FEATURE_HOOKS.push(() => { if (state.view === 'faction') render(); });

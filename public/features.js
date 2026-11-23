@@ -17,6 +17,7 @@ const FEATURE_DEFS = [
   { group: 'pages', key: 'page.stocks', def: true, tr: ['Borsa', 'Canlı hisse fiyatları, yıllık benefit blok ROI ve portföy kâr/zararı'], en: ['Stock Market', 'Live stock prices, annual benefit block ROI and holdings P/L'] },
   { group: 'pages', key: 'page.travel', def: true, tr: ['Seyahat Kârı', "Kâr, stok ve restock zamanları (YATA + Prometheus) · seviye 15'ten itibaren görünür"], en: ['Travel Profit', 'Profit, stock and restock times (YATA + Prometheus) · shown from level 15'] },
   { group: 'pages', parent: 'page.travel', key: 'travel.planner', def: true, tr: ['Kalkış planlayıcı (24s zaman çizelgesi)', 'Sonraki uçuş geri sayımı, 24 saatlik kâr / nakit rotası ve uçuş içi plan'], en: ['Departure planner (24h timeline)', 'Next-flight countdown, 24h profit / cash schedule and in-flight planning'] },
+  { group: 'pages', parent: 'page.travel', key: 'travel.workspace', def: true, tr: ['Seyahat çalışma alanı', 'Eşya / ülke / ROI görünümleri, eşya özeti, ülke kartları, geçmiş grafiği, faction trafiği ve destinasyon tablosu · kapalıyken klasik liste'], en: ['Travel workspace', 'Item / country / ROI views, item summary, country cards, history chart, faction traffic and destinations table · off shows the classic list'] },
   { group: 'pages', key: 'page.war', def: true, tr: ['Savaş Hedefleri', 'Fair Fight hedef önerileri'], en: ['War Targets', 'Fair Fight target suggestions'] },
   { group: 'pages', parent: 'page.war', key: 'war.groups', def: true, tr: ['Hedef grupları', 'Rakipleri gruplara ayır ve gruba göre filtrele · bu bilgisayarda saklanır'], en: ['Target groups', 'Sort enemies into groups and filter by group · saved on this computer'] },
   { group: 'pages', parent: 'page.war', key: 'war.payout', def: true, tr: ['Ranked War ödeme planlayıcı', 'Respect/hit dağılımı, tavan ödeme, hazır Faction Bank linki ve CSV dışa aktarma'], en: ['Ranked War payout planner', 'Respect/hit split, member caps, prefilled Faction Bank links and CSV export'] },
@@ -61,9 +62,7 @@ const FEATURE_DEFS = [
   { group: 'notify', key: 'notify.oc', def: true, tr: ["OC: eşyan eksik, planlama bitti ya da OC'n bitti", ''], en: ['OC: your item is missing, planning finished or your OC ended', ''] },
   { group: 'notify', key: 'notify.factionOc', def: true, tr: ["Faction OC: geciken ya da eşyası eksik OC (lider ve yetkililer)", ''], en: ['Faction OC: delayed OCs or OCs missing an item (leader and authorized positions)', ''] },
   { group: 'notify', key: 'notify.travelRadar', def: true, tr: ['Faction Travel Radar: yaklaşan iniş ve uçuş geçişleri', ''], en: ['Faction Travel Radar: approaching landings and flight transitions', ''] },
-  { group: 'notify', key: 'notify.warEvents', def: true, tr: ['Savaş ve chain: savaş başlangıcı, bitişi ve hedef eşikleri', ''], en: ['War & chain: war start, end and score thresholds', ''] },
-  { group: 'notify', key: 'notify.companySummary', def: true, tr: ['Şirket 18:00 TCT stok siparişi özeti', ''], en: ['Company 18:00 TCT stock order summary', ''] },
-  { group: 'notify', key: 'notify.priceAlert', def: true, tr: ['Borsa / piyasa fiyat eşiği uyarıları', ''], en: ['Stock / market price threshold alerts', ''] },
+  { group: 'notify', key: 'notify.priceAlert', def: true, tr: ['Borsa / piyasa fiyat eşiği uyarıları', 'Eşikler yalnızca Borsa sayfası açıkken kontrol edilir'], en: ['Stock / market price threshold alerts', 'Thresholds are checked only while the Stock Market page is open'] },
   { group: 'notify', key: 'notify.restock', def: true, tr: ['Takip ettiğin ürün (★): kalkış zamanı ve restock', ''], en: ['Watched item (★): departure time and restock', ''] },
   { group: 'notify', key: 'notify.shoplift', def: true, tr: ['Shoplifting: takip ettiğin (★) mağazada bütün güvenlik kapandı', ''], en: ['Shoplifting: all security down at a watched (★) store', ''] },
   { group: 'notify', key: 'notify.events', def: true, tr: ['Etkinlik başladı (Easter, Trick or Treat, Christmas Town)', ''], en: ['Event started (Easter, Trick or Treat, Christmas Town)', ''] },
@@ -104,6 +103,7 @@ const FEATURE_DEFS = [
   { group: 'app', key: 'app.loopGuard', def: true, tr: ['Kendi kendine dönen sekmeyi durdur', "Sen dokunmadan bir dakikada 8'den fazla sayfa açan Torn sekmesini durdurur · çok hızlı döngüler her zaman durdurulur"], en: ['Stop self-navigating tabs', 'Stops a Torn tab that opens more than 8 pages in a minute without you touching it · very fast loops are always stopped'] },
   { group: 'app', key: 'app.feedback', def: true, tr: ['Geri bildirim butonu', 'Üst çubukta: istek, öneri ve hatalar e-posta ile geliştiriciye gider'], en: ['Feedback button', 'In the top bar: requests, suggestions and bugs go to the developer by email'] },
   { group: 'app', key: 'app.updates', def: true, tr: ['Otomatik güncelleme kontrolü', 'Açılışta ve dakikada bir kontrol · yeni sürümde bildirim'], en: ['Automatic update check', 'Checks on startup and every minute · prompts for new versions'] },
+  { group: 'app', key: 'app.ops', def: true, tr: ['Kontrol ve Operasyon paneli', 'Ayarlar → Genel: veri kaynaklarının durumu, faction toplama kapsamı, bildirim kuyruğu ve erişim denetimi'], en: ['Control & Operations panel', 'Settings → General: data source health, faction collection coverage, notification outbox and access audit'] },
   { group: 'app', key: 'app.weav3r', def: true, tr: ['Weav3r kısayolu', 'Üst çubukta weav3r.dev kısayolu'], en: ['Weav3r shortcut', 'weav3r.dev shortcut in the top bar'] },
   { group: 'app', key: 'app.premium', def: true, tr: ['Premium üyelik bağlantısı', "Üyeliğini otomatik eşleştirir: API key'in yalnızca Torn ID'ni doğrulamak için lrxe8.com/torn-premium adresine gönderilir ve orada saklanmaz. Kapalıyken üyelik servisine hiçbir şey gönderilmez."], en: ['Premium membership connection', 'Matches your membership automatically: your API key is sent to lrxe8.com/torn-premium only to verify your Torn ID and is not stored there. Off: nothing is sent to the membership service.'] },
   { group: 'app', key: 'app.premiumPromos', def: true, tr: ['Premium modül kartları', 'Savaş, Seyahat, Merit, Araçlar ve Ayarlar sayfalarındaki Premium kartları · Premium sayfası her zaman açık kalır'], en: ['Premium module cards', 'Premium cards on the War, Travel, Merits, Tools and Settings pages · the Premium page always stays available'] },
@@ -338,7 +338,7 @@ function notifyEvents() {
         ev.push({
           type: 'notify.restock', id: k, at: (it.nextRestock - c.minutes * mult * 60) * 1000 - state.skew,
           title: `✈ ${tr('Kalkış zamanı', 'Time to fly')}: ${c.name}`,
-          body: tr(`Şimdi uçarsan ${it.name} restock'una (${hhmm(it.nextRestock)}) yetişirsin`, `Fly now to land at the ${it.name} restock (${hhmm(it.nextRestock)})`),
+          body: tr(`Şimdi uçarsan ${it.name} restock'una (${tvTct(it.nextRestock)} TCT) yetişirsin`, `Fly now to land at the ${it.name} restock (${tvTct(it.nextRestock)} TCT)`),
           url: 'https://www.torn.com/travelagency.php',
         });
       }
@@ -570,11 +570,16 @@ const travelState = {
   histMetric: lsGet('tt.travel.histMetric', 'stock'), // stock | price | profit | forecast
   histHours: Number(lsGet('tt.travel.histHours', 24)) || 24,
   trafficHours: Number(lsGet('tt.travel.trafficHours', 24)) || 24,
-  blocks: (() => {
-    const raw = lsList('tt.travel.blocks');
-    return new Set(raw.length ? raw : ['summary', 'countries', 'traffic', 'history', 'planner', 'destinations']);
-  })(),
+  // Nothing saved -> every block; a saved selection is kept even when every block is switched off.
+  blocks: window.LRXTravelWorkspace
+    ? LRXTravelWorkspace.parseBlockPrefs(lsGet('tt.travel.blocks', null))
+    : new Set(['summary', 'countries', 'traffic', 'history', 'planner', 'destinations']),
 };
+// Travel workspace switch: off returns the page to the classic list (no view tabs, no workspace blocks).
+const tvWorkspaceOn = () => feat('travel.workspace') && Boolean(window.LRXTravelWorkspace);
+const tvViewMode = () => (tvWorkspaceOn() ? travelState.viewMode : 'roi');
+// Faction members' flights are shown only where the Faction page and its Travel Radar are on.
+const tvTrafficAllowed = () => !viewHidden('faction') && feat('faction.travelRadar');
 function saveTravelPrefs() {
   const t = travelState;
   lsSet('tt.travel.cap', String(t.cap)); lsSet('tt.travel.method', t.method); lsSet('tt.travel.stock', t.stock);
@@ -590,6 +595,10 @@ const travelMethod = () => {
   return travelState.method || (TRAVEL_METHODS[d?.method] ? d.method : 'Standard');
 };
 const hhmm = (sec) => new Date(sec * 1000 - state.skew).toLocaleTimeString(state.lang === 'en' ? 'en-GB' : 'tr-TR', { hour: '2-digit', minute: '2-digit' });
+// Travel times are Torn City Time (UTC): "HH:MM", with the date when the moment is not today in TCT.
+const tvTct = (sec) => (window.LRXTravelWorkspace
+  ? LRXTravelWorkspace.formatTct(sec, { nowSec: nowTct() / 1000, lang: state.lang === 'en' ? 'en' : 'tr' })
+  : new Date(sec * 1000).toISOString().slice(11, 16));
 const mins = (m) => (m == null ? '—' : m >= 60 ? `${Math.floor(m / 60)}${tr('sa', 'h')} ${String(Math.round(m % 60)).padStart(2, '0')}${tr('dk', 'm')}` : `${Math.round(m)}${tr('dk', 'm')}`);
 function tvFmt(s) {
   if (s <= 0) return s > -900 ? tr('şimdi', 'now') : tr(`${Math.round(-s / 60)}dk gecikti`, `${Math.round(-s / 60)}m late`);
@@ -655,6 +664,7 @@ function travelRows({ ignoreStock = false } = {}) {
   const now = nowTct() / 1000;
   const cap = Math.max(1, t.cap);
   const q = t.q.trim().toLowerCase();
+  const view = tvViewMode();
   const rows = [];
   for (const c of d.countries) {
     if (!c.minutes) continue;
@@ -664,11 +674,11 @@ function travelRows({ ignoreStock = false } = {}) {
     const arrive = now + oneWay * 60;
     const staleObs = c.update && (now - c.update) > 30 * 60;
     for (const it of c.items) {
-      if (t.viewMode === 'item' && t.selectedItemId && Number(it.id) !== Number(t.selectedItemId)) continue;
+      if (view === 'item' && t.selectedItemId && Number(it.id) !== Number(t.selectedItemId)) continue;
       const key = `${c.code}:${it.id}`;
       const watched = t.watch.has(key);
       if (t.watchOnly && !watched) continue;
-      if (!watched && t.viewMode !== 'item' && (it.profit == null || it.profit <= 0)) continue;
+      if (!watched && view !== 'item' && (it.profit == null || it.profit <= 0)) continue;
       if (t.type !== 'all' && it.type !== t.type) continue;
       if (q && !it.name.toLowerCase().includes(q)) continue;
       const st = stockStatus(it, now, arrive);
@@ -695,11 +705,12 @@ function renderTravelHistorySvg(hist) {
   const W = 680, H = 175, padL = 48, padR = 14, padT = 16, padB = 26;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   const minT = hist.nowSec - hist.windowHours * 3600;
-  const maxT = hist.metric === 'forecast' ? hist.nowSec + 2 * 3600 : hist.nowSec;
+  // The forecast view runs to the end of the forecast (cut at 12 h by buildHistorySeries), at least 2 h past now.
+  const maxT = hist.metric === 'forecast' ? Math.max(hist.nowSec + 2 * 3600, hist.forecastEndSec || 0) : hist.nowSec;
   const spanT = Math.max(1, maxT - minT);
   const allPts = [...(hist.points || []), ...(hist.metric === 'forecast' ? (hist.forecastPoints || []) : [])];
   if (!allPts.length) {
-    return `<div class="sub-text">${tr('Bu pencere için henüz stok/fiyat geçmişi birikmedi (3 dakikada bir örneklenir).', 'No stock/price history collected for this window yet (sampled every 3 min).')}</div>`;
+    return `<div class="sub-text">${tr('Bu pencere için henüz stok/fiyat geçmişi birikmedi (30 dakikalık adımlarla tutulur).', 'No stock/price history collected for this window yet (kept in 30-minute steps).')}</div>`;
   }
   const vals = allPts.map((p) => Number(p.v) || 0);
   const maxV = Math.max(10, ...vals);
@@ -720,8 +731,9 @@ function renderTravelHistorySvg(hist) {
     }
   }
   if (pts.length === 1) {
+    // One reading: it holds from the moment it was taken, not across the whole window.
     const y = yOf(pts[0].v).toFixed(1);
-    stepPath = `M${padL},${y} L${(padL + plotW).toFixed(1)},${y}`;
+    stepPath = `M${xOf(pts[0].t).toFixed(1)},${y} L${xOf(hist.nowSec).toFixed(1)},${y}`;
   }
 
   let forecastPath = '';
@@ -733,19 +745,19 @@ function renderTravelHistorySvg(hist) {
   const restockMarks = (hist.restockEvents || []).map((ev) => {
     const x = xOf(ev.t).toFixed(1);
     const y = (yOf(ev.v) - 6).toFixed(1);
-    return `<text x="${x}" y="${y}" text-anchor="middle" class="tv-hist-restock-mark"><title>Restock · ${hhmm(ev.t)} TCT · ${n0(ev.v)}</title>▲</text>`;
+    return `<text x="${x}" y="${y}" text-anchor="middle" class="tv-hist-restock-mark"><title>Restock · ${tvTct(ev.t)} TCT · ${n0(ev.v)}</title>▲</text>`;
   }).join('');
 
   const srcMarks = (hist.sourceChanges || []).map((sc) => {
     const x = xOf(sc.t).toFixed(1);
-    return `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" class="tv-hist-src-line"><title>${esc(sc.from)} → ${esc(sc.to)} (${hhmm(sc.t)} TCT)</title></line>`;
+    return `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" class="tv-hist-src-line"><title>${esc(sc.from)} → ${esc(sc.to)} (${tvTct(sc.t)} TCT)</title></line>`;
   }).join('');
 
   const fmtVal = (v) => (hist.metric === 'price' || hist.metric === 'profit') ? cmoney(v) : n0(v);
   const dots = pts.slice(-24).map((p) => {
     const x = xOf(p.t).toFixed(1);
     const y = yOf(p.v).toFixed(1);
-    const tip = `${p.source} · ${hhmm(p.t)} TCT · ${fmtVal(p.v)}${p.isRestock ? ' (Restock ▲)' : ''}`;
+    const tip = `${p.source} · ${tvTct(p.t)} TCT · ${fmtVal(p.v)}${p.isRestock ? ' (Restock ▲)' : ''}`;
     return `<circle cx="${x}" cy="${y}" r="3.2" tabindex="0" class="tv-hist-dot" aria-label="${esc(tip)}"><title>${esc(tip)}</title></circle>`;
   }).join('');
 
@@ -755,8 +767,12 @@ function renderTravelHistorySvg(hist) {
     <line x1="${padL}" y1="${padT + plotH}" x2="${padL + plotW}" y2="${padT + plotH}" class="tv-hist-grid"/>
     <text x="${padL - 6}" y="${padT + 4}" text-anchor="end" class="tv-hist-axis">${esc(fmtVal(maxV))}</text>
     <text x="${padL - 6}" y="${padT + plotH}" text-anchor="end" class="tv-hist-axis">${esc(fmtVal(minV))}</text>
-    <text x="${padL}" y="${H - 6}" class="tv-hist-axis">-${hist.windowHours}s</text>
-    <text x="${padL + plotW}" y="${H - 6}" text-anchor="end" class="tv-hist-axis">${tr('Şimdi (TCT)', 'Now (TCT)')}</text>
+    <text x="${padL}" y="${H - 6}" class="tv-hist-axis">${tr(`-${hist.windowHours} sa`, `-${hist.windowHours}h`)}</text>
+    ${maxT > hist.nowSec
+      ? `<line x1="${xOf(hist.nowSec).toFixed(1)}" y1="${padT}" x2="${xOf(hist.nowSec).toFixed(1)}" y2="${padT + plotH}" class="tv-hist-grid"/>
+        ${padL + plotW - xOf(hist.nowSec) >= 100 ? `<text x="${xOf(hist.nowSec).toFixed(1)}" y="${H - 6}" text-anchor="middle" class="tv-hist-axis">${tr('Şimdi', 'Now')}</text>` : ''}
+        <text x="${padL + plotW}" y="${H - 6}" text-anchor="end" class="tv-hist-axis">${tvTct(maxT)} TCT</text>`
+      : `<text x="${padL + plotW}" y="${H - 6}" text-anchor="end" class="tv-hist-axis">${tr('Şimdi (TCT)', 'Now (TCT)')}</text>`}
     ${srcMarks}
     ${stepPath ? `<path d="${stepPath}" class="tv-hist-line"/>` : ''}
     ${forecastPath ? `<path d="${forecastPath}" class="tv-hist-forecast"/>` : ''}
@@ -771,26 +787,17 @@ function renderTrafficSvg(tf) {
   if (!tf.series || !tf.series.length) {
     return `<div class="sub-text">${tr('Henüz faction seyahat trafiği örneği birikmedi. Faction sayfası veya arka plan yoklaması çalıştıkça otomatik birikir.', 'No faction travel traffic samples collected yet. Automatically accumulates as Faction polls run.')}</div>`;
   }
-  const minT = tf.fromMs, maxT = tf.toMs, spanT = Math.max(1, maxT - minT);
-  const maxV = Math.max(4, ...tf.series.map((s) => s.active || 0));
-  const xOf = (ms) => Math.max(padL, Math.min(padL + plotW, padL + ((ms - minT) / spanT) * plotW));
-  const yOf = (v) => padT + plotH - (Math.min(maxV, Math.max(0, v)) / maxV) * plotH;
-  const segPaths = (tf.segments || []).map((seg) => {
-    let d = '';
-    for (let i = 0; i < seg.length; i++) {
-      const x = xOf(seg[i].at).toFixed(1), y = yOf(seg[i].active).toFixed(1);
-      if (i === 0) d += `M${x},${y}`;
-      else d += ` L${x},${yOf(seg[i - 1].active).toFixed(1)} L${x},${y}`;
-    }
-    return `<path d="${d}" class="tv-traffic-line"/>`;
-  }).join('');
+  // Contiguous samples are a step line; a lone sample (gaps > 25 min on both sides) is a dot.
+  const ch = LRXTravelWorkspace.buildTrafficChart(tf, { W, H, padL, padR, padT, padB });
+  const segPaths = ch.paths.map((d) => `<path d="${d}" class="tv-traffic-line"/>`).join('')
+    + ch.dots.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="3.2" class="tv-traffic-dot"><title>${tvTct(Math.floor(p.at / 1000))} TCT · ${p.active}</title></circle>`).join('');
   return `<svg class="tv-hist-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${tr('Faction seyahat trafiği grafiği', 'Faction travel traffic chart')}">
     <line x1="${padL}" y1="${padT}" x2="${padL + plotW}" y2="${padT}" class="tv-hist-grid"/>
     <line x1="${padL}" y1="${padT + plotH}" x2="${padL + plotW}" y2="${padT + plotH}" class="tv-hist-grid"/>
-    <text x="${padL - 5}" y="${padT + 4}" text-anchor="end" class="tv-hist-axis">${maxV}</text>
+    <text x="${padL - 5}" y="${padT + 4}" text-anchor="end" class="tv-hist-axis">${ch.maxV}</text>
     <text x="${padL - 5}" y="${padT + plotH}" text-anchor="end" class="tv-hist-axis">0</text>
-    <text x="${padL}" y="${H - 5}" class="tv-hist-axis">-${tf.windowHours}s</text>
-    <text x="${padL + plotW}" y="${H - 5}" text-anchor="end" class="tv-hist-axis">TCT</text>
+    <text x="${padL}" y="${H - 5}" class="tv-hist-axis">${tr(`-${tf.windowHours} sa`, `-${tf.windowHours}h`)}</text>
+    <text x="${padL + plotW}" y="${H - 5}" text-anchor="end" class="tv-hist-axis">${tr('Şimdi (TCT)', 'Now (TCT)')}</text>
     ${segPaths}
   </svg>`;
 }
@@ -814,34 +821,39 @@ function renderTravel() {
 
   const opt = (v, label, cur) => `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${label}</option>`;
   const countryChips = d.countries.filter((c) => c.minutes).map((c) => `<button class="tv-cbtn ${t.countries.has(c.code) ? 'active' : ''}" data-country="${c.code}" title="${esc(c.name)}"><span lang="en">${esc(c.name)}</span> <small>${mins(c.minutes * mult)}</small></button>`).join('');
-  const blockBtn = (id, labelTr, labelEn) => `<button type="button" class="pill sm ${t.blocks.has(id) ? 'active' : ''}" data-tv-block="${id}">${tr(labelTr, labelEn)}</button>`;
-
-  $('#travel-body').innerHTML = `
+  const blockBtn = (id, labelTr, labelEn) => `<button type="button" class="pill sm ${t.blocks.has(id) ? 'active' : ''}" data-tv-block="${id}" aria-pressed="${t.blocks.has(id)}">${tr(labelTr, labelEn)}</button>`;
+  const view = tvViewMode();
+  const viewBtn = (id, icon, labelTr, labelEn) => `<button type="button" class="pill ${view === id ? 'active' : ''}" data-tv-view="${id}" role="tab" aria-selected="${view === id}">${icon} ${tr(labelTr, labelEn)}</button>`;
+  const workspace = tvWorkspaceOn();
+  // Travel workspace off (Settings → Pages): the classic page, i.e. planner, filters and the item list only.
+  const head = workspace ? `
     <article class="glass card tv-ws-head">
       <div class="tv-ws-bar">
         <div class="tv-ws-views" role="tablist" aria-label="${tr('Seyahat görünümü', 'Travel view')}">
-          <button type="button" class="pill ${t.viewMode === 'item' ? 'active' : ''}" data-tv-view="item">📦 ${tr('Eşyaya göre', 'By Item')}</button>
-          <button type="button" class="pill ${t.viewMode === 'country' ? 'active' : ''}" data-tv-view="country">🌍 ${tr('Ülkeye göre', 'By Country')}</button>
-          <button type="button" class="pill ${t.viewMode === 'roi' ? 'active' : ''}" data-tv-view="roi">📈 ${tr('Seyahat ROI', 'Travel ROI')}</button>
+          ${viewBtn('item', '📦', 'Eşyaya göre', 'By Item')}
+          ${viewBtn('country', '🌍', 'Ülkeye göre', 'By Country')}
+          ${viewBtn('roi', '📈', 'Seyahat ROI', 'Travel ROI')}
         </div>
         <div class="tv-ws-blocks">
           <span class="muted">${tr('Bloklar:', 'Blocks:')}</span>
           ${blockBtn('summary', 'Özet', 'Summary')}
           ${blockBtn('countries', 'Ülke Kartları', 'Countries')}
-          ${blockBtn('traffic', 'Faction Trafiği', 'Traffic')}
+          ${tvTrafficAllowed() ? blockBtn('traffic', 'Faction Trafiği', 'Traffic') : ''}
           ${blockBtn('history', 'Geçmiş Grafiği', 'History')}
           ${blockBtn('planner', '24s Planlayıcı', '24h Planner')}
           ${blockBtn('destinations', 'Destinasyonlar', 'Destinations')}
         </div>
       </div>
-    </article>
-    <div id="tv-planner" ${t.blocks.has('planner') ? '' : 'hidden'}></div>
+    </article>` : '';
+
+  $('#travel-body').innerHTML = `${head}
+    <div id="tv-planner" ${!workspace || t.blocks.has('planner') ? '' : 'hidden'}></div>
     <article class="glass card tv-controls">
       <div class="tv-row">
         <input class="input" id="tv-q" placeholder="${tr('Ürün ara… (ör. Xanax, Plushie)', 'Search items… (e.g. Xanax, Plushie)')}" value="${esc(t.q)}">
-        <label class="tv-item-pick">${tr('Odak eşya', 'Focus item')}
+        ${workspace ? `<label class="tv-item-pick">${tr('Odak eşya', 'Focus item')}
           <select id="tv-item-sel">${allItems.map((it) => opt(it.id, `${esc(it.name)} (${cmoney(it.profit)})`, t.selectedItemId)).join('')}</select>
-        </label>
+        </label>` : ''}
         <div class="tv-countries"><button class="tv-cbtn ${t.countries.size ? '' : 'active'}" data-country="*">${tr('Tüm ülkeler', 'All countries')}</button>${countryChips}</div>
       </div>
       <div class="tv-row tv-filters">
@@ -864,7 +876,8 @@ function renderTravelResults() {
   const d = travelState.data, box = $('#tv-results');
   if (!d || !box) return;
   const t = travelState;
-  const ws = window.LRXTravelWorkspace;
+  const ws = tvWorkspaceOn() ? window.LRXTravelWorkspace : null; // null: classic page without workspace blocks
+  const view = tvViewMode();
   const now = nowTct() / 1000;
   const method = travelMethod();
   const mult = TRAVEL_METHODS[method] || 1;
@@ -880,8 +893,8 @@ function renderTravelResults() {
     <article class="glass card tv-ws-summary">
       <div class="card-head wrap">
         <div>
-          <h3>📦 ${esc(itemSummary.name)} <span class="chip">${esc(itemSummary.type || 'Item')}</span></h3>
-          <span class="muted">${tr('En iyi birim net kâr', 'Highest unit net profit')}: <b class="pos mono">${money(itemSummary.bestUnitNet)}</b> · ${tr('Birim alış', 'Unit cost')}: <span class="mono">${money(itemSummary.bestOffer.cost)}</span> (<span lang="en">${esc(itemSummary.bestOffer.countryName)}</span>) · ${tr('Gözlem', 'Observed')}: ${itemSummary.observedAtSec ? hhmm(itemSummary.observedAtSec) + ' TCT' : '—'}</span>
+          <h3>📦 ${esc(itemSummary.name)} <span class="chip">${itemSummary.type ? esc(itemSummary.type) : tr('Eşya', 'Item')}</span></h3>
+          <span class="muted">${tr('En iyi birim net kâr', 'Highest unit net profit')}: <b class="pos mono">${money(itemSummary.bestUnitNet)}</b> · ${tr('Birim alış', 'Unit cost')}: <span class="mono">${money(itemSummary.bestOffer.cost)}</span> (<span lang="en">${esc(itemSummary.bestOffer.countryName)}</span>) · ${tr('Gözlem', 'Observed')}: ${itemSummary.observedAtSec ? tvTct(itemSummary.observedAtSec) + ' TCT' : '—'}</span>
         </div>
         <span class="chip dim" title="${tr('Torn piyasa ortalaması saatlik referanstır; canlı ilan veya garanti satış fiyatı değildir', 'Torn market average is an hourly reference, never a live listing or guaranteed sale')}">ℹ ${tr('Piyasa referansı (canlı ilan değil)', 'Market reference (not live listing)')}</span>
       </div>
@@ -903,7 +916,7 @@ function renderTravelResults() {
   const countryCards = ws && t.blocks.has('countries')
     ? ws.buildCountryCards(d.countries, {
         selectedCountries: t.countries,
-        itemId: t.viewMode === 'item' ? t.selectedItemId : null,
+        itemId: view === 'item' ? t.selectedItemId : null,
         itemType: t.type,
         query: t.q,
         capacity: t.cap,
@@ -922,15 +935,18 @@ function renderTravelResults() {
       </div>
       <div class="tv-cgrid">
         ${countryCards.map((c) => {
-          const stockBadge = c.stockState === 'sold_out'
-            ? `<span class="chip danger">${tr('Tükendi (0)', 'Sold out (0)')}</span>`
-            : c.stockState === 'unknown'
-              ? `<span class="chip dim">${tr('Bilinmiyor', 'Unknown')}</span>`
-              : `<span class="chip green">${n0(c.stockQty)} ${tr('stok', 'in stock')}</span>`;
+          // Labelled by the item the card shows: an item you can buy now wins over a better sold-out one.
+          const stockBadge = {
+            in_stock: () => `<span class="chip green">${n0(c.stockQty)} ${tr('stokta', 'in stock')}</span>`,
+            sold_out: () => `<span class="chip danger">${tr('Tükendi (0)', 'Sold out (0)')}</span>`,
+            no_profit: () => `<span class="chip dim" title="${tr('Bu ülkedeki eşyaların hiçbiri piyasa −%5 ile kâr etmiyor', 'No item here makes a profit at market −5%')}">${tr('Kârlı eşya yok', 'Nothing profitable')}</span>`,
+            no_item: () => `<span class="chip dim">${tr('Eşleşen eşya yok', 'No matching item')}</span>`,
+          }[c.stockState]?.() || `<span class="chip dim" title="${tr('Bu ülke için stok gözlemi yok', 'No stock reading for this country')}">${tr('Bilinmiyor', 'Unknown')}</span>`;
           const staleBadge = c.stale ? `<span class="chip warn" title="${tr('Son stok gözlemi 30 dakikadan eski', 'Last stock reading is older than 30 min')}">⚠ ${tr('Veri eski', 'Stale data')}</span>` : '';
+          // Restock of the shown item only (an item in stock has none).
           const restockLine = c.nextRestockSec
-            ? `${tr('Restock', 'Restock')}: ${tvAt(c.nextRestockSec)} (${hhmm(c.nextRestockSec)} TCT)`
-            : `${tr('Gözlem yaşı', 'Obs. age')}: ${c.ageSec != null ? Math.round(c.ageSec / 60) + ' ' + tr('dk', 'm') : '—'}`;
+            ? `${tr('Restock', 'Restock')}: ${tvAt(c.nextRestockSec)} (${tvTct(c.nextRestockSec)} TCT)`
+            : c.ageSec != null ? `${tr('Gözlem yaşı', 'Obs. age')}: ${Math.round(c.ageSec / 60)} ${tr('dk', 'm')}` : '';
           return `<button type="button" class="tv-ccard ${c.selected ? 'active' : ''}" data-country="${esc(c.code)}" style="--cc-color:${c.color}">
             <div class="tv-ccard-top">
               <span class="tv-ccard-title"><i class="tv-ccard-dot" style="background:${c.color}"></i> ${c.flag} <b lang="en">${esc(c.name)}</b> <small class="mono">${esc(c.short)}</small></span>
@@ -941,7 +957,7 @@ function renderTravelResults() {
               <div class="tv-ccard-badges">${stockBadge}${staleBadge}</div>
             </div>
             <div class="tv-ccard-foot">
-              <span class="sub-text">${c.bestItem ? esc(c.bestItem.name) : tr('Eşya yok', 'No item')}</span>
+              <span class="sub-text">${c.bestItem ? esc(c.bestItem.name) : ''}</span>
               <span class="sub-text">${restockLine}</span>
             </div>
           </button>`;
@@ -970,7 +986,9 @@ function renderTravelResults() {
         <div class="card-head wrap">
           <div>
             <h3>📈 ${tr('Stok, Fiyat & Kâr Geçmişi', 'Stock, Price & Profit History')} · <span lang="en">${esc(focusCountry.name)}</span> — ${esc(focusItem.name)}</h3>
-            <span class="muted">${tr('Adım çizgisi = stok gözlemleri · ▲ = doğrulanmış restock · kesikli çizgi = tükenme/restock tahmini', 'Step-line = stock readings · ▲ = verified restock · dashed = depletion/restock forecast')}${hist.sourceChanges.length ? ` · <span class="warn">⇄ ${tr('Kaynak geçişi', 'Source switch')}: ${hist.sourceChanges.length}</span>` : ''}</span>
+            <span class="muted">${tr('Adım çizgisi = stok gözlemleri · ▲ = gözlenen restock', 'Step line = stock readings · ▲ = observed restock')}${t.histMetric === 'forecast'
+              ? ` · ${tr('kesikli çizgi = gözlenen satış hızıyla tükenme ya da son gözlenen restock miktarı', 'dashed = depletion at the observed sell rate, or the last observed restock size')}${hist.forecastPoints.length ? '' : ` (${tr('bu eşya için henüz yeterli gözlem yok', 'not enough readings for this item yet')})`}`
+              : ''}${hist.sourceChanges.length ? ` · <span class="warn">⇄ ${tr('Kaynak geçişi', 'Source switch')}: ${hist.sourceChanges.length}</span>` : ''}</span>
           </div>
           <div class="tv-hist-controls">
             <div class="btn-group">
@@ -985,9 +1003,9 @@ function renderTravelResults() {
       </article>`;
   }
 
-  // N2 Faction Travel Traffic Card
+  // N2 Faction Travel Traffic Card: faction members' flights, so only with the Faction page and its Travel Radar on
   let trafficHtml = '';
-  if (ws && t.blocks.has('traffic')) {
+  if (ws && t.blocks.has('traffic') && tvTrafficAllowed()) {
     const tfCode = t.countries.size === 1 ? [...t.countries][0] : '*';
     const tfCountryObj = tfCode !== '*' ? d.countries.find((c) => c.code === tfCode) : null;
     const restockEvents = tfCountryObj
@@ -1007,7 +1025,9 @@ function renderTravelResults() {
         <div class="card-head wrap">
           <div>
             <h3>🛫 ${tr('Faction Seyahat Trafiği', 'Faction Travel Traffic')} · ${tfCountryObj ? `<span lang="en">${esc(tfCountryObj.name)}</span>` : tr('Tüm Rotalar', 'All Routes')}</h3>
-            <span class="muted">${tr('Snapshot başına tekil üye sayımı · bilinmeyen rota ülke paydasına karıştırılmaz', 'Deduplicated per member per snapshot · unknown route kept separate from country denominator')}</span>
+            <span class="muted">${tfCountryObj
+              ? tr('Her ölçümde her üye bir kez sayılır · rotası bilinmeyen uçuşlar bu ülkeye yazılmaz', 'Each member counts once per reading · flights with an unknown route are not counted for this country')
+              : tr('Her ölçümde her üye bir kez sayılır · rotası okunamayan uçuşlar ayrı sayılır', 'Each member counts once per reading · flights whose route cannot be read are counted separately')}</span>
           </div>
           <div class="btn-group">
             ${[6, 12, 24].map((h) => `<button type="button" class="pill sm ${t.trafficHours === h ? 'active' : ''}" data-tv-thours="${h}">${h}${tr('s', 'h')}</button>`).join('')}
@@ -1017,11 +1037,11 @@ function renderTravelResults() {
           <span class="chip blue">${tr('Giden', 'Outbound')}: <b>${tf.latest.outbound}</b></span>
           <span class="chip green">${tr('Orada', 'Abroad')}: <b>${tf.latest.abroad}</b></span>
           <span class="chip tq">${tr('Dönen', 'Inbound')}: <b>${tf.latest.inbound}</b></span>
-          <span class="chip dim" title="${tr('Ülkesi doğrulanamayan uçuşlar ayrı gösterilir', 'Flights without a verified country are counted separately')}">${tr('Bilinmeyen rota', 'Unknown route')}: <b>${tf.latest.unknown}</b></span>
+          ${tf.latest.unknown != null ? `<span class="chip dim" title="${tr('Rotası okunamayan uçuşlar; ülkelere dağıtılmaz', 'Flights whose route cannot be read; never assigned to a country')}">${tr('Bilinmeyen rota', 'Unknown route')}: <b>${tf.latest.unknown}</b></span>` : ''}
           <span class="chip">${tr('Dönem değişimi', 'Period delta')}: ${deltaText}</span>
           <span class="chip">${tr('Ortalama', 'Average')}: <b class="mono">${tf.average}</b></span>
-          <span class="chip">${tr('Zirve', 'Peak')}: <b class="mono">${tf.peak.value}</b>${tf.peak.tct ? ` (${tf.peak.tct} TCT)` : ''}</span>
-          <span class="chip dim">${tr('Örnek / Kapsama', 'Samples / Coverage')}: <b class="mono">${tf.sampleCount}</b> (%${tf.coveragePct})</span>
+          <span class="chip">${tr('Zirve', 'Peak')}: <b class="mono">${tf.peak.value}</b>${tf.peak.at ? ` (${tvTct(Math.floor(tf.peak.at / 1000))} TCT)` : ''}</span>
+          <span class="chip dim">${tr('Örnek / Kapsama', 'Samples / Coverage')}: <b class="mono">${tf.sampleCount}</b> (${tr(`%${tf.coveragePct}`, `${tf.coveragePct}%`)})</span>
           <span class="chip dim">${tr('Gözlenen Restock', 'Observed Restocks')}: <b class="mono">${tf.restockCount}</b></span>
         </div>
         ${renderTrafficSvg(tf)}
@@ -1033,7 +1053,7 @@ function renderTravelResults() {
   if (ws && t.blocks.has('destinations')) {
     const destRows = ws.buildDestinationsTable(d.countries, {
       selectedCountries: t.countries,
-      itemId: t.viewMode === 'item' ? t.selectedItemId : null,
+      itemId: view === 'item' ? t.selectedItemId : null,
       itemType: t.type,
       query: t.q,
       availability: t.stock,
@@ -1041,12 +1061,20 @@ function renderTravelResults() {
       flightMultiplier: mult,
       nowSec: now,
     });
+    // "Add to plan" puts the route into the 24h departure planner as the next flight (removable there or here).
+    const canPlan = feat('travel.planner') && typeof window.addRouteToDeparturePlan === 'function';
+    const plannedKey = canPlan ? window.departurePlannerPreferredKey?.() : null;
+    const planBtn = (r) => {
+      if (!canPlan) return '';
+      const on = plannedKey === r.key;
+      return `<button type="button" class="btn sm ${on ? 'primary' : 'ghost'}" data-tv-addplan="${esc(r.key)}" data-tv-item-name="${esc(r.itemName)}" data-tv-country-name="${esc(r.countryName)}" aria-pressed="${on}" title="${on ? tr('Plandan çıkarmak için tıkla', 'Click to remove it from the plan') : tr('24 saatlik planda sonraki uçuş yap', 'Make it the next flight in the 24h plan')}">${on ? `✓ ${tr('Planda', 'In plan')}` : `+ ${tr('Planıma ekle', 'Add to plan')}`}</button>`;
+    };
     destinationsHtml = `
       <article class="glass card tv-ws-destinations">
         <div class="card-head wrap">
           <div>
             <h3>🧭 ${tr('Destinasyonlar & En İyi Kalkış Penceresi', 'Destinations & Best Departure Window')} <span class="chip">${destRows.length}</span></h3>
-            <span class="muted">${tr('Modellenmiş kâr = Piyasa −%5 referansı üzerinden tam kapasite tahmini · Planıma ekle ile 24s kadranı o rotaya kur', 'Modeled profit = full-capacity estimate using Market −5% reference · Click Add to plan to target that route in the 24h dial')}</span>
+            <span class="muted">${tr('Modellenmiş kâr = Piyasa −%5 referansı üzerinden tam kapasite tahmini', 'Modeled profit = full-capacity estimate using Market −5% reference')}${canPlan ? ` · ${tr('Planıma ekle: rota 24 saatlik planlayıcıda sonraki uçuş olur', 'Add to plan: the route becomes the next flight in the 24h planner')}` : ''} · ${tr('saatler TCT', 'times in TCT')}</span>
           </div>
         </div>
         ${destRows.length ? `<div class="tbl-wrap"><table class="tbl compact">
@@ -1062,14 +1090,14 @@ function renderTravelResults() {
           </tr></thead>
           <tbody>
             ${destRows.slice(0, 22).map((r) => `<tr>
-              <td>${r.flag} <b lang="en">${esc(r.countryName)}</b> ${r.stale ? `<span class="chip warn">⚠ ${tr('Eski', 'Stale')}</span>` : ''}</td>
-              <td><b>${esc(r.itemName)}</b> <span class="sub-text">(${n0(r.qty)} ${tr('stok', 'stock')})</span></td>
+              <td>${r.flag} <b lang="en">${esc(r.countryName)}</b> ${r.observed === false ? `<span class="chip dim">? ${tr('Gözlem yok', 'Not observed')}</span>` : r.stale ? `<span class="chip warn">⚠ ${tr('Eski', 'Stale')}</span>` : ''}</td>
+              <td><b>${esc(r.itemName)}</b> <span class="sub-text">(${r.observed === false ? tr('stok bilinmiyor', 'stock unknown') : `${n0(r.qty)} ${tr('stok', 'stock')}`})</span></td>
               <td class="num mono">${mins(r.oneWayMin)}</td>
-              <td>${r.restockWindowSec ? `${tvAt(r.restockWindowSec)} <span class="sub-text">(${hhmm(r.restockWindowSec)})</span>` : `<span class="muted">${r.qty > 0 ? tr('Şu an stokta', 'In stock now') : '—'}</span>`}</td>
-              <td>${r.bestDepartureSec <= now ? `<b class="pos">${tr('Şimdi kalk', 'Fly now')}</b>` : `<b class="mono">${hhmm(r.bestDepartureSec)} TCT</b> · ${tvAt(r.bestDepartureSec)}`}</td>
+              <td>${r.restockWindowSec ? `${tvAt(r.restockWindowSec)} <span class="sub-text">(${tvTct(r.restockWindowSec)})</span>` : `<span class="muted">${r.qty > 0 ? tr('Şu an stokta', 'In stock now') : '—'}</span>`}</td>
+              <td>${r.bestDepartureSec == null ? `<span class="muted" title="${tr('Stok bitti ve restock zamanı bilinmiyor', 'Sold out and the restock time is not known')}">—</span>` : r.bestDepartureSec <= now ? `<b class="pos">${tr('Şimdi kalk', 'Fly now')}</b>` : `<b class="mono">${tvTct(r.bestDepartureSec)} TCT</b> · ${tvAt(r.bestDepartureSec)}`}</td>
               <td class="num pos mono">${money(r.unitNetProfit)}</td>
               <td class="num tq-text mono"><b>${cmoney(r.modeledTripProfit)}</b> <span class="sub-text">(${cmoney(r.perHour)}/${tr('sa', 'h')})</span></td>
-              <td class="num"><button type="button" class="btn sm ghost" data-tv-addplan="${esc(r.countryCode)}" data-tv-item="${r.itemId}">+ ${tr('Planıma ekle', 'Add to plan')}</button></td>
+              <td class="num">${planBtn(r)}</td>
             </tr>`).join('')}
           </tbody>
         </table></div>` : emptyBox(tr('Filtreye uyan destinasyon yok', 'No destinations match the filters'), '')}
@@ -1089,31 +1117,46 @@ function renderTravelResults() {
     const it = r.it;
     const sub = it.qty > 0 && it.emptyAt ? `<div class="sub-text">≈ ${tvAt(it.emptyAt)} ${tr('sonra biter', 'until empty')}${it.rate ? ` · −${n0(it.rate)}/${tr('dk', 'min')}` : ''}</div>` : '';
     const staleTag = r.staleObs ? `<div class="sub-text warn">⚠ ${tr('Veri eski (>30dk)', 'Stale data (>30m)')}</div>` : '';
+    if (!r.c.update) return `<span class="muted" title="${tr('Bu ülke için stok gözlemi yok', 'No stock reading for this country')}">${tr('Gözlem yok', 'Not observed')}</span>`;
     return `<span class="${it.qty <= 0 ? 'neg' : ''}">${it.qty <= 0 ? tr('Tükendi (0)', 'Sold out (0)') : n0(it.qty)}</span>${sub}${staleTag}`;
   };
+  const unknownChip = `<span class="chip dim">? ${tr('Bilinmiyor', 'Unknown')}</span>`;
+  // By Country groups the rows under a header per country, so the Country column is left out there.
+  const grouped = Boolean(ws) && view === 'country';
   const restockCell = (r) => {
     const it = r.it;
-    if (it.nextRestock) return `${tvAt(it.nextRestock)}<div class="sub-text">${hhmm(it.nextRestock)} · ${it.restockSrc === 'Prometheus' ? 'Prometheus' : tr('tahmin', 'estimate')}</div>`;
-    if (it.qty > 0 && it.lastRestock) return `<span class="muted">${tr('son', 'last')} ${hhmm(it.lastRestock)}</span>`;
+    if (it.nextRestock) return `${tvAt(it.nextRestock)}<div class="sub-text">${tvTct(it.nextRestock)} · ${it.restockSrc === 'Prometheus' ? 'Prometheus' : tr('tahmin', 'estimate')}</div>`;
+    if (it.qty > 0 && it.lastRestock) return `<span class="muted">${tr('son', 'last')} ${tvTct(it.lastRestock)}</span>`;
     return '<span class="muted">—</span>';
   };
+  const itemRow = (r) => `<tr class="${r.watched ? 'watched' : ''}"><td>${star(r)}</td>${grouped ? '' : `<td><span lang="en">${esc(r.c.name)}</span><div class="sub-text">${mins(r.oneWay)}</div></td>`}<td>${ws ? `<button type="button" class="link-btn" data-tv-focus-item="${r.it.id}"><b>${esc(r.it.name)}</b></button>` : `<b>${esc(r.it.name)}</b>`} <span class="sub-text">${esc(r.it.type)}</span></td><td class="num">${money(r.it.cost)}<div class="sub-text">${money(r.it.market)}</div></td><td class="num ${(r.it.profit || 0) > 0 ? 'pos' : 'neg'}">${money(r.it.profit || 0)}</td><td class="num">${stockCell(r)}</td><td>${restockCell(r)}</td><td>${r.c.update ? statusChip(r.st) : unknownChip}</td><td class="num">${money(r.trip)} <span class="sub-text">×${r.units}</span></td><td class="num tq-text"><b>${cmoney(r.perHour)}</b></td></tr>`;
+  // By Country: one group per country in flight-time order (at most 8 rows each, in the chosen sort).
+  const PER_COUNTRY = 8;
+  const itemBody = grouped
+    ? ws.groupRowsByCountry(rows).map((g) => {
+        const meta = ws.COUNTRY_META[g.code];
+        const more = g.rows.length - PER_COUNTRY;
+        return `<tr class="tv-group-row"><th colspan="9"><span class="tv-group-title">${meta?.flag || ''} <b lang="en">${esc(g.name)}</b></span> <span class="sub-text">${mins(g.oneWay)} · ${g.rows.length} ${tr('eşya', g.rows.length === 1 ? 'item' : 'items')} · ${tr('en iyi', 'best')} <b class="tq-text">${cmoney(g.bestPerHour)}/${tr('sa', 'h')}</b>${more > 0 ? ` · ${tr(`${more} tanesi gösterilmiyor`, `${more} more not shown`)}` : ''}</span></th></tr>`
+          + g.rows.slice(0, PER_COUNTRY).map(itemRow).join('');
+      }).join('')
+    : rows.slice(0, 60).map(itemRow).join('');
+  // By Country puts the country cards first; the other views keep the item summary first.
+  const wsBlocks = view === 'country'
+    ? [countryCardsHtml, destinationsHtml, trafficHtml, historyHtml, summaryHtml]
+    : [summaryHtml, countryCardsHtml, trafficHtml, historyHtml, destinationsHtml];
   box.innerHTML = `
-    ${summaryHtml}
-    ${countryCardsHtml}
-    ${trafficHtml}
-    ${historyHtml}
-    ${destinationsHtml}
+    ${wsBlocks.join('')}
     <div class="grid travel-best">${best.slice(0, 6).map((r) => `<div class="glass kpi"><div class="label"><span lang="en">${esc(r.c.name)}</span> · ${mins(r.oneWay)}</div><div class="value tq">${cmoney(r.perHour)}<span class="sub-text">/${tr('sa', 'h')}</span></div><div class="hint">${esc(r.it.name)} · ${cmoney(r.trip)} ${tr('sefer başı', 'per trip')}</div></div>`).join('') || emptyBox(tr('Filtreye uyan kârlı ürün yok', 'No profitable items match the filters'), '')}</div>
     <article class="glass card">
-      <div class="card-head"><div><h3>⟳ ${tr('Yaklaşan restocklar', 'Upcoming restocks')}</h3><span class="muted">${tr('Kalkış saati = restock anında inecek şekilde · ★ ile takip edersen kalkış ve stok bildirimi gelir', 'Departure times are set so you land right at the restock · star (★) an item to get departure and restock alerts')}</span></div></div>
+      <div class="card-head"><div><h3>⟳ ${tr('Yaklaşan restocklar', 'Upcoming restocks')}</h3><span class="muted">${tr('Kalkış saati = restock anında inecek şekilde · ★ ile takip edersen kalkış ve stok bildirimi gelir · saatler TCT', 'Departure times are set so you land right at the restock · star (★) an item to get departure and restock alerts · times in TCT')}</span></div></div>
       ${upcoming.length ? `<div class="tv-up">${upcoming.map((r) => {
         const depart = r.it.nextRestock - r.oneWay * 60;
         const go = depart > now
-          ? `${tr('Kalkış', 'Depart')} <b class="mono">${hhmm(depart)}</b> · ${tvAt(depart)}`
-          : `<b class="pos">${tr('Şimdi kalk', 'Fly now')}</b> · ${tr('varış', 'arrive')} ${hhmm(now + r.oneWay * 60)}`;
+          ? `${tr('Kalkış', 'Depart')} <b class="mono">${tvTct(depart)}</b> · ${tvAt(depart)}`
+          : `<b class="pos">${tr('Şimdi kalk', 'Fly now')}</b> · ${tr('varış', 'arrive')} ${tvTct(now + r.oneWay * 60)}`;
         return `<div class="tv-up-row ${r.watched ? 'watched' : ''}">
           ${star(r)}
-          <div class="tv-up-time"><b class="mono">${hhmm(r.it.nextRestock)}</b>${tvAt(r.it.nextRestock)}</div>
+          <div class="tv-up-time"><b class="mono">${tvTct(r.it.nextRestock)}</b>${tvAt(r.it.nextRestock)}</div>
           <div class="tv-up-item"><b>${esc(r.it.name)}</b><span class="sub-text"><span lang="en">${esc(r.c.name)}</span> · ${mins(r.oneWay)} · ${r.it.restockSrc === 'Prometheus' ? 'Prometheus' : tr('tahmin', 'estimate')}</span></div>
           <div class="tv-up-profit"><span class="pos mono">${money(r.it.profit)}</span><span class="sub-text">${cmoney(r.trip)} ${tr('sefer', 'per trip')}</span></div>
           <div class="tv-up-go">${go}</div>
@@ -1122,12 +1165,12 @@ function renderTravelResults() {
     </article>
     <article class="glass card">
       <div class="card-head wrap"><div><h3>${tr('Ürünler', 'Items')} <span class="chip">${rows.length}</span></h3><span class="muted">${tr('Kaynak', 'Source')}: ${src}${age != null ? ` · ${tr('en eski veri', 'oldest data')} <span data-tv-age="${oldest}">${age}</span> ${tr('dk', 'min')}` : ''} · ${tr('market = Torn ortalama değeri (saatlik), satış garantisi değil', "market = Torn's average value (hourly), not a guaranteed sale price")} · ${tr('uçak bileti hariç', 'excludes ticket cost')}</span>${travelState.error ? `<div class="sub-text neg">⚠ ${tr('Son yenileme başarısız', 'The last refresh failed')}: ${esc(travelState.error)}</div>` : ''}</div></div>
-      ${rows.length ? `<div class="tbl-wrap"><table class="tbl compact tv-table"><thead><tr><th></th><th>${tr('Ülke', 'Country')}</th><th>${tr('Ürün', 'Item')}</th><th class="num">${tr('Alış → Market', 'Cost → Market')}</th><th class="num">${tr('Adet kârı', 'Profit/unit')}</th><th class="num">${tr('Stok', 'Stock')}</th><th>${tr('Restock', 'Restock')}</th><th>${tr('Varışta', 'On arrival')}</th><th class="num">${tr('Sefer kârı', 'Per trip')}</th><th class="num">${tr('Saatlik', 'Per hour')}</th></tr></thead><tbody>
-      ${rows.slice(0, 60).map((r) => `<tr class="${r.watched ? 'watched' : ''}"><td>${star(r)}</td><td><span lang="en">${esc(r.c.name)}</span><div class="sub-text">${mins(r.oneWay)}</div></td><td><button type="button" class="link-btn" data-tv-focus-item="${r.it.id}"><b>${esc(r.it.name)}</b></button> <span class="sub-text">${esc(r.it.type)}</span></td><td class="num">${money(r.it.cost)}<div class="sub-text">${money(r.it.market)}</div></td><td class="num ${(r.it.profit || 0) > 0 ? 'pos' : 'neg'}">${money(r.it.profit || 0)}</td><td class="num">${stockCell(r)}</td><td>${restockCell(r)}</td><td>${statusChip(r.st)}</td><td class="num">${money(r.trip)} <span class="sub-text">×${r.units}</span></td><td class="num tq-text"><b>${cmoney(r.perHour)}</b></td></tr>`).join('')}
+      ${rows.length ? `<div class="tbl-wrap"><table class="tbl compact tv-table${grouped ? ' tv-grouped' : ''}"><thead><tr><th></th>${grouped ? '' : `<th>${tr('Ülke', 'Country')}</th>`}<th>${tr('Ürün', 'Item')}</th><th class="num">${tr('Alış → Market', 'Cost → Market')}</th><th class="num">${tr('Adet kârı', 'Profit/unit')}</th><th class="num">${tr('Stok', 'Stock')}</th><th>${tr('Restock (TCT)', 'Restock (TCT)')}</th><th>${tr('Varışta', 'On arrival')}</th><th class="num">${tr('Sefer kârı', 'Per trip')}</th><th class="num">${tr('Saatlik', 'Per hour')}</th></tr></thead><tbody>
+      ${itemBody}
       </tbody></table></div>` : emptyBox(tr('Filtreye uyan ürün yok', 'No items match the filters'), tr('Stok filtresini "Hepsi" yapmayı ya da ülke seçimini genişletmeyi dene.', 'Try setting Stock to "All" or selecting more countries.'))}
     </article>`;
   const plannerEl = $('#tv-planner');
-  if (plannerEl) plannerEl.hidden = !t.blocks.has('planner');
+  if (plannerEl) plannerEl.hidden = Boolean(ws) && !t.blocks.has('planner');
   window.renderDeparturePlanner?.();
 }
 
@@ -1212,18 +1255,28 @@ window.openTravelCountry = function openTravelCountry(code) {
       if (sel) sel.value = String(travelState.selectedItemId);
       return changed();
     }
+    // Add to plan: the route becomes the next flight of the 24h departure planner; a second click takes it out.
+    // The saved country filter is left alone.
     const addPlan = e.target.closest('[data-tv-addplan]');
     if (addPlan) {
-      const code = addPlan.dataset.tvAddplan;
-      const itemId = Number(addPlan.dataset.tvItem) || 0;
-      if (code) {
-        travelState.countries = new Set([code]);
-        if (itemId) travelState.selectedItemId = itemId;
-        travelState.blocks.add('planner');
-        saveTravelPrefs();
-        renderTravel();
-        toast(tr('Rota 24 saatlik kalkış planlayıcıya aktarıldı', 'Route focused in 24h departure planner'));
+      const key = addPlan.dataset.tvAddplan;
+      if (!key || typeof window.addRouteToDeparturePlan !== 'function') return;
+      if (window.departurePlannerPreferredKey?.() === key) {
+        window.removeRouteFromDeparturePlan?.();
+        toast(tr('Rota plandan çıkarıldı', 'Route removed from the plan'));
+        return renderTravelResults();
       }
+      if (!travelState.blocks.has('planner')) { travelState.blocks.add('planner'); saveTravelPrefs(); }
+      const res = window.addRouteToDeparturePlan(key, { itemName: addPlan.dataset.tvItemName || '', countryName: addPlan.dataset.tvCountryName || '' });
+      renderTravel();
+      const msg = {
+        planned: tr('Rota 24 saatlik planda sonraki uçuş oldu', 'Route added as the next flight of the 24h plan'),
+        unprofitable: tr('Rota eklenemedi: seçili satış fiyatıyla kâr etmiyor', 'Route not added: no profit at the selected sell price'),
+        no_window: tr('Rota eklenemedi: 24 saat içinde stok ya da restock tahmini yok', 'Route not added: no stock or restock estimate in the next 24 h'),
+        missing: tr('Rota eklenemedi: stok verisinde yok', 'Route not added: it is not in the stock data'),
+      }[res?.status];
+      if (msg) toast(msg);
+      $('#tv-planner')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
     }
     const cb = e.target.closest('[data-country]');
@@ -1250,6 +1303,9 @@ window.openTravelCountry = function openTravelCountry(code) {
     }
   });
 })();
+
+// Settings switches that change the page layout (travel.workspace, faction gates) redraw an open Travel page.
+FEATURE_HOOKS.push(() => { if (state.view === 'travel' && travelState.data && $('#tv-results')) renderTravel(); });
 
 /* Geri sayımlar + otomatik yenileme */
 setInterval(() => {

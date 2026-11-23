@@ -19,13 +19,24 @@
     watchOnly: lsGet('tt.dp.watchOnly', '0') === '1',
     optionsOpen: false,
     excluded: new Set(),
+    // Route added from the Travel page ("Add to plan"): { key: 'country:itemId', itemName, countryName, at }
+    preferred: (() => {
+      try {
+        const p = JSON.parse(lsGet('tt.dp.preferred', 'null'));
+        return p && typeof p.key === 'string' && /^[a-z]+:\d+$/.test(p.key) ? p : null;
+      } catch { return null; }
+    })(),
   };
+  const PREFERRED_TTL_SEC = 24 * 3600;
+  function setPreferred(p) {
+    plannerState.preferred = p;
+    lsSet('tt.dp.preferred', JSON.stringify(p));
+  }
 
-  const hhmmUtc = (sec) => {
-    if (!sec) return '—';
-    const d = new Date(sec * 1000);
-    return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
-  };
+  // TCT (UTC) clock times from the shared Travel helper: plain HH:MM inside the 24h plan, with a date for older rows.
+  const ws = () => window.LRXTravelWorkspace;
+  const hhmmUtc = (sec) => (sec ? ws()?.tctHm(sec) || new Date(sec * 1000).toISOString().slice(11, 16) : '—');
+  const tctDated = (sec) => ws()?.formatTct(sec, { nowSec: nowTct() / 1000, lang: state.lang === 'en' ? 'en' : 'tr' }) || hhmmUtc(sec);
   const hmsCountdown = (sec) => {
     const s = Math.max(0, Math.round(sec));
     const h = Math.floor(s / 3600);
@@ -85,7 +96,7 @@
       const x1 = pctX(Math.min(s.returnAt, plan.horizonEnd));
       const xLand = pctX(Math.min(s.arriveAt, plan.horizonEnd));
       const valText = cash ? cmoney(s.carry) : `+${cmoney(s.profit)}`;
-      const tip = `${s.itemName} · ${s.countryName} (×${s.units})\n${tr('Kalkış', 'Depart')}: ${hhmmUtc(s.departAt)} TCT → ${tr('İniş', 'Land')}: ${hhmmUtc(s.arriveAt)} → ${tr('Dönüş', 'Home')}: ${hhmmUtc(s.returnAt)}\n${tr('Kâr', 'Profit')}: +${money(s.profit)} · ${tr('Nakit', 'Cash')}: ${money(s.carry)}\n${tr('Bu durağı plandan çıkarmak için tıkla', 'Click to remove this stop from the plan')}`;
+      const tip = `${s.itemName} · ${s.countryName} (×${s.units})${s.preferred ? ` · ${tr('eklediğin rota', 'route you added')}` : ''}\n${tr('Kalkış', 'Depart')}: ${hhmmUtc(s.departAt)} TCT → ${tr('İniş', 'Land')}: ${hhmmUtc(s.arriveAt)} → ${tr('Dönüş', 'Home')}: ${hhmmUtc(s.returnAt)}\n${tr('Kâr', 'Profit')}: +${money(s.profit)} · ${tr('Nakit', 'Cash')}: ${money(s.carry)}\n${tr('Bu durağı plandan çıkarmak için tıkla', 'Click to remove this stop from the plan')}`;
       const next = idx === 0 ? ' is-next' : '';
       return `<div class="dp-seg${next}" style="${at(x0)};width:${Math.max(0.8, x1 - x0).toFixed(2)}%"></div>
         ${timeLabel(x0, 'start', 2, `${ICON.plane} ${hhmmUtc(s.departAt)}`, next)}
@@ -197,23 +208,26 @@
   // Mono/sans web fonts can finish loading after the first layout and change label widths.
   document.fonts?.ready?.then(() => { const stage = document.querySelector('#tv-planner .dp-tl-stage'); if (stage) layoutTimeline(stage); });
 
-  function renderClockDialView(plan, pinEval) {
-    const ws = window.LRXTravelWorkspace;
-    if (!ws) return '';
+  // Dial geometry of the last render: the 1 s tick moves the hand without re-rendering the planner.
+  let dialGeom = null;
+  const dialXY = (g, deg, rad) => {
+    const a = ((deg - 90) * Math.PI) / 180;
+    return [g.cx + rad * Math.cos(a), g.cy + rad * Math.sin(a)];
+  };
+
+  function renderClockDialView(plan, pinEval, activeStops) {
+    const tw = ws();
+    if (!tw) return '';
     const cash = plannerState.timelineMode === 'cash';
-    const activePlan = plannerState.pinnedPlan && Array.isArray(plannerState.pinnedPlan.stops)
-      ? { ...plan, stops: plannerState.pinnedPlan.stops }
-      : plan;
-    const dial = ws.buildClockDial(activePlan, {
+    const activePlan = { ...plan, stops: activeStops };
+    const dial = tw.buildClockDial(activePlan, {
       nowSec: plan.nowSec,
       selectedIndex: plannerState.selectedStopIndex,
     });
     const R = dial.radius;
     const cx = dial.cx, cy = dial.cy;
-    const toXY = (deg, rad) => {
-      const a = ((deg - 90) * Math.PI) / 180;
-      return [cx + rad * Math.cos(a), cy + rad * Math.sin(a)];
-    };
+    dialGeom = { R, cx, cy };
+    const toXY = (deg, rad) => dialXY(dialGeom, deg, rad);
     const arcSvgPath = (startDeg, endDeg, rad) => {
       let span = endDeg - startDeg;
       if (span <= 0) span += 360;
@@ -253,7 +267,7 @@
       const valText = cash ? money(s.carry) : `+${money(s.profit)}`;
       return `<div class="dp-chron-row ${sel ? 'is-selected' : ''}" data-dp-stop-idx="${idx}" tabindex="0" role="button">
         <span class="dp-chron-time mono">${hhmmUtc(s.departAt)} → ${hhmmUtc(s.returnAt)}</span>
-        <span class="dp-chron-route"><i class="dp-chron-dot" style="background:${esc(s.meta?.color || '#38bdf8')}"></i><b>${esc(s.countryName)}</b> · ${esc(s.itemName)} <small class="mono">×${s.units}</small></span>
+        <span class="dp-chron-route"><i class="dp-chron-dot" style="background:${esc(s.meta?.color || '#38bdf8')}"></i><b>${esc(s.countryName)}</b> · ${esc(s.itemName)} <small class="mono">×${s.units}</small>${s.preferred ? ` <span class="chip tq dp-added">${tr('Eklendi', 'Added')}</span>` : ''}</span>
         <span class="dp-chron-val mono ${cash ? '' : 'pos'}">${esc(valText)}</span>
         ${warns.map((w) => `<span class="chip warn">${esc(tr(w.label[0], w.label[1]))}</span>`).join('')}
         ${!plannerState.pinnedPlan ? `<button type="button" class="btn sm ghost" data-dp-exclude="${esc(s.key)}" title="${tr('Plandan çıkar', 'Remove from plan')}">✕</button>` : ''}
@@ -285,9 +299,17 @@
   function renderFlightHistory(fh) {
     if (!fh) return '';
     const entries = Array.isArray(fh.entries) ? fh.entries : [];
-    const statusBadge = fh.logAccess
+    // logAccess: true = last log read worked, false = refused/failed (logError 'ACCESS' = Torn code 16),
+    // null = not read yet since start or key change. logKeySet: false = no separate log key saved.
+    const statusBadge = fh.logAccess === true
       ? `<span class="chip green">✓ ${tr('Log kaynağı açık', 'Log source active')}</span>`
-      : `<span class="chip dim">ℹ ${tr('Log kapalı — manuel alış kayıtları gösteriliyor', 'Log off — showing manual cost records')}</span>`;
+      : fh.logKeySet === false
+        ? `<span class="chip dim">ℹ ${tr('Log anahtarı kayıtlı değil — yalnızca manuel kayıtlar', 'No log key set — manual records only')}</span>`
+        : fh.logAccess === false
+          ? (fh.logError === 'ACCESS'
+            ? `<span class="chip warn" title="${tr('Torn hata kodu 16', 'Torn error code 16')}">⚠ ${tr('Log anahtarının log erişimi yok — manuel kayıtlar gösteriliyor', 'Log key has no log access — showing manual records')}</span>`
+            : `<span class="chip warn" title="${esc(fh.logError || '')}">⚠ ${tr('Log okunamadı — manuel kayıtlar gösteriliyor', 'Log could not be read — showing manual records')}</span>`)
+          : `<span class="chip dim">… ${tr('Log durumu henüz kontrol edilmedi', 'Log status not checked yet')}</span>`;
     return `<div class="dp-fhist">
       <div class="dp-fhist-head">
         <button type="button" class="btn sm ghost" id="dp-fhist-toggle" aria-expanded="${plannerState.historyOpen}">
@@ -307,7 +329,7 @@
           </tr></thead>
           <tbody>
             ${entries.slice(0, 12).map((e) => `<tr>
-              <td class="mono">${e.ts ? hhmmUtc(Math.floor(e.ts / 1000)) + ' TCT' : '—'}</td>
+              <td class="mono">${e.ts ? tctDated(Math.floor(e.ts / 1000)) + ' TCT' : '—'}</td>
               <td><b>${esc(e.name)}</b></td>
               <td><span class="chip ${e.source === 'manual_cost' ? 'dim' : 'blue'}">${e.source === 'manual_cost' ? tr('Manuel Kayıt', 'Manual Record') : tr('Torn Log', 'Torn Log')}</span></td>
               <td class="num mono">×${n0(e.qty)}</td>
@@ -335,7 +357,7 @@
     const wallet = d.wallet != null ? d.wallet : null;
 
     const types = [...new Set((d.countries || []).flatMap((c) => (c.items || []).map((i) => i.type)).filter(Boolean))].sort();
-    const plan = LRXTravelPlanner.buildDeparturePlan({
+    const build = () => LRXTravelPlanner.buildDeparturePlan({
       countries: d.countries || [],
       nowSec,
       cap,
@@ -349,19 +371,35 @@
       watchOnly: plannerState.watchOnly,
       excludedKeys: plannerState.excluded,
       includeCurrentFlight: plannerState.includeCurrentFlight,
+      preferredKey: plannerState.preferred?.key || null,
     });
+    let plan = build();
+    // An added route is a one-off: dropped after 24 h, or once you are flying to / back from that country.
+    const pref = plannerState.preferred;
+    if (pref && (nowSec - (Number(pref.at) || 0) > PREFERRED_TTL_SEC || plan.currentFlight?.countryCode === pref.key.split(':')[0])) {
+      setPreferred(null);
+      plan = build();
+    }
     lastBuiltPlan = plan;
 
-    if (plannerState.selectedStopIndex >= (plan.stops?.length || 1)) {
+    // A pinned plan whose last flight is already back home is over: drop it instead of drawing yesterday's arcs.
+    if (plannerState.pinnedPlan && ws()?.pinnedPlanExpired(plannerState.pinnedPlan, nowSec)) {
+      plannerState.pinnedPlan = null;
+      lsSet('tt.dp.pinnedPlan', 'null');
+      toast(tr('Sabitlenen planın son uçuşu bitti; sabitleme kaldırıldı.', 'Your pinned plan has finished, so it was unpinned.'));
+    }
+    // The dial and its list show the pinned stops while a plan is pinned, the live plan otherwise.
+    const activeStops = Array.isArray(plannerState.pinnedPlan?.stops) ? plannerState.pinnedPlan.stops : (plan.stops || []);
+    if (plannerState.selectedStopIndex >= Math.max(1, activeStops.length)) {
       plannerState.selectedStopIndex = 0;
     }
 
-    const pinEval = plannerState.pinnedPlan && window.LRXTravelWorkspace
-      ? window.LRXTravelWorkspace.evaluatePinnedPlan(plannerState.pinnedPlan, d.countries || [], { nowSec })
+    const pinEval = plannerState.pinnedPlan && ws()
+      ? ws().evaluatePinnedPlan(plannerState.pinnedPlan, d.countries || [], { nowSec })
       : null;
 
     const opt = (v, label, cur) => `<option value="${v}"${v === cur ? ' selected' : ''}>${label}</option>`;
-    const methodMatches = d.detectedMethod && d.detectedMethod === method;
+    const methodMatches = d.detectedMethod && (d.detectedMethod === method || (d.detectedMethod === 'WLT' && method === 'Private'));
     const capHint = d.detectedBaseCap != null ? tr(`Torn temel+perk: ${d.detectedBaseCap} (+bavul)`, `Torn base+perks: ${d.detectedBaseCap} (+suitcase)`) : '';
     const optionCount = (plannerState.watchOnly ? 1 : 0) + (plannerState.includeCurrentFlight ? 0 : 1);
 
@@ -423,6 +461,22 @@
       <button class="btn sm ghost" type="button" id="dp-refresh-pin">⟳ ${tr('Güncel planla yenile', 'Update pinned plan')}</button>
     </div>` : '';
 
+    // The route added from the Travel page: where it sits in the plan, or why it could not be planned.
+    const pr = plan.preferred;
+    const prName = plannerState.preferred
+      ? `<b>${esc(plannerState.preferred.itemName || pr?.key || '')}</b>${plannerState.preferred.countryName ? ` · ${esc(plannerState.preferred.countryName)}` : ''}`
+      : '';
+    const prefBanner = pr ? `<div class="dp-banner ${pr.status === 'planned' ? '' : 'is-warn'}">
+      <span>${pr.status === 'planned'
+        ? `${ICON.plane} ${tr(`Eklediğin rota ${prName} sonraki uçuş: kalkış ${hhmmUtc(plan.stops[0].departAt)} TCT.`, `Route you added ${prName} is the next flight: leave at ${hhmmUtc(plan.stops[0].departAt)} TCT.`)}`
+        : `${ICON.alert} ${tr(`Eklediğin rota ${prName} planlanamadı: `, `Route you added ${prName} could not be planned: `)}${{
+          unprofitable: tr('seçili satış fiyatıyla kâr etmiyor.', 'no profit at the selected sell price.'),
+          no_window: tr('24 saat içinde stok ya da restock tahmini yok.', 'no stock or restock estimate in the next 24 h.'),
+          missing: tr('stok verisinde yok.', 'it is not in the stock data.'),
+        }[pr.status] || ''}`}</span>
+      <button class="btn sm ghost" type="button" id="dp-pref-remove">✕ ${tr('Plandan çıkar', 'Remove from plan')}</button>
+    </div>` : '';
+
     const flightBanner = plan.inFlight && plan.currentFlight ? `<div class="dp-banner">
       <span>${ICON.plane} ${plannerState.includeCurrentFlight
         ? tr(`Şu an uçuştasın (${esc(plan.currentFlight.destination)}); plan Torn'a döndüğünde (~${hhmmUtc(plan.currentFlight.backHomeAt)} TCT) başlar.`, `You're in flight (${esc(plan.currentFlight.destination)}); the plan starts once you're back in Torn (~${hhmmUtc(plan.currentFlight.backHomeAt)} TCT).`)
@@ -471,9 +525,9 @@
     </div>`;
 
     host.innerHTML = `<article class="glass card dp-card">
-      ${head}${controls}${optsPanel}${pinBanner}${flightBanner}
+      ${head}${controls}${optsPanel}${prefBanner}${pinBanner}${flightBanner}
       <div class="dp-kpis">${nextCard}${profitCard}${perHrCard}${carryCard}</div>
-      ${plannerState.displayMode === 'dial' ? renderClockDialView(plan, pinEval) : ''}
+      ${plannerState.displayMode === 'dial' ? renderClockDialView(plan, pinEval, activeStops) : ''}
       ${renderTimeline(plan)}
       ${renderFlightHistory(d.flightHistory)}
     </article>`;
@@ -496,6 +550,15 @@
     if (clk) clk.textContent = new Date(nowSec * 1000).toISOString().slice(11, 19);
     const cd = document.querySelector('[data-dp-depart]');
     if (cd) cd.innerHTML = countdownHtml(Number(cd.dataset.dpDepart), nowSec);
+    // The dial's hand and "HH:MM TCT" label follow the same clock.
+    const hand = document.querySelector('#tv-planner .dp-dial-hand');
+    if (hand && dialGeom && ws()) {
+      const [x, y] = dialXY(dialGeom, ws().secToDialDeg(nowSec), dialGeom.R - 10);
+      hand.setAttribute('x2', x.toFixed(1));
+      hand.setAttribute('y2', y.toFixed(1));
+    }
+    const dialLabel = document.querySelector('#tv-planner .dp-dial-tct');
+    if (dialLabel) dialLabel.textContent = `${hhmmUtc(nowSec)} TCT`;
   }, 1000);
 
   // Delegated listeners on #travel-body (persists across renders)
@@ -566,10 +629,35 @@
     }
     const tm = e.target.closest('[data-dp-tmode]');
     if (tm) { plannerState.timelineMode = tm.dataset.dpTmode; lsSet('tt.dp.tmode', plannerState.timelineMode); renderDeparturePlanner(); return; }
+    if (e.target.closest('#dp-pref-remove')) { removePreferred(); return; }
     const ex = e.target.closest('[data-dp-exclude]');
-    if (ex) { plannerState.excluded.add(ex.dataset.dpExclude); renderDeparturePlanner(); return; }
+    if (ex) {
+      // Removing the route you added takes it out of the plan (it is not hidden from the automatic plan).
+      if (plannerState.preferred?.key === ex.dataset.dpExclude) { removePreferred(); return; }
+      plannerState.excluded.add(ex.dataset.dpExclude); renderDeparturePlanner(); return;
+    }
     if (e.target.closest('#dp-restore')) { plannerState.excluded.clear(); renderDeparturePlanner(); }
   });
+
+  // Travel page "Add to plan" (features.js): the route becomes the next feasible flight of the plan.
+  function addPreferred(key, { itemName = '', countryName = '' } = {}) {
+    if (!/^[a-z]+:\d+$/.test(String(key || ''))) return null;
+    plannerState.excluded.delete(key);
+    setPreferred({ key, itemName: String(itemName).slice(0, 80), countryName: String(countryName).slice(0, 40), at: Math.floor(nowTct() / 1000) });
+    if (plannerState.hidden) { plannerState.hidden = false; lsSet('tt.dp.hidden', '0'); }
+    plannerState.selectedStopIndex = 0;
+    renderDeparturePlanner();
+    return lastBuiltPlan?.preferred || null;
+  }
+  function removePreferred() {
+    setPreferred(null);
+    // Redraw the Travel page too, so its "In plan" button follows (that also redraws the planner).
+    if (typeof window.renderTravelResults === 'function' && $('#tv-results')) window.renderTravelResults();
+    else renderDeparturePlanner();
+  }
+  window.addRouteToDeparturePlan = addPreferred;
+  window.removeRouteFromDeparturePlan = () => { setPreferred(null); renderDeparturePlanner(); };
+  window.departurePlannerPreferredKey = () => plannerState.preferred?.key || null;
 
   window.renderDeparturePlanner = renderDeparturePlanner;
   FEATURE_HOOKS.push(() => { if (state.view === 'travel') renderDeparturePlanner(); });

@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const LATEST_VERSION = 1;
+const LATEST_VERSION = 2;
 
 function openFactionDatabase(filename, { mode = 'test', now = () => Math.floor(Date.now() / 1000) } = {}) {
   if (!['test', 'live'].includes(mode)) throw new Error('Invalid faction hub mode');
@@ -39,7 +39,7 @@ function openFactionDatabase(filename, { mode = 'test', now = () => Math.floor(D
     transaction(() => {
       assertCompatible();
       db.exec('CREATE TABLE IF NOT EXISTS faction_hub_migrations(version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)');
-      for (const [version, file] of [[1, '001-faction-hub.sql']]) {
+      for (const [version, file] of [[1, '001-faction-hub.sql'], [2, '002-erasure-retention.sql']]) {
         if (!db.prepare('SELECT 1 FROM faction_hub_migrations WHERE version=?').get(version)) {
           db.exec(fs.readFileSync(path.join(__dirname, 'migrations-faction', file), 'utf8'));
           db.prepare('INSERT INTO faction_hub_migrations VALUES(?,?)').run(version, now());

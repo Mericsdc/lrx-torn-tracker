@@ -80,7 +80,7 @@ test('P0.2: status.until is NEVER treated as flight ETA; exact ETA only from ver
   assert.equal(p12s1.etaKind, 'exact');
   assert.equal(p12s1.etaAt, travelRadar.isoUtc(t0 + 1800_000));
 
-  // Snapshot 2: Player 11 transitions Okay -> Traveling to Japan (225 min standard)
+  // Snapshot 2: Player 11 transitions Okay -> Traveling to Japan (67.5 min Business .. 225 min Standard; ticket unknown)
   const snap2 = travelRadar.buildRadarPayload({
     factionId: 42,
     observedAtMs: t1,
@@ -98,7 +98,7 @@ test('P0.2: status.until is NEVER treated as flight ETA; exact ETA only from ver
   assert.equal(snap2.transitions[0].toState, 'outbound');
   const p11s2 = snap2.travel.find((r) => r.playerId === 11);
   assert.equal(p11s2.etaKind, 'estimate');
-  assert.equal(p11s2.etaFrom, travelRadar.isoUtc(t0 + 225 * 60_000));
+  assert.equal(p11s2.etaFrom, travelRadar.isoUtc(t0 + Math.round(225 * 0.3 * 60_000)));
   assert.equal(p11s2.etaTo, travelRadar.isoUtc(t1 + 225 * 60_000));
   assert.equal(p11s2.etaAt, null);
 
@@ -400,7 +400,8 @@ test('P0.3 & P1.3 UI smoke: Travel Radar, 24h step-line outage gap, XSS escaping
     assert.ok(actHtml.includes('class="fac-step-svg"'), `${lang}: 24h step-line SVG rendered`);
     assert.ok(actHtml.includes('class="fac-step-gap"'), `${lang}: outage gap rendered visibly`);
 
-    // Ops Control Panel renders all 4 panels with masked key
+    // Ops Control Panel renders all 4 panels with masked key (it loads only while Settings is shown)
+    ctx.state.view = 'settings';
     await ctx.loadOpsPanel();
     const opsHtml = containers['#ops-control-panel'].innerHTML;
     assert.ok(opsHtml.includes('****ABCD'), `${lang}: masked API key shown`);
@@ -579,4 +580,253 @@ test('N3 & N4: LRXFactionWorkspace never splits FFScouter total estimate into su
   assert.equal(joined.playerId, 3);
   assert.deepEqual(joined.observation_interval, { seenFrom: '2026-11-23T11:50:00.000Z', seenTo: '2026-11-23T11:55:00.000Z' });
   assert.equal(left.playerId, 2);
+});
+
+/* =========================================================
+   7. Travel Profit review fixes (TCT times, planner route, ETA window, country cards, traffic, history, pins)
+   ========================================================= */
+const tw = require('../public/travel-workspace');
+const planner = require('../public/travel-planner');
+
+test('Fix 1: formatTct prints UTC (TCT) time and adds the date when the moment is not today', () => {
+  const nowSec = Date.UTC(2026, 10, 23, 1, 30, 0) / 1000; // 01:30 TCT on 23 Nov
+  assert.equal(tw.formatTct(Date.UTC(2026, 10, 23, 0, 5, 0) / 1000, { nowSec, lang: 'en' }), '00:05');
+  assert.equal(tw.formatTct(Date.UTC(2026, 10, 23, 23, 59, 0) / 1000, { nowSec, lang: 'tr' }), '23:59');
+  // Yesterday in TCT (would be "today" in a UTC+3 local clock) and an old flight-history row
+  assert.equal(tw.formatTct(Date.UTC(2026, 10, 22, 22, 15, 0) / 1000, { nowSec, lang: 'en' }), '22 Nov 22:15');
+  assert.equal(tw.formatTct(Date.UTC(2026, 8, 30, 8, 0, 0) / 1000, { nowSec, lang: 'tr' }), '30 Eyl 08:00');
+  assert.equal(tw.formatTct(Date.UTC(2026, 10, 24, 6, 0, 0) / 1000, { nowSec, lang: 'en' }), '24 Nov 06:00');
+  assert.equal(tw.formatTct(0, { nowSec }), '—');
+  assert.equal(tw.formatTct(null, { nowSec }), '—');
+});
+
+test('Fix 2: buildDeparturePlan puts a chosen route first as the next feasible stop and reports when it cannot', () => {
+  const nowSec = Date.UTC(2026, 10, 23, 10, 0, 0) / 1000;
+  const countries = [
+    { code: 'mex', name: 'Mexico', minutes: 26, items: [{ id: 1, name: 'Dahlia', type: 'Flower', cost: 300, market: 2600, qty: 5000 }] },
+    { code: 'jap', name: 'Japan', minutes: 225, items: [{ id: 2, name: 'Cherry Blossom', type: 'Flower', cost: 500, market: 1800, qty: 0, nextRestock: nowSec + 5 * 3600, interval: 3600 }] },
+    { code: 'can', name: 'Canada', minutes: 41, items: [{ id: 3, name: 'Junk', type: 'Other', cost: 900, market: 500, qty: 100 }] },
+  ];
+  const base = { countries, nowSec, cap: 10, method: 'Standard', optimizeFor: 'short_flights', category: 'Flower' };
+  const plain = planner.buildDeparturePlan(base);
+  assert.equal(plain.stops[0].key, 'mex:1');
+  assert.equal(plain.preferred, null);
+
+  // Japan is long (short_flights skips it) and waits > 95 min for its restock: chosen anyway, as the first stop
+  const withJap = planner.buildDeparturePlan({ ...base, preferredKey: 'jap:2' });
+  assert.equal(withJap.stops[0].key, 'jap:2');
+  assert.equal(withJap.stops[0].preferred, true);
+  assert.equal(withJap.stops[0].departAt, nowSec + 5 * 3600 - 225 * 60);
+  assert.deepEqual({ key: withJap.preferred.key, status: withJap.preferred.status, stopIndex: withJap.preferred.stopIndex }, { key: 'jap:2', status: 'planned', stopIndex: 0 });
+  assert.equal(withJap.nextFlight.key, 'jap:2');
+
+  // A loss-making or unknown route is never forced into the plan
+  const junk = planner.buildDeparturePlan({ ...base, category: 'all', preferredKey: 'can:3' });
+  assert.equal(junk.preferred.status, 'unprofitable');
+  assert.notEqual(junk.stops[0]?.key, 'can:3');
+  assert.equal(planner.buildDeparturePlan({ ...base, preferredKey: 'uae:99' }).preferred.status, 'missing');
+
+  // Sold out with no restock estimate: no window in the next 24 h
+  const noWindow = planner.buildDeparturePlan({ ...base, preferredKey: 'jap:2', countries: [countries[0], { ...countries[1], items: [{ ...countries[1].items[0], nextRestock: null, interval: null }] }] });
+  assert.equal(noWindow.preferred.status, 'no_window');
+  assert.equal(noWindow.stops[0].key, 'mex:1');
+});
+
+test('Fix 2b: the planner knows the Private ticket (Torn and the Travel page call it Private, not WLT)', () => {
+  const nowSec = Date.UTC(2026, 10, 23, 10, 0, 0) / 1000;
+  const plan = planner.buildDeparturePlan({ countries: [{ code: 'mex', name: 'Mexico', minutes: 26, items: [{ id: 1, name: 'Dahlia', cost: 300, market: 2600, qty: 5000 }] }], nowSec, method: 'Private' });
+  assert.equal(plan.stops[0].oneWaySec, 13 * 60);
+});
+
+test('Fix 3: an estimated flight ETA spans the fastest to the slowest ticket, an explicit ticket narrows it, and a window that is too wide is dropped', () => {
+  const t0 = Date.UTC(2026, 10, 23, 10, 0, 0);
+  const t1 = t0 + 5 * 60_000;
+  const transition = { seenFromMs: t0, seenToMs: t1 };
+  const mex = travelRadar.parseMemberTravel({ id: 1, status: { state: 'Traveling', description: 'Traveling to Mexico' } }, { transition });
+  assert.equal(mex.etaKind, 'estimate');
+  assert.equal(mex.etaFrom, travelRadar.isoUtc(t0 + Math.round(26 * 0.3 * 60_000)));
+  assert.equal(mex.etaTo, travelRadar.isoUtc(t1 + 26 * 60_000));
+
+  const exact = travelRadar.parseMemberTravel({ id: 1, status: { state: 'Traveling', description: 'Traveling to Mexico' } }, { transition, flightMultiplier: 0.7 });
+  assert.equal(exact.etaFrom, travelRadar.isoUtc(t0 + Math.round(26 * 0.7 * 60_000)));
+  assert.equal(exact.etaTo, travelRadar.isoUtc(t1 + Math.round(26 * 0.7 * 60_000)));
+
+  // South Africa: 89 min (Business) .. 297 min (Standard) is wider than 3 h -> no window at all
+  const sou = travelRadar.parseMemberTravel({ id: 2, status: { state: 'Traveling', description: 'Returning to Torn from South Africa' } }, { transition });
+  assert.equal(sou.etaKind, 'unknown');
+  assert.equal(sou.etaFrom, null);
+  assert.equal(sou.etaTo, null);
+
+  // The roster path (no ticket known) must not assume Standard either
+  const snap1 = travelRadar.buildRadarPayload({ observedAtMs: t0, nowMs: t0, members: [{ id: 5, status: { state: 'Okay', description: 'Okay' } }] });
+  const snap2 = travelRadar.buildRadarPayload({ observedAtMs: t1, nowMs: t1, prevByPlayer: snap1.nextByPlayer, prevObservedAtMs: t0, members: [{ id: 5, status: { state: 'Traveling', description: 'Traveling to Canada' } }] });
+  const p5 = snap2.travel.find((r) => r.playerId === 5);
+  assert.equal(p5.etaFrom, travelRadar.isoUtc(t0 + Math.round(41 * 0.3 * 60_000)));
+  assert.equal(p5.etaTo, travelRadar.isoUtc(t1 + 41 * 60_000));
+});
+
+test('Fix 4: a country card shows the restock of its own item, is labelled by profitable stock, and an unobserved country is only Unknown', () => {
+  const nowSec = 1800000000;
+  const cards = tw.buildCountryCards([
+    { code: 'can', name: 'Canada', minutes: 41, update: nowSec - 120, items: [
+      { id: 206, name: 'Xanax', type: 'Drug', cost: 769000, market: 842000, qty: 0, nextRestock: nowSec + 5400 },
+      { id: 263, name: 'Dahlia', type: 'Flower', cost: 300, market: 2600, qty: 2000, nextRestock: null },
+    ] },
+    { code: 'mex', name: 'Mexico', minutes: 26, update: nowSec - 120, items: [
+      { id: 258, name: 'Jaguar Plushie', type: 'Plushie', cost: 10000, market: 18000, qty: 0, nextRestock: nowSec + 1800 },
+      { id: 999, name: 'Old Junk', type: 'Other', cost: 900, market: 500, qty: 40, nextRestock: null },
+    ] },
+    { code: 'haw', name: 'Hawaii', minutes: 134, update: nowSec - 120, items: [
+      { id: 1, name: 'Junk', type: 'Other', cost: 900, market: 500, qty: 40 },
+    ] },
+  ], { nowSec, capacity: 10 });
+  const can = cards.find((c) => c.code === 'can');
+  assert.equal(can.stockState, 'in_stock', 'another profitable item is in stock');
+  assert.equal(can.bestItem.name, 'Dahlia', 'the card shows an item you can buy now');
+  assert.equal(can.nextRestockSec, null, "never another item's restock");
+
+  const mex = cards.find((c) => c.code === 'mex');
+  assert.equal(mex.stockState, 'sold_out', 'the only stock left is loss-making');
+  assert.equal(mex.bestItem.name, 'Jaguar Plushie');
+  assert.equal(mex.nextRestockSec, nowSec + 1800);
+
+  assert.equal(cards.find((c) => c.code === 'haw').stockState, 'no_profit');
+
+  const arg = cards.find((c) => c.code === 'arg');
+  assert.equal(arg.stockState, 'unknown');
+  assert.equal(arg.stale, false, 'no observation is Unknown, never also Stale');
+
+  // A focused item is judged on its own stock, profitable or not
+  const focused = tw.buildCountryCards([{ code: 'can', name: 'Canada', minutes: 41, update: nowSec - 60, items: [
+    { id: 206, name: 'Xanax', cost: 769000, market: 842000, qty: 0, nextRestock: nowSec + 5400 },
+    { id: 263, name: 'Dahlia', cost: 300, market: 2600, qty: 2000 },
+  ] }], { nowSec, itemId: 206 }).find((c) => c.code === 'can');
+  assert.equal(focused.stockState, 'sold_out');
+  assert.equal(focused.nextRestockSec, nowSec + 5400);
+});
+
+test('Fix 4b: destinations never call an unobserved country stale and never say fly now for sold-out stock with no known restock', () => {
+  const nowSec = 1800000000;
+  const rows = tw.buildDestinationsTable([
+    { code: 'jap', name: 'Japan', minutes: 225, update: 0, items: [{ id: 277, name: 'Cherry Blossom', cost: 500, market: 5000, qty: 0 }] },
+    { code: 'sou', name: 'South Africa', minutes: 297, update: nowSec - 4 * 3600, items: [{ id: 1, name: 'Elephant Statue', cost: 500, market: 9000, qty: 0 }] },
+    { code: 'can', name: 'Canada', minutes: 41, update: nowSec - 60, items: [{ id: 263, name: 'Dahlia', cost: 300, market: 2600, qty: 2000 }] },
+  ], { nowSec, capacity: 10 });
+  const jap = rows.find((r) => r.countryCode === 'jap');
+  assert.equal(jap.observed, false);
+  assert.equal(jap.stale, false, 'never observed is not "stale"');
+  assert.equal(jap.bestDepartureSec, null, 'sold out and no restock known: no departure time');
+  const sou = rows.find((r) => r.countryCode === 'sou');
+  assert.equal(sou.observed, true);
+  assert.equal(sou.stale, true);
+  assert.equal(sou.bestDepartureSec, null);
+  assert.equal(rows.find((r) => r.countryCode === 'can').bestDepartureSec, nowSec, 'in stock: fly now');
+});
+
+test('Fix 5: block selection keeps an explicit empty choice and falls back to all blocks only when nothing was saved', () => {
+  const all = ['summary', 'countries', 'traffic', 'history', 'planner', 'destinations'];
+  assert.deepEqual([...tw.parseBlockPrefs(null, all)], all);
+  assert.deepEqual([...tw.parseBlockPrefs('not json', all)], all);
+  assert.deepEqual([...tw.parseBlockPrefs('[]', all)], []);
+  assert.deepEqual([...tw.parseBlockPrefs('["history","bogus"]', all)], ['history']);
+});
+
+test('Fix 7: a pinned plan expires once its last return time has passed', () => {
+  const nowSec = 1800000000;
+  assert.equal(tw.pinnedPlanExpired(null, nowSec), false);
+  assert.equal(tw.pinnedPlanExpired({ stops: [] }, nowSec), true);
+  assert.equal(tw.pinnedPlanExpired({ stops: [{ returnAt: nowSec - 7200 }, { returnAt: nowSec - 60 }] }, nowSec), true);
+  assert.equal(tw.pinnedPlanExpired({ stops: [{ returnAt: nowSec - 7200 }, { returnAt: nowSec + 60 }] }, nowSec), false);
+});
+
+test('Fix 8: the traffic chart draws a dot for a sample that has no neighbour', () => {
+  const nowMs = 1800000000000;
+  const snaps = [
+    tw.buildTrafficSnapshot([{ playerId: 1, travelState: 'abroad', countryCode: 'mex' }], nowMs - 5 * 3600_000), // alone: gap > 25 min on both sides
+    tw.buildTrafficSnapshot([{ playerId: 1, travelState: 'abroad', countryCode: 'mex' }], nowMs - 60 * 60_000),
+    tw.buildTrafficSnapshot([{ playerId: 2, travelState: 'outbound', countryCode: 'mex' }, { playerId: 1, travelState: 'abroad', countryCode: 'mex' }], nowMs - 55 * 60_000),
+  ];
+  const tf = tw.summarizeTraffic(snaps, { windowHours: 6, nowMs });
+  const chart = tw.buildTrafficChart(tf, { W: 680, H: 140, padL: 34, padR: 12, padT: 12, padB: 22 });
+  assert.equal(chart.paths.length, 1, 'only the two-sample segment is a line');
+  assert.equal(chart.dots.length, 1, 'the lone sample is a dot');
+  assert.ok(chart.paths[0].startsWith('M') && chart.paths[0].includes('L'));
+});
+
+test('Fix 12: hospital and jail abroad are read from Torn demonyms and count as abroad', () => {
+  const cases = [
+    ['In a Swiss hospital for 20 mins', 'swi'],
+    ['In a Caymanian hospital for 3 hrs', 'cay'],
+    ['In an Emirati hospital for 1 hr 4 mins', 'uae'],
+    ['In a Mexican hospital', 'mex'],
+    ['In a Canadian hospital for 12 mins', 'can'],
+    ['In a Hawaiian hospital for 2 mins', 'haw'],
+    ['In a British hospital for 7 mins', 'uni'],
+    ['In an Argentinian hospital for 9 mins', 'arg'],
+    ['In a Japanese hospital for 44 mins', 'jap'],
+    ['In a Chinese hospital for 1 min', 'chi'],
+    ['In a South African hospital for 15 mins', 'sou'],
+    ['In a Cayman Islands hospital', 'cay'],
+    ['In hospital in South Africa', 'sou'],
+  ];
+  for (const [description, code] of cases) {
+    const r = travelRadar.parseMemberTravel({ id: 1, status: { state: 'Hospital', description } });
+    assert.equal(r.travelState, 'abroad', description);
+    assert.equal(r.destination, code, description);
+    assert.equal(r.healthStatus, 'hospital', description);
+  }
+  const jail = travelRadar.parseMemberTravel({ id: 1, status: { state: 'Jail', description: 'In a Mexican jail for 10 mins' } });
+  assert.equal(jail.destination, 'mex');
+  assert.equal(jail.healthStatus, 'jail');
+  const home = travelRadar.parseMemberTravel({ id: 1, status: { state: 'Hospital', description: 'In hospital for 20 mins' } });
+  assert.equal(home.travelState, 'none_observed', 'a hospital stay in Torn is not abroad');
+  const payload = travelRadar.buildRadarPayload({ members: [{ id: 9, status: { state: 'Hospital', description: 'In an Emirati hospital for 5 mins' } }] });
+  assert.equal(payload.summary.abroad, 1);
+});
+
+test('Fix 13: traffic counts an inbound member with an unknown origin once, and a single-country view has no global Unknown count', () => {
+  const nowMs = 1800000000000;
+  const snap = tw.buildTrafficSnapshot([
+    { playerId: 1, travelState: 'inbound', origin: null, destination: 'torn' },
+    { playerId: 2, travelState: 'unknown' },
+    { playerId: 3, travelState: 'inbound', origin: 'mex', destination: 'torn' },
+  ], nowMs);
+  assert.equal(snap.total.inbound, 2);
+  assert.equal(snap.total.unknown, 1, 'an inbound member is not also an unknown route');
+  assert.equal(snap.byCountry.mex.inbound, 1);
+  const all = tw.summarizeTraffic([snap], { countryCode: '*', windowHours: 6, nowMs });
+  assert.equal(all.latest.unknown, 1);
+  const mex = tw.summarizeTraffic([snap], { countryCode: 'mex', windowHours: 6, nowMs });
+  assert.equal(mex.latest.unknown, null, 'unknown routes cannot be attributed to one country');
+  // A snapshot saved by the old version (no v) counted that member twice; the summary takes it back out
+  const old = { at: nowMs, total: { outbound: 0, abroad: 0, inbound: 2, unknown: 2 }, byCountry: { mex: { outbound: 0, abroad: 0, inbound: 1 } } };
+  assert.equal(tw.summarizeTraffic([old], { countryCode: '*', windowHours: 6, nowMs }).latest.unknown, 1);
+});
+
+test('Fix 13b: history never invents a restock quantity and the stock view has no off-chart forecast', () => {
+  const nowSec = 1800000000;
+  const soldOut = { id: 2, name: 'Cherry', cost: 500, market: 1800, qty: 0, nextRestock: nowSec + 3600 };
+  const noObs = tw.buildHistorySeries({ ...soldOut, history: [[nowSec - 1800, 0, 500, 'YATA']] }, { metric: 'forecast', windowHours: 6, nowSec });
+  assert.equal(noObs.forecastPoints.length, 0, 'no observed restock size -> no forecast');
+  const withObs = tw.buildHistorySeries({ ...soldOut, history: [
+    [nowSec - 5 * 3600, 0, 500, 'YATA'], [nowSec - 4.5 * 3600, 37, 500, 'YATA'], [nowSec - 3600, 0, 500, 'YATA'],
+  ] }, { metric: 'forecast', windowHours: 6, nowSec });
+  assert.equal(withObs.forecastPoints.at(-1).v, 37, 'last observed restock size');
+  assert.equal(withObs.forecastPoints.at(-1).t, nowSec + 3600);
+  const stock = tw.buildHistorySeries({ ...soldOut, qty: 40, rate: 2, emptyAt: nowSec + 1200, history: [[nowSec - 600, 40, 500, 'YATA']] }, { metric: 'stock', windowHours: 6, nowSec });
+  assert.equal(stock.forecastPoints.length, 0, 'the stock view ends at now');
+});
+
+test('Fix 9: groupRowsByCountry builds the By Country view in flight-time order and keeps the chosen sort inside a country', () => {
+  const rows = [ // already sorted by the page (e.g. restock time)
+    { c: { code: 'jap', name: 'Japan' }, oneWay: 225, perHour: 900 },
+    { c: { code: 'mex', name: 'Mexico' }, oneWay: 26, perHour: 100 },
+    { c: { code: 'jap', name: 'Japan' }, oneWay: 225, perHour: 500 },
+    { c: { code: 'mex', name: 'Mexico' }, oneWay: 26, perHour: 300 },
+  ];
+  const groups = tw.groupRowsByCountry(rows);
+  assert.deepEqual(groups.map((g) => g.code), ['mex', 'jap']);
+  assert.deepEqual(groups[0].rows.map((r) => r.perHour), [100, 300]);
+  assert.equal(groups[0].bestPerHour, 300);
+  assert.equal(groups[1].bestPerHour, 900);
 });

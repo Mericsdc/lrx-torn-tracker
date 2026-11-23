@@ -8,7 +8,7 @@
 
 const travelRadar = require('../../public/travel-radar');
 
-const AUTH_REVOKED_CODES = new Set([1, 2, 7, 10, 16, 18, 'NO_KEY', 'KEY_ACCESS', 'KEY_CHANGED', 'FAC_DENIED', 'UNAUTHORIZED', 'FORBIDDEN']);
+const AUTH_REVOKED_CODES = new Set([1, 2, 7, 10, 16, 18, 'NO_KEY', 'KEY_ACCESS', 'FAC_DENIED', 'UNAUTHORIZED', 'FORBIDDEN']);
 
 function isAuthRevokedError(err) {
   if (!err) return false;
@@ -168,6 +168,9 @@ function createRosterCache({
 
         return snapshotWithFreshness(state.cache, { fromCache: false });
       } catch (err) {
+        // A reply (or refusal) for a key that is no longer the current one: the state now belongs to the new key,
+        // so it is left alone and only this stale request fails.
+        if (err?.code === 'KEY_CHANGED' || (Number(getKeyGen()) || 0) !== gen) throw err;
         if (isAuthRevokedError(err)) {
           // Never serve stale private data after auth/permission revocation
           reset();

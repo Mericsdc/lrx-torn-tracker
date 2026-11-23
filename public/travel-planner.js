@@ -6,7 +6,8 @@
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.LRXTravelPlanner = factory();
 })(typeof globalThis === 'object' ? globalThis : this, function () {
-  const METHODS = { Standard: 1, Airstrip: 0.7, WLT: 0.5, Business: 0.3 };
+  // Torn and the Travel page call the 0.5 ticket "Private"; detectTravelProfile reports it as "WLT".
+  const METHODS = { Standard: 1, Airstrip: 0.7, WLT: 0.5, Private: 0.5, Business: 0.3 };
   const PRICE_MODES = ['market_tax', 'market', 'npc'];
   const OPTIMIZE_MODES = ['max_profit', 'max_per_hour', 'short_flights'];
   const MARKET_TAX = 0.05;
@@ -108,6 +109,7 @@
     includeCurrentFlight = true,
     groundMinutes = 2,
     horizonHours = 24,
+    preferredKey = null, // "country:itemId" the player added to the plan: scheduled as the next feasible stop
   } = {}) {
     const mult = METHODS[method] || 1;
     const safeCap = Math.max(1, Math.min(100, Number(cap) || 15));
@@ -143,16 +145,26 @@
 
     // Flatten eligible items
     const pool = [];
+    let preferredCand = null;
+    let preferredStatus = preferredKey ? 'missing' : null;
     for (const c of countries || []) {
       if (!c?.minutes) continue;
       const oneWaySec = Math.round(c.minutes * mult * 60);
       const roundSec = oneWaySec * 2;
       for (const it of c.items || []) {
         const key = `${c.code}:${it.id}`;
+        const prof = unitProfit(it, priceMode);
+        if (preferredKey && key === preferredKey) {
+          // A route the player chose skips the category / watch-only / removed filters, but is never planned at a loss.
+          if (prof == null || prof <= 0) preferredStatus = 'unprofitable';
+          else {
+            preferredCand = { c, it, key, oneWaySec, roundSec, unitProfit: prof };
+            preferredStatus = 'no_window';
+          }
+        }
         if (excluded.has(key)) continue;
         if (watchOnly && !watched.has(key)) continue;
         if (category && category !== 'all' && String(it.type || '').toLowerCase() !== String(category).toLowerCase()) continue;
-        const prof = unitProfit(it, priceMode);
         if (prof == null || prof <= 0) continue;
         pool.push({ c, it, key, oneWaySec, roundSec, unitProfit: prof });
       }
@@ -164,96 +176,108 @@
     const consumedNow = new Map();
     const MAX_STOPS = 16;
 
+    // One candidate flight leaving at or after `cursor`; null when it cannot be flown.
+    // The chosen route may wait longer than 95 min for its restock and ignores the short-flights limit.
+    function evaluate(cand, { maxWaitSec = 95 * 60, chosen = false } = {}) {
+      const { c, it, key, oneWaySec, roundSec } = cand;
+      if (!chosen && optimizeFor === 'short_flights' && oneWaySec > 95 * 60) return null;
+
+      const used = consumedNow.get(key) || 0;
+      const remainingQty = Math.max(0, (Number(it.qty) || 0) - used);
+      const interval = Number(it.interval) > 900 ? Number(it.interval) : 7200;
+
+      let departAt = cursor;
+      let mode = 'stock';
+      let units = safeCap;
+      let expectedRestockAt = null;
+
+      // Option A: Buy from currently visible stock (only meaningful near `now` while stock lasts)
+      const arriveNow = cursor + oneWaySec;
+      const stockSurvives = remainingQty >= Math.min(safeCap, 5)
+        && (!it.emptyAt || it.emptyAt > arriveNow)
+        && (arriveNow - nowSec <= 4 * 3600);
+
+      if (stockSurvives) {
+        units = Math.min(safeCap, remainingQty);
+        departAt = cursor;
+        mode = 'stock';
+      } else {
+        // Option B: Target a predicted restock (nextRestock or stepped by observed interval)
+        let rAt = Number(it.nextRestock) || 0;
+        if (!rAt && Number(it.lastRestock) > 0 && Number(it.interval) > 900) {
+          rAt = Number(it.lastRestock) + Number(it.interval);
+        }
+        if (!rAt) return null;
+        while (rAt - oneWaySec < cursor - 180) rAt += interval;
+        // Avoid excessively long idle waits (> 90 min) if other flights exist
+        const waitSec = Math.max(0, (rAt - oneWaySec) - cursor);
+        if (waitSec > maxWaitSec) return null;
+        departAt = Math.max(cursor, rAt - oneWaySec);
+        expectedRestockAt = rAt;
+        mode = 'restock';
+        units = safeCap;
+      }
+
+      const arriveAt = departAt + oneWaySec;
+      const returnAt = departAt + roundSec + groundSec;
+      if (departAt >= horizonEnd) return null;
+
+      const waitSec = Math.max(0, departAt - cursor);
+      const totalWindowSec = (returnAt - cursor);
+      const profit = units * cand.unitProfit;
+      const carry = units * (Number(it.cost) || 0);
+      const perHourFlying = roundSec > 0 ? profit / (roundSec / 3600) : 0;
+      const effectivePerHour = totalWindowSec > 0 ? profit / (totalWindowSec / 3600) : 0;
+
+      let score;
+      if (optimizeFor === 'max_per_hour') {
+        score = perHourFlying - (waitSec / 3600) * (perHourFlying * 0.25);
+      } else if (optimizeFor === 'short_flights') {
+        score = effectivePerHour * (1 + Math.max(0, (90 * 60 - oneWaySec) / (180 * 60)));
+      } else {
+        // Max $: maximize profit earned per total clock hour (wait + flight) so 24h cumulative $ is maximized
+        score = effectivePerHour;
+      }
+
+      return {
+        score,
+        key,
+        countryCode: c.code,
+        countryName: c.name,
+        meta: COUNTRY_META[c.code] || { flag: '✈', abbr: c.code.toUpperCase().slice(0, 2), color: '#8fa3b8' },
+        itemId: it.id,
+        itemName: it.name,
+        itemType: it.type || '',
+        mode,
+        departAt,
+        arriveAt,
+        returnAt,
+        oneWaySec,
+        roundSec,
+        waitSec,
+        expectedRestockAt,
+        units,
+        unitCost: Number(it.cost) || 0,
+        unitProfit: cand.unitProfit,
+        profit,
+        carry,
+        perHourFlying,
+        afterMidnight: arriveAt >= midnight,
+        highCarryRisk: carry >= HIGH_CARRY_WARN,
+        preferred: chosen,
+      };
+    }
+
     for (let step = 0; step < MAX_STOPS && cursor < horizonEnd; step++) {
       let best = null;
-      for (const cand of pool) {
-        const { c, it, key, oneWaySec, roundSec } = cand;
-        if (optimizeFor === 'short_flights' && oneWaySec > 95 * 60) continue;
-
-        const used = consumedNow.get(key) || 0;
-        const remainingQty = Math.max(0, (Number(it.qty) || 0) - used);
-        const interval = Number(it.interval) > 900 ? Number(it.interval) : 7200;
-
-        let departAt = cursor;
-        let mode = 'stock';
-        let units = safeCap;
-        let expectedRestockAt = null;
-
-        // Option A: Buy from currently visible stock (only meaningful near `now` while stock lasts)
-        const arriveNow = cursor + oneWaySec;
-        const stockSurvives = remainingQty >= Math.min(safeCap, 5)
-          && (!it.emptyAt || it.emptyAt > arriveNow)
-          && (arriveNow - nowSec <= 4 * 3600);
-
-        if (stockSurvives) {
-          units = Math.min(safeCap, remainingQty);
-          departAt = cursor;
-          mode = 'stock';
-        } else {
-          // Option B: Target a predicted restock (nextRestock or stepped by observed interval)
-          let rAt = Number(it.nextRestock) || 0;
-          if (!rAt && Number(it.lastRestock) > 0 && Number(it.interval) > 900) {
-            rAt = Number(it.lastRestock) + Number(it.interval);
-          }
-          if (!rAt) continue;
-          while (rAt - oneWaySec < cursor - 180) rAt += interval;
-          // Avoid excessively long idle waits (> 90 min) if other flights exist
-          const waitSec = Math.max(0, (rAt - oneWaySec) - cursor);
-          if (waitSec > 95 * 60) continue;
-          departAt = Math.max(cursor, rAt - oneWaySec);
-          expectedRestockAt = rAt;
-          mode = 'restock';
-          units = safeCap;
-        }
-
-        const arriveAt = departAt + oneWaySec;
-        const returnAt = departAt + roundSec + groundSec;
-        if (departAt >= horizonEnd) continue;
-
-        const waitSec = Math.max(0, departAt - cursor);
-        const totalWindowSec = (returnAt - cursor);
-        const profit = units * cand.unitProfit;
-        const carry = units * (Number(it.cost) || 0);
-        const perHourFlying = roundSec > 0 ? profit / (roundSec / 3600) : 0;
-        const effectivePerHour = totalWindowSec > 0 ? profit / (totalWindowSec / 3600) : 0;
-
-        let score;
-        if (optimizeFor === 'max_per_hour') {
-          score = perHourFlying - (waitSec / 3600) * (perHourFlying * 0.25);
-        } else if (optimizeFor === 'short_flights') {
-          score = effectivePerHour * (1 + Math.max(0, (90 * 60 - oneWaySec) / (180 * 60)));
-        } else {
-          // Max $: maximize profit earned per total clock hour (wait + flight) so 24h cumulative $ is maximized
-          score = effectivePerHour;
-        }
-
-        if (!best || score > best.score) {
-          best = {
-            score,
-            key,
-            countryCode: c.code,
-            countryName: c.name,
-            meta: COUNTRY_META[c.code] || { flag: '✈', abbr: c.code.toUpperCase().slice(0, 2), color: '#8fa3b8' },
-            itemId: it.id,
-            itemName: it.name,
-            itemType: it.type || '',
-            mode,
-            departAt,
-            arriveAt,
-            returnAt,
-            oneWaySec,
-            roundSec,
-            waitSec,
-            expectedRestockAt,
-            units,
-            unitCost: Number(it.cost) || 0,
-            unitProfit: cand.unitProfit,
-            profit,
-            carry,
-            perHourFlying,
-            afterMidnight: arriveAt >= midnight,
-            highCarryRisk: carry >= HIGH_CARRY_WARN,
-          };
+      if (step === 0 && preferredCand) {
+        best = evaluate(preferredCand, { maxWaitSec: Infinity, chosen: true });
+        if (best) preferredStatus = 'planned';
+      }
+      if (!best) {
+        for (const cand of pool) {
+          const ev = evaluate(cand);
+          if (ev && (!best || ev.score > best.score)) best = ev;
         }
       }
 
@@ -289,6 +313,8 @@
       currentFlight,
       eligibleCount: pool.length,
       stops,
+      // planned | unprofitable (no profit at the chosen sell price) | no_window (no stock or restock within 24 h) | missing
+      preferred: preferredKey ? { key: preferredKey, status: preferredStatus, stopIndex: preferredStatus === 'planned' ? 0 : -1 } : null,
       nextFlight: nextFlight ? { ...nextFlight, cashShort: shortOf(nextFlight.carry) } : null,
       biggestCarry: biggestCarryStop ? { ...biggestCarryStop, cashShort: shortOf(biggestCarryStop.carry) } : null,
       summary: {
