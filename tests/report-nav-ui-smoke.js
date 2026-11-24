@@ -283,6 +283,11 @@ async function assertReport(lang) {
   await assertReport('tr');
   await shot('report-tr-1440.png');
 
+  await page.route('**/api/overview', (route) => route.fulfill({ status: 504, json: { code: 'TIMEOUT', error: 'The Torn connection timed out.' } }));
+  await page.evaluate(async () => { showView('overview'); await loadOverview(); applyLang(); });
+  await page.locator('[data-overview-retry]').waitFor();
+  assert.deepEqual(await texts('[data-sub="drug"], [data-sub="edu"]'), ['—', '—', '—', '—']);
+
   assert.deepEqual(errors, [], 'no page errors or CSP reports');
   assert.deepEqual(tornRequests, [], 'no request to Torn');
   console.log(JSON.stringify({ ok: true, assertions: ['Daily Report: no order list, total, items or heading (EN, TR)', 'head, five KPI tiles, a row per product, totals, Copy Report and Target stock unchanged', 'the copied report keeps its restock lines', 'one aria-hidden highlight in the sidebar', 'a click or showView glides it in 150-250 ms onto the active item', 'the active item draws no highlight of its own', 'hide/show/insert above: it moves with the item at once', 'a new item can become active; removing it hides the highlight; it comes back', 'reduced motion: no glide', 'Animations off: no transition', 'five themes', '640 px icon bar without sideways scroll', 'TR', 'no page errors, CSP reports or Torn requests'], screenshots: output }));

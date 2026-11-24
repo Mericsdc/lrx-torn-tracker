@@ -178,8 +178,6 @@ function applyLang() {
     const v = opt.value;
     opt.textContent = state.lang === 'en' ? `${v} ${v === '1' ? 'day' : 'days'}` : `${v} gün`;
   });
-  // Placeholder texts that live data replaces later
-  if (!state.overview) $$('[data-sub="drug"], [data-sub="edu"]').forEach((el) => { el.textContent = tr('Yükleniyor…', 'Loading…'); });
   if (!state.targets) { const wt = $('#war-title'); if (wt) wt.textContent = tr('Hedefler', 'Targets'); }
   renderSecretsNotice();
   const ub = $('#update-btn');
@@ -385,7 +383,6 @@ async function requestOverview(force) {
     const settings = e.status === 412 ? ` <button class="btn sm" data-goto-view="settings">${tr('Ayarlar', 'Settings')}</button>` : '';
     if (!state.overview) {
       const retry = `<button type="button" class="btn sm" data-overview-retry>${tr('Tekrar dene', 'Try again')}</button>`;
-      $$('[data-sub="drug"], [data-sub="edu"]').forEach((el) => { el.textContent = '—'; });
       setAlert('overview', `<b>${tr('Kullanıcı verisi alınamadı:', 'Failed to load user data:')}</b>&nbsp;${esc(e.message)} ${settings || retry}`);
     }
     // Older data stays on screen: say so instead of letting it pass for live.
