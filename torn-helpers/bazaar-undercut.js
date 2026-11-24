@@ -1,8 +1,7 @@
 /* LRX Bazaar undercut — bazaar.php#/manage (Bazaar → Manage items) and bazaar.php#/add (Bazaar → Add items)
-   • A small "−$1" button next to each item's name. When the player clicks it, the helper reads that one item's public
-     bazaar listings from weav3r.dev (a third-party site, not Torn) and writes $1 under the cheapest other seller into
-     that row's price box. That is all: the player checks the price, enters the amount on Add items, and confirms on
-     Torn (Update / Add) themselves.
+   • Each item has buttons for 1%, 5% and 10% below the cheapest other seller. When the player clicks one, the helper
+     reads that item's public bazaar listings from weav3r.dev and writes the discounted price into that row's price
+     box. The player checks the price, enters the amount on Add items, and confirms on Torn (Update / Add).
    • On Manage the price box only exists once the row is open. A closed row is never opened for the player; the button
      asks them to open it with Torn's Manage button first. Rows Torn greys out on Add items get no button.
      Synthetic clicks (from other scripts) are ignored.
@@ -17,6 +16,7 @@
   const DESC = '[class*="item___"] [class*="desc___"]';
   const ADD_ROW = 'ul.items-cont li.clearfix'; // Add items keeps Torn's older list
   const ADD_NAME = '.title-wrap .name-wrap';
+  const UNDERCUT_PERCENTS = [1, 5, 10];
   const CACHE_MS = 60_000; // weav3r refreshes its own cache every 30-180 s
   const STALE_S = 3600; // a listing weav3r has not re-checked for an hour may be sold already
   const cache = new Map(); // item id -> { at, listings }
@@ -27,19 +27,21 @@
   style.id = 'lrx-bazaar-undercut-css';
   style.textContent = `
     .lrx-bu { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; vertical-align: middle; font-size: 11px; line-height: 16px; max-width: 100%; }
+    .lrx-bu-options { display: inline-flex; flex: none; gap: 3px; }
     .lrx-bu-btn { cursor: pointer; padding: 0 6px; border-radius: 4px; border: 1px solid rgba(127,127,127,.55); background: rgba(127,127,127,.14);
-      color: inherit; font: inherit; font-weight: 700; line-height: 16px; }
+      color: inherit; font: inherit; font-weight: 700; line-height: 16px; white-space: nowrap; }
     .lrx-bu-btn:hover { background: rgba(127,127,127,.26); }
     .lrx-bu-btn:disabled { cursor: wait; opacity: .55; }
     .lrx-bu-note { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 340px; }
     .lrx-bu-note.ok { color: #3fa52a; } .lrx-bu-note.warn { color: #d39a1f; } .lrx-bu-note.bad { color: #e04848; }
-    /* Add items: the name column is narrow, so keep name, button and note on one line; the note gives way first */
+    /* Add items has a narrow name column. The note uses the space left after the name and buttons. */
     ul.items-cont .name-wrap.lrx-bu-host { display: flex; align-items: center; flex-wrap: nowrap; gap: 4px; min-width: 0; }
     ul.items-cont .name-wrap.lrx-bu-host > * { flex: 0 0 auto; }
-    ul.items-cont .name-wrap.lrx-bu-host > .t-overflow { max-width: calc(100% - 60px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    ul.items-cont .name-wrap.lrx-bu-host > .t-overflow { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     ul.items-cont .name-wrap.lrx-bu-host > .lrx-bu { display: contents; }
-    ul.items-cont .name-wrap.lrx-bu-host .lrx-bu-btn { flex: none; margin-left: 4px; }
-    ul.items-cont .name-wrap.lrx-bu-host .lrx-bu-note { flex: 0 1 auto; min-width: 12px; margin-left: 2px; }`;
+    ul.items-cont .name-wrap.lrx-bu-host .lrx-bu-options { gap: 2px; }
+    ul.items-cont .name-wrap.lrx-bu-host .lrx-bu-btn { padding-inline: 1px; }
+    ul.items-cont .name-wrap.lrx-bu-host .lrx-bu-note { flex: 1 0 0px; min-width: 12px; }`;
   (document.head || document.documentElement).appendChild(style);
 
   // 'manage' or 'add'; any other bazaar page gets no buttons
@@ -132,7 +134,7 @@
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  async function run(desc, btn, note, kind) {
+  async function run(desc, options, note, kind, percent) {
     const show = (text, cls) => { note.textContent = text; note.className = 'lrx-bu-note' + (cls ? ' ' + cls : ''); note.title = text; };
     const row = rowOf(desc);
     const id = itemId(row);
@@ -141,15 +143,15 @@
       return kind === 'manage' ? show(L("Önce Torn'un Manage düğmesiyle satırı aç", "Open the row with Torn's Manage button first"), 'warn')
         : show(L('Bu eşyanın fiyat kutusu yok', 'This item has no price box'), 'warn');
     }
-    btn.disabled = true;
+    for (const button of options.children) button.disabled = true;
     show(L('weav3r.dev okunuyor…', 'Reading weav3r.dev…'));
     try {
       const best = cheapest(await listings(id));
       if (!best) return show(L('Başka bazaar ilanı yok', 'No other bazaar listings'), 'warn');
       const input = priceInput(row);
       // The list re-renders while it scrolls: write only into the same, still open row of the same item
-      if (pageKind() !== kind || !row.isConnected || itemId(row) !== id || !input) return show(L('Satır değişti ya da kapandı; yeniden dene', 'The row changed or closed; try again'), 'warn');
-      const price = Math.max(1, Math.floor(Number(best.price)) - 1);
+      if (pageKind() !== kind || !options.isConnected || !row.isConnected || itemId(row) !== id || !input) return show(L('Satır değişti ya da kapandı; yeniden dene', 'The row changed or closed; try again'), 'warn');
+      const price = Math.max(1, Math.floor(Number(best.price) * (100 - percent) / 100));
       setPrice(input, price);
       const seller = String(best.player_name || '').slice(0, 24);
       const next = kind === 'manage' ? L("Update'e sen bas", 'press Update yourself') : L('miktarı gir ve onayı sen ver', 'enter the amount and confirm yourself');
@@ -157,7 +159,9 @@
         `Set ${money(price)} · cheapest ${money(best.price)}${seller ? ' (' + seller + ')' : ''} · ${next}`), 'ok');
     } catch (e) {
       show(L('weav3r.dev okunamadı: ', 'Could not read weav3r.dev: ') + (e?.message || e), 'bad');
-    } finally { btn.disabled = false; }
+    } finally {
+      for (const button of options.children) button.disabled = false;
+    }
   }
 
   function decorate(desc, kind) {
@@ -165,22 +169,30 @@
     const wrap = document.createElement('span');
     wrap.className = 'lrx-bu';
     wrap.dataset.kind = kind;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'lrx-bu-btn';
-    btn.textContent = '−$1';
-    btn.title = L("weav3r.dev'deki en ucuz diğer bazaar fiyatının $1 altını bu eşyanın fiyat kutusuna yazar. Torn'daki onayı sen verirsin.",
-      "Writes $1 under the cheapest other bazaar on weav3r.dev into this item's price box. You confirm on Torn yourself.");
     const note = document.createElement('span');
     note.className = 'lrx-bu-note';
-    // Keep the press on the button: Torn's row drag and row toggle must not see it
-    for (const type of ['pointerdown', 'mousedown', 'touchstart', 'keydown']) btn.addEventListener(type, (e) => e.stopPropagation());
-    btn.addEventListener('click', (e) => {
-      e.preventDefault(); e.stopPropagation();
-      if (!e.isTrusted || btn.disabled || document.hidden || pageKind() !== kind) return; // only the player's own click
-      run(desc, btn, note, kind);
-    });
-    wrap.append(btn, note);
+    note.setAttribute('role', 'status');
+    const options = document.createElement('span');
+    options.className = 'lrx-bu-options';
+    options.setAttribute('role', 'group');
+    options.setAttribute('aria-label', L('En ucuz rakip ilana göre fiyat indirimi', 'Discount from the cheapest competing listing'));
+    // Keep button presses away from Torn's row drag and toggle handlers.
+    for (const type of ['pointerdown', 'mousedown', 'touchstart', 'keydown']) options.addEventListener(type, (e) => e.stopPropagation());
+    for (const percent of UNDERCUT_PERCENTS) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'lrx-bu-btn';
+      button.textContent = L(`−%${percent}`, `−${percent}%`);
+      button.title = L(`Bu eşyanın fiyatını weav3r.dev'deki en ucuz rakip ilanın %${percent} altına ayarlar.`,
+        `Sets this item's price ${percent}% below the cheapest competing listing on weav3r.dev.`);
+      button.addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        if (!e.isTrusted || button.disabled || document.hidden || pageKind() !== kind) return;
+        run(desc, options, note, kind, percent);
+      });
+      options.appendChild(button);
+    }
+    wrap.append(options, note);
     if (kind === 'add') desc.classList.add('lrx-bu-host');
     desc.appendChild(wrap);
   }

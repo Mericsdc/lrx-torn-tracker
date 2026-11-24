@@ -348,8 +348,8 @@ function main() {
     { name: 'jail-helper', feature: 'torn.jailHelper', match: /^https:\/\/www\.torn\.com\/jailview\.php/i },
     { name: 'sell-guard', feature: 'torn.sellGuard', match: /^https:\/\/www\.torn\.com\/(page\.php\?(.*&)?sid=ItemMarket|bazaar\.php)/i,
       prelude: () => `window.__lrxCosts=${JSON.stringify(purchaseCostsForPage())};` },
-    // Bazaar → Add items / Manage: a −$1 button per item; only the player's click on that item fills its price box (weav3r.dev, no
-    // Torn request). The player's own ID keeps their own listings out of the "cheapest" pick.
+    // Bazaar → Add items / Manage: each item has 1%, 5% and 10% undercut buttons. Only the player's click fills its
+    // price box using weav3r.dev, and their own ID excludes their listings from the comparison.
     { name: 'bazaar-undercut', feature: 'torn.bazaarUndercut', needsFocus: true, match: /^https:\/\/www\.torn\.com\/bazaar\.php/i,
       prelude: () => `window.__lrxMe=${JSON.stringify(myPlayerId() || '')};` },
     // Profiles: working stats (Hall of Fame) and the company's stars above "Life". The owner chose automatic lookups:

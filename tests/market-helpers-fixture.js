@@ -40,10 +40,10 @@ const MANAGE_HTML = `<!doctype html><html><head><title>Bazaar</title></head><bod
     const listings = [
       { player_id: 4242, player_name: 'Me', price: 800000, last_checked: now },
       { player_id: 11, player_name: 'Old', price: 810000, last_checked: now - 7200 },
-      { player_id: 12, player_name: 'Seller<b>x</b>', price: 817000, last_checked: now - 60 },
+      { player_id: 12, player_name: 'Seller<b>x</b>', price: 817099, last_checked: now - 60 },
       { player_id: 13, player_name: 'Other', price: 820000, last_checked: now },
     ];
-    window.postMessage({ channel: 'lrx-userscript-response', script: m.script, id: m.id, response: { status: 200, responseText: JSON.stringify({ item_id: 206, listings }) } }, location.origin);
+    qa.releaseListings = () => window.postMessage({ channel: 'lrx-userscript-response', script: m.script, id: m.id, response: { status: 200, responseText: JSON.stringify({ item_id: 206, listings }) } }, location.origin);
   });
 </script></body></html>`;
 
@@ -83,7 +83,8 @@ const ADD_HTML = `<!doctype html><html><head><title>Bazaar</title><style>
     if (m?.channel !== 'lrx-userscript-request' || m.script !== 'lrx-bazaar-price') return;
     qa.requests.push(m.url);
     const now = Math.floor(Date.now() / 1000);
-    const listings = [{ player_id: 4242, player_name: 'Me', price: 700000, last_checked: now }, { player_id: 21, player_name: 'Cheapest', price: 760000, last_checked: now }];
+    const price = m.url.endsWith('/180') ? 1 : 760000;
+    const listings = [{ player_id: 4242, player_name: 'Me', price: 700000, last_checked: now }, { player_id: 21, player_name: 'Cheapest', price, last_checked: now }];
     window.postMessage({ channel: 'lrx-userscript-response', script: m.script, id: m.id, response: { status: 200, responseText: JSON.stringify({ listings }) } }, location.origin);
   });
 </script></body></html>`;
@@ -121,71 +122,79 @@ async function checkMarketHelpers(browser, output) {
   await page.bringToFront();
   await page.evaluate(() => { window.__lrxLang = 'en'; window.__lrxMe = '4242'; });
   await page.addScriptTag({ path: path.join(__dirname, '../torn-helpers/bazaar-undercut.js') });
-  await page.waitForFunction(() => document.querySelectorAll('.lrx-bu-btn').length === 2);
-  await page.locator('#row-a .lrx-bu-btn').click();
-  await page.waitForFunction(() => document.querySelector('#row-a .lrx-bu-note').classList.contains('ok'));
-  assert.equal(await page.inputValue('#price-a'), '816999', 'own and stale listings are skipped; $1 under the cheapest other seller');
+  await page.waitForFunction(() => document.querySelectorAll('.lrx-bu').length === 2);
+  const undercut = (row, percent) => page.locator(row).getByRole('button', { name: `−${percent}%`, exact: true });
+  assert.deepEqual(await page.locator('#row-a .lrx-bu-btn').allTextContents(), ['−1%', '−5%', '−10%']);
+  await undercut('#row-a', 1).click();
+  await page.waitForFunction(() => typeof qa.releaseListings === 'function');
+  assert.equal(await page.locator('#row-a .lrx-bu-btn:disabled').count(), 3, 'all rates wait for the same row lookup');
+  await page.evaluate(() => qa.releaseListings());
+  await page.locator('#row-a .lrx-bu-note.ok').waitFor();
+  assert.equal(await page.inputValue('#price-a'), '808928', 'uses the cheapest fresh competing listing and rounds down');
   const note = page.locator('#row-a .lrx-bu-note');
-  assert.equal(await note.textContent(), 'Set $816,999 · cheapest $817,000 (Seller<b>x</b>) · press Update yourself');
+  assert.equal(await note.textContent(), 'Set $808,928 · cheapest $817,099 (Seller<b>x</b>) · press Update yourself');
   assert.equal(await note.locator('b').count(), 0, 'a seller name from weav3r is shown as text');
   assert.deepEqual(await page.evaluate(() => qa.requests), ['https://weav3r.dev/api/marketplace/206']);
   // A closed row is not opened for the player
-  await page.locator('#row-b .lrx-bu-btn').click();
+  await undercut('#row-b', 5).click();
   assert.equal(await page.locator('#row-b .lrx-bu-note').textContent(), "Open the row with Torn's Manage button first");
-  // Synthetic clicks do nothing; a second real click within a minute reuses the answer
+  // Synthetic clicks do nothing. The other rates reuse the same marketplace response.
   await page.fill('#price-a', '5');
   await page.evaluate(() => document.querySelector('#row-a .lrx-bu-btn').click());
   await page.waitForTimeout(200);
   assert.equal(await page.inputValue('#price-a'), '5');
-  await page.locator('#row-a .lrx-bu-btn').click();
-  await page.waitForFunction(() => document.querySelector('#price-a').value === '816999');
+  for (const [percent, expected] of [[5, '776244'], [10, '735389']]) {
+    await undercut('#row-a', percent).click();
+    await page.waitForFunction((value) => document.querySelector('#price-a').value === value, expected);
+  }
   assert.deepEqual(await page.evaluate(() => ({ manage: qa.manage, update: qa.update, rowPointer: qa.rowPointer, requests: qa.requests.length })),
     { manage: 0, update: 0, rowPointer: 0, requests: 1 }, 'never presses Manage or Update, never starts a row drag, one weav3r request');
   await page.screenshot({ path: path.join(output, 'bazaar-undercut-fixture.png') });
   await page.evaluate(() => { location.hash = '#/add'; });
   await page.waitForFunction(() => document.querySelectorAll('.lrx-bu').length === 0);
   await page.evaluate(() => { location.hash = '#/manage'; });
-  await page.waitForFunction(() => document.querySelectorAll('.lrx-bu-btn').length === 2);
+  await page.waitForFunction(() => document.querySelectorAll('.lrx-bu').length === 2);
   await page.evaluate(() => { window.__lrxLang = 'tr'; document.querySelectorAll('.lrx-bu').forEach((n) => n.remove()); });
-  await page.waitForFunction(() => document.querySelectorAll('.lrx-bu-btn').length === 2);
-  await page.locator('#row-b .lrx-bu-btn').click();
+  await page.waitForFunction(() => document.querySelectorAll('.lrx-bu').length === 2);
+  assert.deepEqual(await page.locator('#row-b .lrx-bu-btn').allTextContents(), ['−%1', '−%5', '−%10']);
+  await page.locator('#row-b').getByRole('button', { name: '−%10', exact: true }).click();
   assert.equal(await page.locator('#row-b .lrx-bu-note').textContent(), "Önce Torn'un Manage düğmesiyle satırı aç");
   assert.deepEqual(errors, []);
   await page.close();
 
-  // Bazaar → Add items: same button next to each item that can be added; only the price is filled
+  // Bazaar → Add items: the same choices next to each eligible item, with only the price filled.
   const add = await context.newPage();
   add.on('pageerror', (e) => errors.push(e.message));
   await add.goto('https://www.torn.com/bazaar.php?qa=add#/add');
   await add.bringToFront();
   await add.evaluate(() => { window.__lrxLang = 'en'; window.__lrxMe = '4242'; });
   await add.addScriptTag({ path: path.join(__dirname, '../torn-helpers/bazaar-undercut.js') });
-  await add.locator('#add-c .name-wrap .lrx-bu-btn').waitFor();
-  assert.equal(await add.locator('.lrx-bu-btn').count(), 2, 'no button on a row Torn has greyed out');
+  await add.locator('#add-c .name-wrap .lrx-bu-options').waitFor();
+  assert.equal(await add.locator('#add-b .lrx-bu-btn').count(), 0, 'no buttons on a row Torn has greyed out');
   await add.evaluate(() => document.querySelector('#add-a .lrx-bu-btn').click());
   await add.waitForTimeout(200);
   assert.equal(await add.inputValue('#add-price-a'), '', 'synthetic clicks do nothing');
   const settled = (row) => add.waitForFunction((r) => /\b(ok|warn|bad)\b/.test(document.querySelector(r + ' .lrx-bu-note').className), row);
-  await add.locator('#add-a .lrx-bu-btn').click();
+  await add.locator('#add-a').getByRole('button', { name: '−5%', exact: true }).click();
   await settled('#add-a');
-  assert.equal(await add.locator('#add-a .lrx-bu-note').textContent(), 'Set $759,999 · cheapest $760,000 (Cheapest) · enter the amount and confirm yourself',
+  assert.equal(await add.locator('#add-a .lrx-bu-note').textContent(), 'Set $722,000 · cheapest $760,000 (Cheapest) · enter the amount and confirm yourself',
     'the id comes from a relative picture path');
-  assert.equal(await add.inputValue('#add-price-a'), '759999');
+  assert.equal(await add.inputValue('#add-price-a'), '722000');
   assert.deepEqual(await add.evaluate(() => ({ qty: document.getElementById('qty-a').value, confirm: qa.confirm, requests: qa.requests })),
     { qty: '', confirm: 0, requests: ['https://weav3r.dev/api/marketplace/206'] }, 'the amount and Torn\'s confirm button are left to the player');
-  // A long name in the narrow column: the button and its note stay on the item's own line
+  // A long name in the narrow column: the buttons and their note stay on the item's own line.
   const onNameLine = () => add.evaluate(() => {
     const box = (s) => document.querySelector(s).getBoundingClientRect();
     const li = box('#add-c'), name = box('#add-c .name-wrap');
-    return ['.lrx-bu-btn', '.lrx-bu-note', '.t-overflow'].map((s) => box('#add-c ' + s))
+    return ['.lrx-bu-options', '.lrx-bu-note', '.t-overflow'].map((s) => box('#add-c ' + s))
       .every((r) => r.top >= li.top && r.bottom <= li.bottom && r.right <= name.right + 1);
   });
-  assert.equal(await onNameLine(), true, 'the button fits on the name line');
-  await add.locator('#add-c .lrx-bu-btn').click();
+  assert.equal(await onNameLine(), true, 'all three buttons fit on the name line');
+  await add.locator('#add-c').getByRole('button', { name: '−10%', exact: true }).click();
   await settled('#add-c');
-  assert.equal(await add.locator('#add-c .lrx-bu-note').textContent(), 'Set $759,999 · cheapest $760,000 (Cheapest) · enter the amount and confirm yourself',
+  assert.equal(await add.locator('#add-c .lrx-bu-note').textContent(), 'Set $1 · cheapest $1 (Cheapest) · enter the amount and confirm yourself',
     'one item shown by two pictures is still one item');
-  assert.equal(await add.inputValue('#add-price-c'), '759999');
+  assert.equal(await add.inputValue('#add-price-c'), '1', 'the price cannot go below $1');
   assert.equal(await onNameLine(), true, 'a long note is cut short on the name line, not pushed under the row');
   assert.equal(await add.evaluate(() => [...document.querySelectorAll('#add-a .t-overflow, #add-c .t-overflow')].every((n) => n.scrollWidth <= n.clientWidth)),
     true, 'the note gives way; item names that fit are not cut');
