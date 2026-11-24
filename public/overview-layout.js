@@ -9,6 +9,8 @@
     row('profile', 'free', 'SML', 'S'), row('drug', 'free', 'S', 'S'), row('edu', 'free', 'S', 'S'), row('day', 'free', 'S', 'S'),
     row('timers', 'free', 'LW', 'L'), // the live strip: the three timers above in one card
     row('bars', 'free', 'ML', 'M'), row('chips', 'free', 'SML', 'S'), row('battle', 'free', 'ML', 'L'), row('company', 'free', 'W', 'W'),
+    row('wallet', 'free', 'SM', 'S'), row('open_trades', 'free', 'SM', 'M'), row('active_gym', 'free', 'SM', 'S'),
+    row('drug_inventory', 'free', 'SM', 'M'), row('equipment', 'free', 'SM', 'M'),
     row('gym', 'premium', 'SML', 'M'), row('networth', 'premium', 'SM', 'S'), row('travel', 'premium', 'SML', 'M'),
     row('job', 'premium', 'SM', 'S'), row('crimes', 'premium', 'SML', 'M'), row('jail', 'premium', 'SM', 'S'),
     row('awards', 'premium', 'SM', 'S'), row('oc', 'premium', 'SM', 'S'), row('war', 'premium', 'SML', 'M'),

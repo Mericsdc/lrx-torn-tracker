@@ -81,12 +81,12 @@ async function desktop(tornId) {
   assert.equal(service.store.entitlement(tornId).remainingDays, 30);
   const personal = await (await user.page.request.get(user.base + '/api/premium/data')).json();
   assert.equal(personal.account.torn_id, tornId); assert.equal(personal.transactions.length, 1);
-  // The collection: six numbered rows, included for a member.
+  // The collection lists the six tools included for a member.
   assert.equal(await user.page.locator('.pm-collection .fx-entry').count(), 6);
-  assert.match(await user.page.locator('.pm-collection .fx-entry').first().evaluate((el) => getComputedStyle(el, '::before').content), /counter\(pm-tool,\s*upper-roman\)/, 'each row carries a roman numeral');
+  assert.equal(await user.page.locator('.pm-collection .fx-entry.is-available').count(), 6);
   const badges = user.page.locator('.pm-collection .fx-badge');
   assert.equal(await badges.count(), 6);
-  assert.equal(await badges.evaluateAll((els) => els.filter((el) => el.checkVisibility()).length), 0, 'the numeral replaces the Premium badge');
+  assert.equal(await badges.evaluateAll((els) => els.filter((el) => el.checkVisibility()).length), 0, 'the collection heading already identifies the tier');
   assert.match(await user.page.locator('.pm-chapter:has(.pm-collection) .pm-chapter-title').textContent(), /^\d+ advanced tools, included$/);
   // Each plan says when the membership would then run until: the current expiry plus the plan's days (en-GB while the page is English).
   assert.equal(await user.page.locator('.pm-plan-until').count(), 4);
@@ -94,7 +94,26 @@ async function desktop(tornId) {
   assert.deepEqual(await user.page.evaluate(() => ['.pm-collection .fx-entry small', '.pm-plan-until'].map((s) => getComputedStyle(document.querySelector(s)).opacity)), ['1', '1']);
   const until = await user.page.evaluate(() => new Date((PremiumAccess.snapshot().subscription.expiresAt + 30 * 86400) * 1000).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }));
   assert.ok((await user.page.locator('.pm-plan[data-plan="2"] .pm-plan-until').textContent()).includes(until), 'the 2-Xanax plan runs 30 days past the current expiry: ' + until);
-  assert.ok((await user.page.locator('.pm-receiver').textContent()).includes('4037017'));
+  assert.equal(await user.page.locator('.pm-receiver').count(), 0, 'the sandbox never shows a live payment recipient');
+  assert.match(await user.page.locator('.pm-transfer-status').textContent(), /plans shown here are previews/);
+  await user.page.locator('[data-pm-jump="pm-privacy"]').click();
+  assert.equal(await user.page.locator('#pm-privacy').evaluate((el) => el.open), true);
+  await user.page.locator('#pm-privacy > summary').click();
+  const live = await user.page.evaluate(() => ({ ...PremiumAccess.snapshot(), mode: 'live', enabled: true, livePayments: true, check: {} }));
+  const paymentStatus = (url) => url.pathname === '/api/premium/status';
+  await user.page.route(paymentStatus, (route) => route.fulfill({ json: live }));
+  await user.page.locator('[data-premium-action="refresh"]').click();
+  await user.page.locator('.pm-receiver').waitFor();
+  await user.page.locator('[data-plan="4"] input').check();
+  assert.match(await user.page.locator('[data-pm-transfer]').textContent(), /4 Xanax/);
+  await user.page.unroute(paymentStatus);
+  await user.page.route(paymentStatus, (route) => route.fulfill({ json: { ...live, livePayments: false } }));
+  await user.page.locator('[data-premium-action="refresh"]').click();
+  await user.page.locator('.pm-receiver').waitFor({ state: 'detached' });
+  assert.equal(await user.page.locator('[data-plan="4"] input').isChecked(), true, 'the selection survives a live status refresh');
+  await user.page.unroute(paymentStatus);
+  await user.page.locator('[data-premium-action="refresh"]').click();
+  await user.page.locator('.pm-transfer-status').filter({ hasText: 'Test mode' }).waitFor();
   // An opened module workbench spans the whole collection and survives a refresh.
   await user.page.locator('#view-premium [data-feature-slot="travel_advanced"] [data-advanced-open]').click();
   const bench = user.page.locator('#view-premium [data-feature-slot="travel_advanced"][data-feature-open]');
@@ -123,7 +142,7 @@ async function desktop(tornId) {
       const fresh = document.querySelector('.pm-page:not([data-stale])'), entry = fresh?.querySelector('.pm-collection .fx-entry');
       if (!entry) return false;
       const css = (el, pseudo) => getComputedStyle(el, pseudo);
-      return { enter: fresh.classList.contains('pm-enter'), shown: css(fresh).visibility, arc: css(fresh.querySelector('.pm-seal-arc')).animationName, chapter: css(fresh.querySelector('.pm-chapter')).animationName, numeral: css(entry, '::before').transitionDuration, lift: css(fresh.querySelector('.pm-plan-days')).transitionDuration };
+      return { enter: fresh.classList.contains('pm-enter'), shown: css(fresh).visibility, arc: css(fresh.querySelector('.pm-seal-arc')).animationName, chapter: css(fresh.querySelector('.pm-chapter')).animationName, lift: css(fresh.querySelector('.pm-plan-days')).transitionDuration };
     }, null, { timeout: 5000 });
     await page.unroute(statusRoute);
     return { waiting, ...(await handle.jsonValue()) };
@@ -134,7 +153,7 @@ async function desktop(tornId) {
   const moving = await motion(user.page);
   assert.equal(moving.waiting, 'hidden', 'the old page waits hidden for fresh content, so it never shows and then replays');
   assert.deepEqual([moving.enter, moving.shown, moving.arc, moving.chapter], [true, 'visible', 'pmArc', 'pmRise'], 'the seal arc draws in and the chapters rise ' + JSON.stringify(moving));
-  assert.notEqual(moving.numeral, '0s'); assert.notEqual(moving.lift, '0s');
+  assert.notEqual(moving.lift, '0s');
   await user.page.locator('.pm-page:not(.pm-enter):not([data-stale])').waitFor({ timeout: 4000 }); // dropped once played, so it never replays
   await stale(user.page);
   await user.page.locator('[data-premium-action="refresh"]').click();
@@ -176,7 +195,7 @@ async function desktop(tornId) {
   await user.page.locator('.pm-page .pm-hero').waitFor({ timeout: 5000 });
   await user.page.emulateMedia({ reducedMotion: 'reduce' });
   const reduced = await motion(user.page);
-  assert.deepEqual([reduced.waiting, reduced.arc, reduced.chapter, reduced.numeral, reduced.lift], ['visible', 'none', 'none', '0s', '0s'], 'reduced motion: no hold, no entrance and no hover transitions ' + JSON.stringify(reduced));
+  assert.deepEqual([reduced.waiting, reduced.arc, reduced.chapter, reduced.lift], ['visible', 'none', 'none', '0s'], 'reduced motion: no hold, no entrance and no hover transitions ' + JSON.stringify(reduced));
   await user.page.emulateMedia({ reducedMotion: null });
   await user.page.evaluate(() => document.body.classList.add('no-anim'));
   await admin.page.locator('[data-premium-tab="members"]').click();

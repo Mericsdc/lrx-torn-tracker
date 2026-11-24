@@ -49,6 +49,17 @@
   head.replaceChildren(select, editBtn);
   bar.replaceChildren(...editTools);
 
+  const drawerTitle = make('h3', { id: 'ow-drawer-title' });
+  const searchWidgets = make('input', { className: 'input ow-search', type: 'search', autocomplete: 'off' });
+  const filterWidgets = make('select', { className: 'input ow-search' });
+  const filterOptions = [['all', 'Tümü', 'All'], ['free', 'Ücretsiz', 'Free'], ['premium', 'Premium', 'Premium']];
+  const options = filterOptions.map(([value]) => make('option', { value }));
+  filterWidgets.append(...options);
+  const widgetResults = make('div', { className: 'ow-widget-results' });
+  const searchable = (name) => name.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/ı/g, 'i');
+  drawer.setAttribute('aria-labelledby', drawerTitle.id);
+  drawer.replaceChildren(drawerTitle, searchWidgets, filterWidgets, widgetResults);
+
   function drawBar() {
     const set = O.current(), view = O.shown(), on = usable(), premium = O.access() === 'active';
     head.hidden = !on;
@@ -125,11 +136,25 @@
     drawer.hidden = !drawerOpen;
     if (!drawerOpen) return;
     const access = O.access(), locked = access !== 'active', inLayout = new Set(layoutIds());
-    const free = L.WIDGETS.filter((w) => w.tier === 'free' && !inLayout.has(w.id) && (w.id !== 'company' || (state.companyMode && feat('page.company'))));
-    const premium = access === 'off' ? null : L.WIDGETS.filter((w) => w.tier === 'premium' && !inLayout.has(w.id));
-    const key = JSON.stringify([state.lang, access, free.map((w) => w.id), premium?.map((w) => w.id)]);
+    if (access === 'off') {
+      if (filterWidgets.value === 'premium') filterWidgets.value = 'all';
+      options[2].remove();
+    } else if (!options[2].parentNode) filterWidgets.append(options[2]);
+    const query = searchable(searchWidgets.value.trim());
+    const filter = filterWidgets.value;
+    const eligible = L.WIDGETS.filter((w) => !inLayout.has(w.id)
+      && (filter === 'all' || w.tier === filter)
+      && (!query || window.LRXOverviewWidgets.titles[w.id].some((name) => searchable(name).includes(query))));
+    const free = eligible.filter((w) => w.tier === 'free' && (w.id !== 'company' || (state.companyMode && feat('page.company'))));
+    const premium = access === 'off' ? [] : eligible.filter((w) => w.tier === 'premium');
+    const key = JSON.stringify([state.lang, access, free.map((w) => w.id), premium.map((w) => w.id)]);
     if (key === drawerKey) return;
     drawerKey = key;
+    setText(drawerTitle, tr('Widget ekle', 'Add widget'));
+    searchWidgets.placeholder = tr('Widget ara', 'Search widgets');
+    setAttr(searchWidgets, 'aria-label', searchWidgets.placeholder);
+    setAttr(filterWidgets, 'aria-label', tr('Widget erişimi', 'Widget access'));
+    filterOptions.forEach(([, labelTr, labelEn], i) => { setText(options[i], tr(labelTr, labelEn)); });
     const item = (w, off) => {
       const name = title(w.id), b = make('button', { type: 'button', className: 'ow-add-item', disabled: off }, { 'data-add': w.id });
       if (off) b.append(make('span', { textContent: '🔒' }, { 'aria-hidden': 'true' }), make('span', { className: 'ow-add-name', textContent: name }), make('small', { textContent: tr('Premium', 'Premium') }));
@@ -138,12 +163,14 @@
       return li;
     };
     const list = (widgets, off) => { const ul = make('ul'); ul.append(...widgets.map((w) => item(w, off))); return ul; };
-    const parts = [make('h3', { id: 'ow-drawer-title', textContent: tr('Widget ekle', 'Add widget') }), make('h4', { textContent: tr('Ücretsiz', 'Free') })];
-    parts.push(free.length ? list(free, false) : make('p', { className: 'ow-add-none muted', textContent: tr("Tüm ücretsiz widget'lar ekranda.", 'Every free widget is already on the Overview.') }));
-    if (premium) parts.push(make('h4', { textContent: tr('Premium 👑', 'Premium 👑') }), list(premium, locked));
-    drawer.setAttribute('aria-labelledby', 'ow-drawer-title');
-    drawer.replaceChildren(...parts);
+    const parts = [];
+    if (free.length) parts.push(make('h4', { textContent: tr('Ücretsiz', 'Free') }), list(free, false));
+    if (premium.length) parts.push(make('h4', { textContent: 'Premium' }), list(premium, locked));
+    if (!parts.length) parts.push(make('p', { className: 'ow-add-none muted', textContent: tr('Bu filtreye uygun eklenebilir widget yok.', 'No widgets to add match these filters.') }, { role: 'status' }));
+    widgetResults.replaceChildren(...parts);
   }
+  searchWidgets.addEventListener('input', drawDrawer);
+  filterWidgets.addEventListener('change', drawDrawer);
 
   /* ---------- editing ---------- */
   // Applies `op` to the set as it is now, on the layout that is shown. A refused edit changes nothing and commits nothing.
@@ -190,6 +217,8 @@
   function start() {
     if (editing || !usable() || state.view !== 'overview') return;
     editing = true; changed = false; startedFor = playerId(); drawerOpen = false; drawerKey = '';
+    searchWidgets.value = '';
+    filterWidgets.value = 'all';
     draw();
   }
   function close() {
@@ -311,7 +340,7 @@
     if (!editing) return;
     drawerOpen = !drawerOpen;
     draw();
-    if (drawerOpen) drawer.querySelector('[data-add]:not([disabled])')?.focus();
+    if (drawerOpen) searchWidgets.focus();
   });
 
   /* ---------- leaving ---------- */

@@ -86,11 +86,11 @@ html[data-theme="light"] .ow-profile { --pm-accent:#8e6326; --pm-soft:#b4853610;
 .ow-profile:empty { border:1px solid var(--stroke); border-radius:20px; background:linear-gradient(160deg,var(--panel),var(--panel-end)); }
 .view.active #ow-grid > .ow-profile { animation:riseIn .55s var(--ease-out) both; }
 
-/* Premium tiles (overview-widgets.js): a one-liner, then the lines M and L add; the lock state or a note otherwise. */
-.ow-premium .ow-lock { font-size:12px; }
-.ow-premium .card-head { margin-bottom:8px; }
+/* Summary widgets. Larger sizes can display more detail. */
+.ow-data .ow-lock { font-size:12px; }
+.ow-data .card-head { margin-bottom:8px; }
 .ow-t { display:flex; flex-direction:column; gap:4px; min-width:0; border-radius:8px; }
-.ow-premium[data-ow-view] .ow-t { cursor:pointer; }
+.ow-data[data-ow-view] .ow-t { cursor:pointer; }
 .ow-t:focus-visible { outline:2px solid var(--tq); outline-offset:3px; }
 .ow-t p { margin:0; min-width:0; overflow-wrap:anywhere; }
 .ow-t-main { font-size:17px; font-weight:600; line-height:1.3; color:var(--text); font-variant-numeric:tabular-nums; }
@@ -145,8 +145,10 @@ html[data-theme="light"] .ow-ctl button { background:var(--bg-2); }
 #ow-grid > .ow-w.ow-dragging { opacity:.45; }
 @media (prefers-reduced-motion:reduce) { #view-overview #ow-grid.ow-editing > .ow-w { transition:none; } }
 
-.ow-drawer { flex:0 0 250px; width:250px; position:sticky; top:12px; display:flex; flex-direction:column; gap:10px; padding:16px; }
+.ow-drawer { flex:0 0 250px; width:250px; position:sticky; top:60px; max-height:calc(100vh - 76px); display:flex; flex-direction:column; gap:10px; padding:16px; }
 .ow-drawer > * { position:relative; z-index:1; }
+.ow-search { flex:none; width:100%; min-width:0; }
+.ow-widget-results { display:grid; align-content:start; gap:8px; min-height:0; overflow:auto; scrollbar-width:thin; }
 .ow-drawer h3 { font-size:14px; font-weight:600; color:var(--text); }
 .ow-drawer h4 { margin-top:4px; font-size:11px; font-weight:600; letter-spacing:.8px; text-transform:uppercase; color:var(--muted); }
 .ow-drawer ul { display:flex; flex-direction:column; gap:5px; margin:0; padding:0; list-style:none; }
@@ -178,7 +180,7 @@ html[data-theme="light"] .ow-add-item:not(:disabled) { background:var(--bg-2); }
   /* The add list sits below the grid. */
   .ow-wrap { flex-direction:column; align-items:stretch; }
   #ow-grid { flex:none; }
-  .ow-drawer { position:static; flex:none; width:auto; }
+  .ow-drawer { position:static; flex:none; width:auto; max-height:min(420px, 70vh); }
   .ow-drawer ul { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); }
 }
 @media (max-width:639px) {

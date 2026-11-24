@@ -119,21 +119,35 @@ svg text { fill: currentColor; }
 }
 
 /* ---------- Layout ---------- */
-.app { position: relative; z-index: 1; display: grid; grid-template-columns: 236px 1fr; gap: 18px; padding: 16px 18px 18px; min-height: calc(100vh - 44px); }
+.app { position: relative; z-index: 1; display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 18px; padding: 16px 18px 18px; min-height: calc(100vh - 44px); transition: grid-template-columns .25s var(--ease-out); }
+.app.dock-collapsed { grid-template-columns: 64px minmax(0, 1fr); }
 .app.stage-hidden { display: none; }
-.sidebar { position: sticky; top: 60px; height: calc(100vh - 78px); display: flex; flex-direction: column; padding: 18px 12px; }
+.sidebar { position: sticky; top: 60px; height: calc(100vh - 78px); display: flex; flex-direction: column; min-width: 0; padding: 14px 8px; overflow: hidden; }
 .main { min-width: 0; display: flex; flex-direction: column; gap: 16px; padding-bottom: 36px; }
 
-.brand { display: flex; align-items: center; gap: 11px; padding: 2px 8px 18px; border-bottom: 1px solid var(--stroke); margin-bottom: 12px; }
-.brand-text { display: flex; flex-direction: column; line-height: 1.1; }
+.brand { display: flex; align-items: center; gap: 8px; min-height: 54px; padding: 2px 4px 10px; border-bottom: 1px solid var(--stroke); margin-bottom: 8px; }
+.brand-text { display: flex; flex: 1; flex-direction: column; min-width: 0; overflow: hidden; white-space: nowrap; line-height: 1.1; }
 .brand-text strong { font-size: 15.5px; font-weight: 700; letter-spacing: 0.3px; color: #f3f7f8; }
 .brand-text em { font-style: normal; font-size: 10.5px; color: var(--tq); letter-spacing: 2.6px; text-transform: uppercase; font-weight: 600; }
+.dock-toggle { display: grid; place-items: center; flex: none; width: 34px; height: 34px; padding: 0; border: 1px solid var(--stroke-2); border-radius: var(--radius-sm); background: var(--field); color: var(--muted); cursor: pointer; }
+.dock-toggle:hover { color: var(--text); border-color: var(--tq-border); }
+.dock-toggle svg { transition: transform .25s var(--ease-out); }
+.dock-collapsed .dock-toggle svg { transform: scaleX(-1); }
 
-.nav { display: flex; flex-direction: column; gap: 3px; position: relative; z-index: 1; }
+.nav { display: flex; flex-direction: column; gap: 3px; position: relative; z-index: 1; min-height: 0; overflow: auto; scrollbar-width: thin; }
 .nav-item {
-  position: relative; display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: var(--radius-sm);
+  position: relative; display: flex; flex: none; align-items: center; gap: 11px; min-height: 39px; padding: 10px 12px; border-radius: var(--radius-sm);
   border: 1px solid transparent; background: transparent; color: var(--muted); font: 500 13.5px var(--sans);
   cursor: pointer; text-align: left; transition: all 0.16s ease;
+}
+.nav-item > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-item:focus-visible, .dock-toggle:focus-visible { outline: 2px solid var(--tq); outline-offset: -2px; }
+@media (min-width: 901px) {
+  .dock-collapsed .brand { justify-content: center; padding-inline: 0; }
+  .dock-collapsed .brand > :is(.brand-logo, .brand-text), .dock-collapsed .nav-item > span { display: none; }
+  .dock-collapsed .nav-item { justify-content: center; padding-inline: 0; }
+  .dock-collapsed .nav-item:hover { transform: none; }
+  .dock-collapsed .nav-badge { position: absolute; inset: 0 0 auto auto; min-width: 15px; height: 15px; padding: 0 3px; font-size: 9px; line-height: 13px; }
 }
 .nav-item:hover { color: var(--text); background: rgba(255, 255, 255, 0.035); }
 .nav-item.active {
@@ -584,13 +598,16 @@ body.no-anim .gym-days > summary h3::before { transition: none; }
   .war-head { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
-  .app { grid-template-columns: 1fr; padding: 12px; }
+  .app, .app.dock-collapsed { grid-template-columns: minmax(0, 1fr); padding: 12px; }
   .sidebar { position: relative; top: 0; height: auto; }
-  .nav { flex-direction: row; overflow-x: auto; }
+  .nav { flex-direction: row; max-height: 52px; overflow: auto hidden; transition: max-height .25s var(--ease-out), opacity .2s ease; }
+  .dock-collapsed .nav { max-height: 0; opacity: 0; }
   .nav-item span { display: none; }
   .grid.two, .grid.three { grid-template-columns: 1fr; }
   .bs-totals { grid-template-columns: 1fr; }
 }
+@media (prefers-reduced-motion: reduce) { .app, .dock-toggle svg, .nav { transition: none; } }
+.no-anim :is(.app, .dock-toggle svg, .nav) { transition: none; }
 
 /* ==========================================================
    Multi-Tab Workspace Bar & Embedded Torn Browser (.exe)

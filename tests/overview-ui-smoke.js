@@ -47,7 +47,7 @@ const widgetData = {
     myOc: { inOc: true, crime: { id: 77, name: 'Mob Mentality', difficulty: 3, status: 'Planning', readyAt: NOW + 7200, filled: 3, total: 4 }, slot: { role: 'Looter', cpr: 70, item: { name: 'Crowbar', ok: true } } } },
   '/api/wars': { faction: { id: 5, name: 'Example' }, wars: [{ type: 'Ranked War', id: '1', factionId: 99, name: MARK, score: 1200, myScore: 1500 }] },
   '/api/events': { seasonal: [], at: Date.now(), events: [{ title: 'Easter Egg Hunt', description: '', start: NOW + 3 * 86400 + 7200, end: NOW + 10 * 86400, exact: true, fixed: true }] },
-  '/api/companion/money': { observedAt: Date.now(), faction: { money: 3400, points: 6 } },
+  '/api/companion/money': { observedAt: Date.now(), wallet: 12345, vault: 67890, faction: { money: 3400, points: 6 } },
 };
 const WIDGET_PATHS = Object.keys(widgetData);
 const forbidden = []; // requests the widgets must never make, from every page in this run
@@ -785,9 +785,11 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   await page.setViewportSize({ width: 1440, height: 1050 });
   await page.evaluate(() => { state.companyMode = false; state.company = null; LRXOverview.apply(); });
 
-  // off: with app.premiumPromos off the Premium group leaves the add list and the tiles read "Not available"
+  // Hiding promotions keeps paid widgets available. Turning the membership connection off hides the previews.
   await showSet(page, oneLayout(['drug', 'S'], ['gym', 'M'], ['networth', 'S']));
   await setSwitch(page, 'app.premiumPromos', false);
+  assert.equal(await page.evaluate(() => LRXOverview.access()), 'active');
+  await setSwitch(page, 'app.premium', false);
   assert.equal(await page.evaluate(() => LRXOverview.access()), 'off');
   for (const id of ['gym', 'networth']) {
     const text = await tileText(page, id);
@@ -799,6 +801,7 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   assert.equal(await page.locator('#ow-drawer [data-add="travel"]').count(), 0);
   await page.evaluate(() => LRXOverviewEdit.stop());
   await setSwitch(page, 'app.premiumPromos', true);
+  await setSwitch(page, 'app.premium', true);
   await page.waitForFunction(() => LRXOverview.access() === 'active');
   await setSwitch(page, 'app.overviewLayout', false);
   assert.equal(await tileOf(page, 'gym').isVisible(), false, 'classic: Premium tiles are hidden');
@@ -972,11 +975,23 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   const drawer = fp.locator('#ow-drawer');
   await drawer.waitFor({ state: 'visible' });
   assert.equal(await fp.locator('#ow-add').getAttribute('aria-expanded'), 'true');
-  assert.deepEqual(await drawer.locator('[data-add]:not([disabled])').evaluateAll((els) => els.map((el) => el.dataset.add)), ['day', 'timers', 'chips'], 'the free widgets not in the layout');
+  assert.deepEqual(await drawer.locator('[data-add]:not([disabled])').evaluateAll((els) => els.map((el) => el.dataset.add)), ['day', 'timers', 'chips', 'wallet', 'open_trades', 'active_gym', 'drug_inventory', 'equipment'], 'the free widgets not in the layout');
+  const catalogSearch = drawer.getByRole('searchbox', { name: 'Search widgets' });
+  await catalogSearch.fill('cuzdan');
+  const wallet = drawer.locator('[data-add="wallet"]');
+  assert.equal(await drawer.locator('[data-add]').count(), 1, 'search matches both languages and ignores accents');
+  await wallet.click();
+  await fp.locator('#ow-grid [data-widget="wallet"] .ow-t-main').filter({ hasText: '$12,345' }).waitFor();
+  await removeBtn('wallet').click();
+  await catalogSearch.fill('');
   const locked = drawer.locator('[data-add][disabled]');
   assert.equal(await locked.count(), 21, 'every Premium widget is listed');
   assert.equal(await locked.evaluateAll((els) => els.every((el) => el.textContent.includes('🔒') && el.textContent.includes('Premium'))), true, 'Premium items carry a lock and the note');
-  assert.ok((await drawer.textContent()).includes('Premium 👑'));
+  assert.equal(await drawer.getByRole('heading', { name: 'Premium', exact: true }).count(), 1);
+  const accessFilter = drawer.getByRole('combobox', { name: 'Widget access' });
+  await accessFilter.selectOption('free');
+  assert.equal(await locked.count(), 0, 'the free filter hides locked widgets');
+  await accessFilter.selectOption('all');
   await drawer.locator('[data-add="gym"]').click({ force: true });
   await drawer.locator('[data-add="chips"]').click();
   await waitForIds(fp, ['profile', 'edu', 'drug', 'battle', 'bars', 'chips']);

@@ -4,7 +4,7 @@ import layout from '../../public/overview-layout.js';
 const { defaultSet, normalize, view, move, remove, add, resize, select, duplicate, rename, removeLayout, reset } = layout;
 
 const DEFAULT_IDS = ['profile', 'timers', 'bars', 'chips', 'battle', 'company'];
-const FREE_IDS = ['profile', 'drug', 'edu', 'day', 'timers', 'bars', 'chips', 'battle', 'company'];
+const FREE_IDS = ['profile', 'drug', 'edu', 'day', 'timers', 'bars', 'chips', 'battle', 'company', 'wallet', 'open_trades', 'active_gym', 'drug_inventory', 'equipment'];
 const PREMIUM_IDS = [
   'gym', 'networth', 'travel', 'job', 'crimes', 'jail', 'awards', 'oc', 'war', 'events', 'orders',
   'faction_member', 'faction_activity', 'faction_balance', 'faction_stats', 'faction_radar',
@@ -59,6 +59,8 @@ describe('defaults and the widget catalogue', () => {
     expect(row('chips')).toEqual({ tier: 'free', sizes: ['S', 'M', 'L'], size: 'S' });
     expect(row('battle')).toEqual({ tier: 'free', sizes: ['M', 'L'], size: 'L' });
     expect(row('company')).toEqual({ tier: 'free', sizes: ['W'], size: 'W' });
+    for (const id of ['wallet', 'active_gym']) expect(row(id)).toEqual({ tier: 'free', sizes: ['S', 'M'], size: 'S' });
+    for (const id of ['open_trades', 'drug_inventory', 'equipment']) expect(row(id)).toEqual({ tier: 'free', sizes: ['S', 'M'], size: 'M' });
     for (const id of ['gym', 'travel', 'crimes', 'war', 'faction_activity', 'faction_radar', 'travel_routes', 'travel_planner']) {
       expect(row(id)).toEqual({ tier: 'premium', sizes: ['S', 'M', 'L'], size: 'M' });
     }

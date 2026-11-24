@@ -322,7 +322,12 @@ function showView(v) {
   v = window.LRXFinance?.alias(v) ?? v; // networth / income are tabs of the Finance page (finance.js)
   if (state.view === 'overview' && v !== 'overview') window.LRXOverviewEdit?.stop(); // saves the layout edit, if any
   state.view = v;
-  $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === v));
+  $$('.nav-item').forEach((b) => {
+    const active = b.dataset.view === v;
+    b.classList.toggle('active', active);
+    if (active) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
   $$('.view').forEach((s) => s.classList.toggle('active', s.id === `view-${v}`));
   const vm = VIEW_META[v]?.[state.lang] || VIEW_META.overview[state.lang];
   $('#view-title').textContent = vm[0];

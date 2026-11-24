@@ -4,6 +4,7 @@
   const host = $('#premium-content'), feedback = $('#premium-feedback');
   let snapshot = null, admin = null, memberPage = null, lastTest = null, firstTest = null;
   let tab = 'membership', loading = false, acting = false, selectedMember = null;
+  let planQuantity = null, identityRevision = 0, statusUnavailable = false;
   const filters = { search: '', filter: 'all', page: 1 };
   const locale = () => state.lang === 'tr' ? 'tr-TR' : 'en-GB';
   const date = (seconds) => seconds ? new Date(seconds * 1000).toLocaleString(locale(), { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -39,6 +40,7 @@
       PAYMENT_CHECK_IN_PROGRESS: tr('Ödeme kontrolü devam ediyor. Tamamlandıktan sonra yeniden deneyin.', 'A payment check is running. Retry when it has finished.'),
       PREMIUM_DISABLED: tr('Premium bağlantısı kapalı. Ayarlar → Genel → Uygulama bölümünden açabilirsiniz.', 'Premium connection is off. You can turn it on in Settings → General → App.'),
       PREMIUM_SERVICE_ERROR: tr('Üyelik servisi şu anda yanıt vermiyor. Biraz sonra yeniden deneyin.', 'The membership service is not responding right now. Please try again shortly.'),
+      PREMIUM_IDENTITY_CHANGED: tr('Torn hesabı değişti. Premium ekranı yeniden yükleniyor.', 'The Torn account changed. Premium is reloading.'),
       TIMEOUT: tr('Üyelik servisi zamanında yanıt vermedi. Biraz sonra yeniden deneyin.', 'The membership service did not respond in time. Please try again shortly.'),
     })[code] || tr('İşlem tamamlanamadı: ', 'Action could not be completed: ') + code;
   }
@@ -81,15 +83,18 @@
   }
   function hero() {
     const d = snapshot, sub = d.subscription || {}, status = heroState(d);
-    const tag = { active: tr('ÜYE', 'MEMBER'), lifetime: tr('KALICI', 'LIFETIME'), expired: tr('SÜRESİ DOLDU', 'EXPIRED') }[status];
-    const tools = (window.LRXFeatureCatalog?.premium || []).length;
-    const headline = status === 'none' || status === 'expired' ? `${tr(`${tools} gelişmiş araç.`, `${tools} advanced tools.`)} <em>${tr('Tek üyelik.', 'One membership.')}</em>`
-      : `${tr('Üyeliğiniz.', 'Your membership.')} <em>${status === 'lifetime' ? tr('Daima sizin.', 'Always yours.') : tr('Bir üst seviyede.', 'Elevated.')}</em>`;
+    const title = {
+      active: tr('Premium üyeliğiniz aktif', 'Your Premium membership is active'),
+      lifetime: tr('Kalıcı Premium üyeliği', 'Lifetime Premium membership'),
+      expired: tr('Üyeliğinizin süresi doldu', 'Your membership has expired'),
+      none: tr('Premium üyelik', 'Premium membership'),
+      unknown: tr('Üyelik doğrulanıyor', 'Verifying membership'),
+    }[status];
     // Lifetime members see their own name, never another member's.
     const holder = d.account ? `<b>${esc(d.account.name || (d.account.tornId === 4037017 ? 'Ezlira' : String(d.account.tornId)))}</b><span>[${esc(d.account.tornId)}]</span>` : tr('Üyelik durumu otomatik güncellenir', 'Membership updates automatically');
     const connection = d.connected ? '' : `<p class="pm-fine-print pm-connection-status" role="status">${esc(d.connectionError ? errorText({ code: d.connectionError }) : tr('Üyeliğiniz uygulamadaki Torn hesabınızla otomatik eşleştirilir. Xanax gönderdiğinizde süre kendi Torn ID’nize tanımlanır.', 'Membership matches your Torn account automatically. Sending Xanax credits time to your own Torn ID.'))}</p>`;
     const primary = { active: tr('Üyeliği uzat', 'Extend membership'), expired: tr('Üyeliği yenile', 'Renew membership'), none: tr('Planları gör', 'See plans') }[status];
-    return `<header class="pm-hero" data-state="${status}"><div class="pm-eyebrow">LRX PREMIUM${tag ? ' · ' + tag : ''}${d.mode === 'test' ? badge(tr('Test ortamı', 'Test workspace')) : ''}</div>${seal(status, sub)}<h2>${headline}</h2><div class="pm-holder"><div class="pm-profile-slot" data-pm-profile hidden></div><p class="pm-holder-text">${holder}</p></div>${connection}${ledger(status)}<div class="pm-hero-actions">${primary ? button('plans', primary, 'pm-primary') : ''}${button('refresh', tr('Yenile', 'Refresh'), 'pm-ghost', `aria-label="${esc(tr('Üyelik durumunu yenile', 'Refresh membership status'))}"`)}</div></header>`;
+    return `<header class="pm-hero" data-state="${status}"><div class="pm-hero-content">${d.mode === 'test' ? badge(tr('Test ortamı', 'Test workspace')) : ''}<h2>${esc(title)}</h2><div class="pm-holder"><div class="pm-profile-slot" data-pm-profile hidden></div><p class="pm-holder-text">${holder}</p></div>${connection}${ledger(status)}<div class="pm-hero-actions">${primary ? button('plans', primary, 'pm-primary') : ''}${button('refresh', tr('Yenile', 'Refresh'), 'pm-ghost', `aria-label="${esc(tr('Üyelik durumunu yenile', 'Refresh membership status'))}"`)}</div></div>${seal(status, sub)}</header>`;
   }
   // The viewer's own Torn profile in the hero's holder line (profile-card.js, shared with the Overview), shown only
   // when the overview's player is the Premium account itself.
@@ -113,13 +118,12 @@
     return `<nav class="pm-tabs" aria-label="Premium">${tabs.map(([id, label]) => `<button type="button" data-premium-tab="${id}" class="${tab === id ? 'selected' : ''}" aria-pressed="${tab === id}">${esc(label)}</button>`).join('')}</nav>`;
   }
   function sectionTitle(eyebrow, title, aside = '') { return `<div class="pm-section-heading"><div><span class="pm-eyebrow">${esc(eyebrow)}</span><h3>${esc(title)}</h3></div>${aside}</div>`; }
-  // A chapter of the membership tab: a centred divider label, then a serif title. Admin tabs keep sectionTitle().
-  function chapter(id, label, title, body) { return `<section class="pm-chapter" id="${id}"><div class="pm-divider"><span>${esc(label)}</span></div><h3 class="pm-chapter-title">${esc(title)}</h3>${body}</section>`; }
-  // The module slots, filled by feature-access.js and numbered by premium.css.
+  function chapter(id, title, body) { return `<section class="pm-chapter" id="${id}"><h3 class="pm-chapter-title">${esc(title)}</h3>${body}</section>`; }
+  // The module slots are filled by feature-access.js.
   function collection(status) {
     const tools = window.LRXFeatureCatalog?.premium || [], n = tools.length, included = status === 'active' || status === 'lifetime';
     const title = included ? tr(`${n} gelişmiş araç, üyeliğinize dahil`, `${n} advanced tools, included`) : tr(`${n} gelişmiş araç`, `${n} advanced tools`);
-    return chapter('pm-tools', tr('KOLEKSİYON', 'THE COLLECTION'), title, `${included ? '' : `<p class="pm-chapter-lead">${tr('Premium ile açılır', 'Unlocked with Premium')}</p>`}<div class="pm-collection">${tools.map((f) => `<div data-feature-slot="${f.id}"></div>`).join('')}</div>`);
+    return chapter('pm-tools', title, `${included ? '' : `<p class="pm-chapter-lead">${tr('Premium ile açılır', 'Unlocked with Premium')}</p>`}<div class="pm-collection">${tools.map((f) => `<div data-feature-slot="${f.id}"></div>`).join('')}</div>`);
   }
   // The card matching the member's latest applied payment is lit as their plan; otherwise the 2-Xanax (30-day) card stays recommended.
   const PLANS = [1, 2, 4, 10];
@@ -127,22 +131,38 @@
     const quantity = Number((transactions || []).find((r) => r.status === 'applied')?.quantity);
     return PLANS.includes(quantity) ? quantity : null;
   }
+  function transferStatus(d) {
+    if (d.mode === 'test') return tr('Test modu. Buradaki planlar önizleme amaçlıdır.', 'Test mode. The plans shown here are previews.');
+    if (statusUnavailable) return tr('Ödeme durumu doğrulanamadı. Üyelik durumunu yenileyin.', 'Payment status could not be verified. Refresh your membership status.');
+    if (!d.connected) return tr('Transfer bilgilerini görmek için üyelik bağlantısının doğrulanmasını bekleyin.', 'Transfer details appear after your membership connection is verified.');
+    if (d.livePayments !== true || d.check?.gapDetected || d.check?.error) return tr('Xanax transferleri şu anda işlenemiyor. Daha sonra yeniden kontrol edin.', 'Xanax transfers cannot be processed at the moment. Check again later.');
+    if (!Number.isSafeInteger(d.receiver?.tornId) || d.receiver.tornId < 1) return tr('Alıcı doğrulanamadı. Durumu yenileyin.', 'The receiver could not be verified. Refresh the status.');
+    return '';
+  }
   // "Until" adds a plan's days to the current expiry, or to now. Lifetime has nothing to extend, and an unknown status is never guessed.
   function plans(status) {
     const d = snapshot, mine = paidPlan(d.transactions), featured = mine ?? 2, dated = status !== 'lifetime' && status !== 'unknown', now = Date.now() / 1000;
+    const unavailable = status === 'lifetime' ? tr('Kalıcı üyeliğiniz için süre eklemeniz gerekmez.', 'Your lifetime membership needs no renewal.') : transferStatus(d);
+    const rate = Number(d.pricing?.premiumDays) / Number(d.pricing?.xanaxPrice);
+    if (!Number.isFinite(rate) || rate <= 0) return chapter('pm-plans', tr('Xanax ile süre ekleyin', 'Add time with Xanax'), `<p class="pm-muted">${tr('Plan bilgisi alınamadı.', 'Plan information is unavailable.')}</p>`);
+    const selected = planQuantity ?? featured;
     const cards = PLANS.map((q) => {
-      const days = q * d.pricing.premiumDays / d.pricing.xanaxPrice, until = dated ? dateOnly(extendUntil(d.subscription, days, now)) : '';
-      return `<article class="pm-plan ${q === featured ? 'featured' : ''}" data-plan="${q}"><div class="pm-plan-label">${q === mine ? tr('SON PLANINIZ', 'YOUR PLAN') : q === featured ? tr('ÖNERİLEN', 'RECOMMENDED') : ''}</div><div class="pm-plan-days">${number(days)}</div><div class="pm-plan-price">${tr('gün', 'days')} · <b>${q} Xanax</b></div>${dated ? `<div class="pm-plan-until">${esc(tr(`${until} tarihine kadar`, `until ${until}`))}</div>` : ''}</article>`;
+      const days = q * rate, until = dated ? dateOnly(extendUntil(d.subscription, days, now)) : '';
+      return `<label class="pm-plan ${q === featured ? 'featured' : ''}" data-plan="${q}"><input type="radio" name="premium-plan" value="${q}" ${q === selected ? 'checked' : ''}><span class="pm-plan-label">${q === mine ? tr('SON PLANINIZ', 'YOUR PLAN') : q === featured ? tr('ÖNERİLEN', 'RECOMMENDED') : ''}</span><span class="pm-plan-days">${number(days)}</span><span class="pm-plan-price">${tr('gün', 'days')} · <b>${q} Xanax</b></span>${dated ? `<span class="pm-plan-until">${esc(tr(`${until} tarihine kadar`, `until ${until}`))}</span>` : ''}</label>`;
     }).join('');
-    return chapter('pm-plans', tr('UZAT', 'EXTEND'), tr('Xanax ile süre ekleyin', 'Add time with Xanax'), `<div class="pm-plans">${cards}</div><div class="pm-receiver"><span>${tr('Alıcı', 'Send to')}</span><b>${esc(d.receiver.name || 'Torn')} [${esc(d.receiver.tornId)}]</b>${button('copy-receiver', tr('ID kopyala', 'Copy ID'), 'pm-ghost')}</div><p class="pm-fine-print">${tr('Mevcut özellikler ve Torn API verilerine erişim ücretsizdir. Premium, yukarıdaki gelişmiş analiz ve kişiselleştirme araçlarını ekler.', 'Existing features and Torn API data access remain free. Premium adds the analysis and personalization tools above.')}</p>`);
+    const receiver = unavailable ? `<p class="pm-transfer-status" role="status">${esc(unavailable)}</p>` : `<div data-pm-transfer-details><div class="pm-receiver"><div><p data-pm-transfer role="status">${esc(transferAmount(selected))}</p><b>${esc(d.receiver.name || 'Torn')} [${d.receiver.tornId}]</b></div>${button('copy-receiver', tr('ID kopyala', 'Copy ID'), 'pm-ghost')}<a class="btn pm-button pm-primary" href="https://www.torn.com/profiles.php?XID=${d.receiver.tornId}">${tr('Alıcıyı Torn’da aç', 'Open receiver in Torn')}</a></div><p class="pm-fine-print">${tr('Xanax’ı doğrulanmış Torn hesabınızdan gönderin. Servis transferi işlediğinde eklenen süre ödeme geçmişinde görünür.', 'Send Xanax from your verified Torn account. The time awarded appears in your payment history after the transfer is processed.')}</p></div>`;
+    return chapter('pm-plans', tr('Xanax ile süre ekleyin', 'Add time with Xanax'), `<div class="pm-plans" role="group" aria-label="${esc(tr('Üyelik süresi seçenekleri', 'Membership duration options'))}">${cards}</div>${receiver}`);
   }
+  const transferAmount = (quantity) => tr(`${quantity} Xanax gönderilecek alıcı`, `Recipient for ${quantity} Xanax`);
   function membership() {
     const d = snapshot, status = heroState(d);
-    return collection(status) + plans(status) + (d.connected ? chapter('pm-account', tr('HESAP', 'ACCOUNT'), tr('Ödeme geçmişiniz', 'Your payment history'), `<div class="pm-chapter-aside">${button('receipts', tr('CSV indir', 'Download CSV'), 'pm-ghost')}</div>${paymentTable(d.transactions, false)}`) : '') + privacy();
+    const links = [['pm-tools', tr('Premium araçları', 'Premium tools')], ['pm-plans', tr('Süre ekle', 'Add time')], ...(d.connected ? [['pm-account', tr('Ödeme geçmişi', 'Payment history')]] : []), ['pm-privacy', tr('Veriler ve gizlilik', 'Data and privacy')]];
+    const nav = `<nav class="pm-section-nav" aria-label="${esc(tr('Üyelik bölümleri', 'Membership sections'))}">${links.map(([id, label]) => `<button type="button" class="btn pm-button pm-ghost" data-pm-jump="${id}">${esc(label)}</button>`).join('')}</nav>`;
+    return nav + collection(status) + plans(status) + (d.connected ? chapter('pm-account', tr('Ödeme geçmişiniz', 'Your payment history'), `<div class="pm-chapter-aside">${button('receipts', tr('CSV indir', 'Download CSV'), 'pm-ghost')}</div>${paymentTable(d.transactions || [], false)}`) : '') + privacy();
   }
   function privacy() {
     const d = snapshot, content = `<div class="pm-data-grid"><div><small>${tr('Saklanan veriler', 'Stored data')}</small><p>${tr('Doğrulanmış Torn ID ve oyuncu adı, transfer bilgileri, üyelik süresi ve yönetici işlem kayıtları.', 'Verified Torn ID and player name, transfer metadata, membership period and admin audit records.')}</p></div><div><small>${tr('Kimler erişebilir?', 'Who can access?')}</small><p>${tr('Hesap sahibi ve yetkili servis yöneticileri. Kayıtlar halka açık değildir.', 'The account owner and authorized service operators. Records are not public.')}</p></div><div><small>${tr('Anahtar kullanımı', 'Key usage')}</small><p>${d.mode === 'test' ? tr('Bu test bağlantısı Torn anahtarınızı göndermez; sentetik hesap kullanır.', 'This test connection sends no Torn API key; it uses a synthetic account.') : tr('Uygulamaya girişte üyeliğiniz kayıtlı Torn hesabınızla otomatik eşleştirilir. Anahtar yalnızca hesap kontrolü için kullanılır; üyelik servisinde saklanmaz. Bir faction lideri ortak Faction Hub servisine kendi anahtarını bağlarsa, o anahtar bağlantı kaldırılana kadar şifreli olarak saklanır. Bunu Ayarlar → Genel → Uygulama bölümünden kapatabilirsiniz.', 'App login automatically matches your membership to your saved Torn account. The key is used only for account checks and is not stored by the membership service. If a faction leader connects their own key to the shared Faction Hub, that key is stored encrypted until it is disconnected. You can turn this off in Settings → General → App.')}</p></div><div><small>${tr('Saklama ve iletişim', 'Retention and contact')}</small><p>${esc(d.privacy.recordRetentionPolicy || tr('Canlı kullanım öncesi belirlenecek.', 'To be defined before live use.'))} ${tr('İnceleme metni: ', 'Review text: ')}${esc(d.privacy.reviewRetentionDays)} ${tr('gün.', 'days.')} ${esc(d.privacy.controller)} · ${esc(d.privacy.contact || '—')}</p></div></div><p class="pm-fine-print">${tr('Torn ID ve ilişkili üyelik kayıtları kişisel veri olarak işlenir.', 'Your Torn ID and linked membership records are treated as personal data.')}${d.privacy.termsUrl && /^https:\/\//.test(d.privacy.termsUrl) ? ` <a href="${esc(d.privacy.termsUrl)}" target="_blank" rel="noopener noreferrer">${tr('Servis koşulları', 'Service terms')}</a>` : ''}</p>`;
-    return `<details class="pm-privacy" data-pm-details="privacy"><summary>${icon('shield')} ${tr('Verileriniz ve gizlilik', 'Your data and privacy')}</summary>${content}${d.connected ? `<div class="pm-actions">${button('data', tr('Verilerimi indir', 'Download my data'), 'pm-ghost')}${button('erasure-request', tr('Silme değerlendirmesi iste', 'Request erasure assessment'), 'pm-quiet')}</div><p class="pm-fine-print">${tr('Üyelik kayıtları için silme talepleri incelemeye alınır ve anında silinmez; Faction Hub verileriniz ise hemen silinir.', 'Erasure requests for membership records are reviewed by an operator and are not erased immediately; your Faction Hub data is removed right away.')}</p>` : ''}</details>`;
+    return `<details class="pm-privacy" id="pm-privacy" data-pm-details="privacy"><summary>${icon('shield')} ${tr('Verileriniz ve gizlilik', 'Your data and privacy')}</summary>${content}${d.connected ? `<div class="pm-actions">${button('data', tr('Verilerimi indir', 'Download my data'), 'pm-ghost')}${button('erasure-request', tr('Silme değerlendirmesi iste', 'Request erasure assessment'), 'pm-quiet')}</div><p class="pm-fine-print">${tr('Üyelik kayıtları için silme talebini bir yönetici değerlendirir. Faction Hub erişilebilir durumdaysa kişisel Hub verileriniz hemen silinir.', 'An operator reviews erasure requests for membership records. Your personal Faction Hub data is removed immediately when the Hub is available.')}</p>` : ''}</details>`;
   }
   function paymentTable(rows, manage) {
     return table([manage ? tr('Tarih / İşlem', 'Date / Transaction') : tr('Tarih', 'Date'), ...(manage ? [tr('Oyuncu', 'Player')] : []), 'Xanax', tr('Eklenen süre', 'Time awarded'), tr('Durum', 'Status')], rows.filter(r=>r.status!=='ignored').map((r) => {
@@ -230,40 +250,76 @@
   function featurePermissions() {
     return `<details class="pm-setting" data-pm-details="feature-permissions"><summary>${tr('Gelişmiş modül yetkileri', 'Advanced module permissions')}</summary><p class="pm-muted">${tr('Varsayılan olarak etkin Premium üyeleri bütün gelişmiş modülleri kullanır. Buradan bir modüle istisna tanımlayabilirsiniz; izin vermek bitmiş üyeliği etkinleştirmez.', 'Active Premium members can use all advanced modules by default. Set individual exceptions here; allowing a module does not activate an expired membership.')}</p><form data-premium-form="feature-permission" class="pm-form">${field('tornId', 'Torn ID', '', 'number', 'required min="1"')}<label> ${tr('Modül', 'Module')}<select name="featureId">${window.LRXFeatureCatalog.premium.map((f) => `<option value="${f.id}">${esc(f.title[state.lang === 'en' ? 1 : 0])}</option>`).join('')}</select></label><label>${tr('İzin', 'Permission')}<select name="allowed"><option value="true">${tr('İzin ver', 'Allow')}</option><option value="false">${tr('Kapat', 'Deny')}</option></select></label>${reason()}<button type="submit" class="btn pm-button pm-primary">${tr('Yetkiyi kaydet', 'Save permission')}</button></form>${table(['Torn ID', tr('Modül', 'Module'), tr('İzin', 'Permission')], (admin.featureOverrides || []).map((r) => cell(r.torn_id, r.feature_id, r.allowed ? tr('Açık', 'Allowed') : tr('Kapalı', 'Denied'))))}</details>`;
   }
-  async function loadAdmin() { admin = await api('/api/premium/admin'); }
-  async function loadMembers() { memberPage = await api('/api/premium/members', { method: 'POST', body: JSON.stringify(filters) }); }
+  async function accountRequest(path, options) {
+    const revision = identityRevision;
+    try { return await api('/api/premium/' + path, options); }
+    finally { if (revision !== identityRevision) throw Object.assign(new Error('PREMIUM_IDENTITY_CHANGED'), { code: 'PREMIUM_IDENTITY_CHANGED' }); }
+  }
+  async function loadAdmin() { admin = await accountRequest('admin'); }
+  async function loadMembers() { memberPage = await accountRequest('members', { method: 'POST', body: JSON.stringify(filters) }); }
   // status(true) resolves null when the account changed mid-request: keep the previous snapshot then.
-  async function latest() { const next = await (window.PremiumAccess ? window.PremiumAccess.status(true) : api('/api/premium/status')); if (next) snapshot = next; return next; }
-  async function refresh() {
+  async function latest() {
+    const revision = identityRevision;
+    try {
+      const next = await (window.PremiumAccess ? window.PremiumAccess.status(true) : api('/api/premium/status'));
+      if (next) { snapshot = next; statusUnavailable = false; }
+      return next;
+    } catch (error) {
+      if (revision === identityRevision && error.code !== 'PREMIUM_IDENTITY_CHANGED') {
+        statusUnavailable = true;
+        const details = host.querySelector('[data-pm-transfer-details]');
+        if (details) details.hidden = true;
+      }
+      throw error;
+    }
+  }
+  async function refresh({ background = false } = {}) {
     if (loading) return; loading = true;
     if (!snapshot && !host.childElementCount) host.innerHTML = `<p class="pm-muted" role="status">${tr('Üyelik bilgisi yükleniyor…', 'Loading membership…')}</p>`;
     try {
+      const focus = document.activeElement;
       if (!await latest()) return;
+      if (background && (acting || (document.activeElement !== focus && host.contains(document.activeElement)))) return;
       if (!snapshot.account?.admin) { admin = null; memberPage = null; selectedMember = null; tab = 'membership'; }
       else if (tab !== 'membership') { await loadAdmin(); if (tab === 'members') await loadMembers(); }
       render();
       if (snapshot.disabled) message('');
     } catch (e) {
+      if (e.code === 'PREMIUM_IDENTITY_CHANGED') return;
       if (e.status === 401) { admin = null; memberPage = null; tab = 'membership'; try { if (await latest()) render(); } catch {} }
       if (snapshot?.disabled || e.code === 'PREMIUM_DISABLED') { message(''); return; }
       message(errorText(e), true);
     } finally { loading = false; if (animateNext) release(); }
   }
   const scrollBehavior = () => prefersReducedMotion() ? 'auto' : 'smooth';
-  // Brings the plans into view and moves focus there, so keyboard and screen reader users land on them too.
-  function showPlans() {
-    const plansTitle = $('#pm-plans .pm-chapter-title'); if (!plansTitle) return;
-    $('#pm-plans').scrollIntoView({ block: 'start', behavior: scrollBehavior() });
-    plansTitle.tabIndex = -1; plansTitle.focus({ preventScroll: true });
+  function showSection(id) {
+    const section = document.getElementById(id);
+    const heading = section?.querySelector('.pm-chapter-title, summary');
+    if (!heading || !host.contains(heading)) return;
+    if (section instanceof HTMLDetailsElement) section.open = true;
+    section.scrollIntoView({ block: 'start', behavior: scrollBehavior() });
+    if (heading.tagName !== 'SUMMARY') heading.tabIndex = -1;
+    heading.focus({ preventScroll: true });
   }
+  host.addEventListener('change', (event) => {
+    if (!event.target.matches('input[name="premium-plan"]')) return;
+    const quantity = Number(event.target.value);
+    if (!PLANS.includes(quantity)) return;
+    planQuantity = quantity;
+    const amount = host.querySelector('[data-pm-transfer]');
+    if (amount) amount.textContent = transferAmount(quantity);
+  });
   function download(value, filename, type) { const url = URL.createObjectURL(new Blob([value], { type })), a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
   host.addEventListener('click', async (event) => {
     // A locked module's "Details" opens Premium (feature-access.js); on this page it shows the plans instead, and stops
     // there so that the would-be showView() does not repaint the page and drop the focus.
-    if (event.target.closest('.pm-collection .fx-entry.is-locked [data-advanced-open]')) { event.stopPropagation(); showPlans(); return; }
+    if (event.target.closest('.pm-collection .fx-entry.is-locked [data-advanced-open]')) { event.stopPropagation(); showSection('pm-plans'); return; }
+    const jump = event.target.closest('[data-pm-jump]');
+    if (jump) { showSection(jump.dataset.pmJump); return; }
     const targetTab = event.target.closest('[data-premium-tab]');
     const b = event.target.closest('[data-premium-action],[data-member-id]');
     if ((!targetTab && !b) || acting || b?.disabled) return;
+    const revision = identityRevision;
     acting = true; if (b) b.disabled = true; message('');
     try {
       if (targetTab) { tab = targetTab.dataset.premiumTab; selectedMember = null; if (tab !== 'membership') { await loadAdmin(); if (tab === 'members') await loadMembers(); } render(); return; }
@@ -271,30 +327,36 @@
       const action = b.dataset.premiumAction;
       if (action === 'refresh') { await refresh(); return; }
       // The plans live on the membership tab; an admin on another tab is taken there first.
-      if (action === 'plans') { if (tab !== 'membership') { tab = 'membership'; selectedMember = null; render(); } showPlans(); return; }
+      if (action === 'plans') { if (tab !== 'membership') { tab = 'membership'; selectedMember = null; render(); } showSection('pm-plans'); return; }
       if (action === 'open-settings') { showView('settings'); window.showSettingsTab?.('general'); return; }
       if (action === 'cancel-edit') { selectedMember = null; render(); return; }
-      if (action === 'copy-receiver') { await navigator.clipboard.writeText(String(snapshot.receiver.tornId)); message(tr('Alıcı ID kopyalandı.', 'Receiver ID copied.')); return; }
-      if (action === 'data') { download(JSON.stringify(await api('/api/premium/data'), null, 2), 'premium-personal-data.json', 'application/json'); return; }
-      if (action === 'receipts') { const data = await api('/api/premium/receipts'); download(data.csv, data.filename, 'text/csv'); return; }
+      if (action === 'copy-receiver') { if (transferStatus(snapshot)) return; await navigator.clipboard.writeText(String(snapshot.receiver.tornId)); message(tr('Alıcı ID kopyalandı.', 'Receiver ID copied.')); return; }
+      if (action === 'data') { download(JSON.stringify(await accountRequest('data'), null, 2), 'premium-personal-data.json', 'application/json'); return; }
+      if (action === 'receipts') { const data = await accountRequest('receipts'); download(data.csv, data.filename, 'text/csv'); return; }
       if (action === 'prev-page' || action === 'next-page') { filters.page += action === 'next-page' ? 1 : -1; await loadMembers(); render(); return; }
       if (action === 'view-test-member') { filters.search = String(lastTest.tornId); filters.filter = 'all'; filters.page = 1; tab = 'members'; await loadAdmin(); await loadMembers(); render(); return; }
       if (action === 'test-payment' || action === 'test-replay') {
         const body = action === 'test-payment' ? { quantity: 2 } : { event_id: lastTest?.eventId || admin.testScenarios?.[0]?.event_id };
-        lastTest = await api('/api/premium/' + action, { method: 'POST', body: JSON.stringify(body) });
+        lastTest = await accountRequest(action, { method: 'POST', body: JSON.stringify(body) });
         if (action === 'test-payment') firstTest = lastTest;
         await loadAdmin(); await latest(); render();
         $('#premium-test-result')?.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() });
         message(lastTest.processing.status === 'ok' ? tr('Test tamamlandı.', 'Test completed.') : errorText({ code: lastTest.processing.code || lastTest.processing.status }), lastTest.processing.status !== 'ok'); return;
       }
-      const result = await api('/api/premium/' + action, { method: 'POST', body: '{}' });
-      if (action === 'disconnect') { admin = null; memberPage = null; lastTest = null; firstTest = null; tab = 'membership'; }
-      await refresh(); message(action === 'erasure-request' ? tr('Silme talebiniz incelemeye alındı. Üyelik kayıtları henüz silinmedi; Faction Hub verileriniz silindi.', 'Your erasure request was queued for assessment. Membership records have not been erased yet; your Faction Hub data was removed.') : tr('İşlem tamamlandı. ', 'Action completed. ') + (result.status || ''));
-    } catch (e) { message(errorText(e), true); } finally { acting = false; if (b) b.disabled = false; }
+      if (action === 'erasure-request' && !window.confirm(tr('Bu istek, servis erişilebilir durumdaysa kişisel Faction Hub verilerinizi hemen siler. Devam edilsin mi?', 'This request immediately deletes your personal Faction Hub data if the service is available. Continue?'))) return;
+      const result = await accountRequest(action, { method: 'POST', body: '{}' });
+      await refresh();
+      if (revision !== identityRevision) return;
+      if (action === 'erasure-request') {
+        const detail = result.factionHub?.erased ? tr('Kişisel Faction Hub verileriniz silindi.', 'Your personal Faction Hub data was erased.') : tr('Faction Hub verilerinin silindiği doğrulanamadı.', 'Faction Hub erasure could not be verified.');
+        message(`${tr('Üyelik kayıtları için talebiniz incelemeye alındı.', 'Your membership records request was queued for review.')} ${detail}`);
+      } else message(tr('İşlem tamamlandı. ', 'Action completed. ') + (result.status || ''));
+    } catch (e) { if (revision === identityRevision && e.code !== 'PREMIUM_IDENTITY_CHANGED') message(errorText(e), true); } finally { if (revision === identityRevision) acting = false; if (b) b.disabled = false; }
   });
   host.addEventListener('submit', async (event) => {
     const form = event.target.closest('[data-premium-form]'); if (!form) return;
     event.preventDefault(); if (acting) return; acting = true; const submit = form.querySelector('[type="submit"]'); submit.disabled = true; message('');
+    const revision = identityRevision;
     try {
       const action = form.dataset.premiumForm, body = Object.fromEntries(new FormData(form));
       if (action === 'members') { Object.assign(filters, { search: body.search, filter: body.filter, page: 1 }); await loadMembers(); render(); return; }
@@ -302,11 +364,14 @@
       for (const key of ['revision', 'xanax_price', 'days_per_xanax', 'check_interval', 'torn_id', 'days', 'id']) if (key in body) body[key] = Number(body[key]);
       if (action === 'automation') body.enabled = form.elements.enabled.checked;
       if (action === 'rebaseline') body.acknowledgeSkippedTransfers = form.elements.acknowledgeSkippedTransfers.checked;
-      await api('/api/premium/' + (action === 'automation' ? 'settings' : action), { method: 'POST', body: JSON.stringify(body) });
+      await accountRequest(action === 'automation' ? 'settings' : action, { method: 'POST', body: JSON.stringify(body) });
       selectedMember = null; await loadAdmin(); if (tab === 'members') await loadMembers(); await latest(); render(); message(tr('Kaydedildi.', 'Saved.'));
-    } catch (e) { message(errorText(e), true); } finally { acting = false; submit.disabled = false; }
+    } catch (e) { if (revision === identityRevision && e.code !== 'PREMIUM_IDENTITY_CHANGED') message(errorText(e), true); } finally { if (revision === identityRevision) acting = false; submit.disabled = false; }
   });
   window.addEventListener('lrx-feature-identity-changed', () => {
+    identityRevision++;
+    planQuantity = null;
+    acting = statusUnavailable = false;
     snapshot = admin = memberPage = lastTest = firstTest = selectedMember = null; tab = 'membership';
     Object.assign(filters, { search: '', filter: 'all', page: 1 });
     host.replaceChildren(); expectEntrance(); message('');
@@ -322,5 +387,6 @@
   window.onLangChanged = () => { previousLang?.(); if (state.view === 'premium') render(); };
   $('#refresh-btn').addEventListener('click', () => { if (state.view === 'premium') refresh(); });
   // The automatic refresh never cuts a running entrance short.
-  setInterval(() => { if (state.view === 'premium' && document.visibilityState === 'visible' && !acting && (prefersReducedMotion() || !host.querySelector('.pm-enter')) && !host.querySelector('input:focus,select:focus,textarea:focus,[data-feature-open]') && !dirty()) refresh(); }, 15_000);  if (state.view === 'premium') refresh();
+  setInterval(() => { if (state.view === 'premium' && tab === 'membership' && document.visibilityState === 'visible' && !acting && (prefersReducedMotion() || !host.querySelector('.pm-enter')) && !host.contains(document.activeElement) && !host.querySelector('[data-feature-open]') && !dirty()) refresh({ background: true }); }, 30_000);
+  if (state.view === 'premium') refresh();
 })();

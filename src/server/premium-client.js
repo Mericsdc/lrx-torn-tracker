@@ -8,6 +8,7 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
   const configured = env.TORN_PREMIUM_SERVICE_URL ?? defaultServiceUrl;
   const test = env.TORN_PREMIUM_TEST_MODE === '1';
   let base = null, invalid = false, session = null, generation = 0;
+  let identityRevision = 0;
   let reconnecting = null, retryAt = 0, connectionError = null;
   if (configured) {
     try {
@@ -47,6 +48,7 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
   }
   function reset({ forget = true } = {}) {
     const previous = session; session = null; generation++;
+    identityRevision++;
     reconnecting = null; retryAt = 0; connectionError = null;
     if (forget) setRemembered(null);
     if (previous) request('/v1/auth/logout', { method: 'POST', body: {}, token: previous.token }).catch(() => {});
@@ -108,6 +110,29 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
     retryAt = 0; connectionError = null;
     return status({ skipReconnect: true });
   }
+  async function withSession(path, { method, body }) {
+    const key = fingerprint();
+    if (session && session.fingerprint !== key) reset();
+    const identity = identityRevision;
+    const assertIdentity = () => {
+      if (identity !== identityRevision || key !== fingerprint()) throw bridgeError('PREMIUM_IDENTITY_CHANGED', 409);
+    };
+    for (let attempt = 0; ; attempt++) {
+      if (!session) await status();
+      assertIdentity();
+      const stamp = generation, token = current().token;
+      try {
+        const data = await request(path, { method, body, token });
+        assertIdentity();
+        if (stamp !== generation) throw bridgeError('PREMIUM_IDENTITY_CHANGED', 409);
+        return data;
+      } catch (error) {
+        assertIdentity();
+        // A refusal from an expired session can be retried once for this same identity.
+        if (attempt !== 0 || error.status !== 401 || session || !hasIdentity()) throw error;
+      }
+    }
+  }
   async function proxy(action, method, body) {
     const routes = {
       admin: ['GET', '/v1/admin'], settings: ['POST', '/v1/admin/settings'], subscription: ['POST', '/v1/admin/subscription'],
@@ -123,38 +148,14 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
     };
     const route = routes[action];
     if (!route || route[0] !== method) throw bridgeError('NOT_FOUND', 404);
-    for (let attempt = 0; ; attempt++) {
-      if (!session || session.fingerprint !== fingerprint()) await status();
-      const stamp = generation, token = current().token;
-      try {
-        const data = await request(route[1], { method, body: method === 'POST' ? body : undefined, token });
-        if (stamp !== generation) throw bridgeError('PREMIUM_IDENTITY_CHANGED', 409);
-        return data;
-      } catch (error) {
-        // The server session (24 hours) ran out while the app stayed open. The service refused the request before
-        // doing anything, so sign in again with the saved key and repeat it once instead of asking the user to retry.
-        if (attempt === 0 && error.status === 401 && !session && hasIdentity()) continue;
-        throw error;
-      }
-    }
+    return withSession(route[1], { method, body: method === 'POST' ? body : undefined });
   }
   const FACTION_HUB_PATH_RE = /^(?:\/v1\/factions\/\d+\/(?:status|settings|report|history(?:\?(?:from=\d+|to=\d+|grain=(?:hour|day))(?:&(?:from=\d+|to=\d+|grain=(?:hour|day)))*)?|members\/\d+\/series(?:\?(?:metric=(?:battlestats|activity|contribution|travel)|from=\d+|to=\d+)(?:&(?:metric=(?:battlestats|activity|contribution|travel)|from=\d+|to=\d+))*)?)|\/v1\/admin\/faction-collector(?:\/jobs)?)$/;
   async function factionHub(path, { method = 'GET', body } = {}) {
     if (!['GET', 'POST', 'PATCH'].includes(method) || !FACTION_HUB_PATH_RE.test(String(path || ''))) {
       throw bridgeError('NOT_FOUND', 404);
     }
-    for (let attempt = 0; ; attempt++) {
-      if (!session || session.fingerprint !== fingerprint()) await status();
-      const stamp = generation, token = current().token;
-      try {
-        const data = await request(path, { method, body: (method === 'POST' || method === 'PATCH') ? body : undefined, token });
-        if (stamp !== generation) throw bridgeError('PREMIUM_IDENTITY_CHANGED', 409);
-        return data;
-      } catch (error) {
-        if (attempt === 0 && error.status === 401 && !session && hasIdentity()) continue;
-        throw error;
-      }
-    }
+    return withSession(path, { method, body: method === 'GET' ? undefined : body });
   }
   return { status, connect, proxy, factionHub, reset };
 }

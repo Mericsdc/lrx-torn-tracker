@@ -96,6 +96,30 @@ test('a session that expired while the app stayed open is renewed inside the req
   await assert.rejects(bridge.proxy('feature-save', 'POST', { name: 'Plan' }), e => e.code === 'SESSION_EXPIRED' && e.status === 401);
   assert.equal(feature.length, 2); assert.equal(logins, 3);
 });
+test('an expired response for the previous account cannot retry a write after an account change', async () => {
+  let currentKey = key, sent = 0, start, rejectSession;
+  const started = new Promise((resolve) => { start = resolve; });
+  const expired = new Promise((resolve) => { rejectSession = resolve; });
+  const { options } = fixture({ fetchImpl: async (url) => {
+    if (url.pathname === '/v1/auth/torn') return reply({ mode: 'live', token, tornId: 123456 });
+    if (url.pathname === '/v1/features/save') {
+      sent++;
+      start();
+      await expired;
+      return reply({ code: 'SESSION_EXPIRED' }, 401);
+    }
+    return reply({ mode: 'live' });
+  } });
+  const bridge = createPremiumClient(() => currentKey, options);
+  await bridge.status();
+  const pending = bridge.proxy('feature-save', 'POST', { name: 'A saved plan' });
+  await started;
+  currentKey = 'AbCdEfGh87654321';
+  bridge.reset();
+  rejectSession();
+  await assert.rejects(pending, (e) => e.code === 'PREMIUM_IDENTITY_CHANGED' && e.status === 409);
+  assert.equal(sent, 1);
+});
 test('a reply that is not a JSON object is a service error, not a crash', async () => {
   for (const body of ['null', '"text"', '[1]']) {
     const bridge = createPremiumClient(() => key, { env: {}, defaultServiceUrl: 'https://premium.example', fetchImpl: async () => new Response(body) });

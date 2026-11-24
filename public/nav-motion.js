@@ -81,6 +81,36 @@
     return { indicator: ind, sync };
   }
 
-  if (typeof document === 'object' && document) attach(document.getElementById('nav'));
+  function attachDock(nav, toggle) {
+    if (!nav || !toggle) return;
+    const app = nav.closest('.app');
+    const compact = window.matchMedia('(max-width: 900px)');
+    const storageKey = 'tt.dock.collapsed';
+    let collapsed = false;
+    try { collapsed = localStorage.getItem(storageKey) === '1'; } catch {}
+    function render() {
+      app.classList.toggle('dock-collapsed', collapsed);
+      if (collapsed && compact.matches && nav.contains(document.activeElement)) toggle.focus();
+      nav.inert = collapsed && compact.matches;
+      const label = collapsed ? tr('Menüyü genişlet', 'Expand navigation') : tr('Menüyü daralt', 'Collapse navigation');
+      toggle.title = label;
+      toggle.setAttribute('aria-label', label);
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+    }
+    toggle.addEventListener('click', () => {
+      collapsed = !collapsed;
+      try { localStorage.setItem(storageKey, collapsed ? '1' : '0'); } catch {}
+      render();
+    });
+    compact.addEventListener('change', render);
+    new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+    render();
+  }
+
+  if (typeof document === 'object' && document) {
+    const nav = document.getElementById('nav');
+    attachDock(nav, document.getElementById('dock-toggle'));
+    attach(nav);
+  }
   return Object.freeze({ boxOf, moveFor, styleFor, attach });
 });

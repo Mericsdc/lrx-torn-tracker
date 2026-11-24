@@ -84,8 +84,18 @@
   // status granting access while a call keeps failing re-triggered restoreAppearance()/resume() in a tight request loop.
   let invalidatedAt = -Infinity;
   async function call(action, body = {}) {
-    try { const value = await api('/api/premium/feature-' + action, { method: 'POST', body: JSON.stringify(body) }); if (value.access && snapshot) accept({ ...snapshot, featureAccess: value.access }); return value; }
-    catch (e) { if ([401, 403, 503].includes(e.status) && performance.now() - invalidatedAt >= 30000) { invalidatedAt = performance.now(); deadline = 0; changed(); status(true).catch(() => {}); } throw e; }
+    const stamp = generation;
+    try {
+      const value = await api('/api/premium/feature-' + action, { method: 'POST', body: JSON.stringify(body) });
+      if (stamp !== generation) throw Object.assign(new Error('PREMIUM_IDENTITY_CHANGED'), { code: 'PREMIUM_IDENTITY_CHANGED' });
+      if (value.access && snapshot) accept({ ...snapshot, featureAccess: value.access });
+      return value;
+    } catch (e) {
+      if (stamp === generation && [401, 403, 503].includes(e.status) && performance.now() - invalidatedAt >= 30000) {
+        invalidatedAt = performance.now(); deadline = 0; changed(); status(true).catch(() => {});
+      }
+      throw e;
+    }
   }
   async function restoreAppearance() {
     try {

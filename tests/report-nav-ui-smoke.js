@@ -227,6 +227,23 @@ async function assertReport(lang) {
   }
   await page.evaluate(() => { document.documentElement.dataset.theme = 'obsidian'; });
 
+  const dock = page.locator('#dock-toggle');
+  const mainWidth = () => page.locator('main.main').evaluate((el) => Math.round(el.getBoundingClientRect().width));
+  const expandedWidth = await mainWidth();
+  await dock.click();
+  await page.waitForFunction(() => Math.round(document.querySelector('.sidebar').getBoundingClientRect().width) === 64);
+  assert.ok(await mainWidth() >= expandedWidth + 165, 'the compact dock returns the reclaimed space to the main view');
+  assert.equal(await dock.getAttribute('aria-expanded'), 'false');
+  assert.equal(await page.locator('#nav [data-view="report"]').getAttribute('aria-current'), 'page');
+  assert.equal(await page.evaluate(() => localStorage.getItem('tt.dock.collapsed')), '1');
+  await page.locator('#nav [data-view="employees"]').click();
+  await settle();
+  await assertOnActive('compact dock', 'employees');
+  await dock.click();
+  await page.waitForFunction(() => Math.round(document.querySelector('.sidebar').getBoundingClientRect().width) === 236);
+  await page.evaluate(() => showView('report'));
+  await settle();
+
   // ---- 640 px: a horizontal icon bar.
   await page.setViewportSize({ width: 640, height: 900 });
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
@@ -237,6 +254,10 @@ async function assertReport(lang) {
   await assertOnActive('640 px employees', 'employees');
   const scroll = await page.evaluate(() => ({ w: innerWidth, s: document.documentElement.scrollWidth }));
   assert.ok(scroll.s <= scroll.w, `640 px: no sideways scroll ${JSON.stringify(scroll)}`);
+  await dock.click();
+  assert.equal(await page.locator('#nav').evaluate((el) => el.inert), true, 'collapsed navigation is skipped by keyboard input at 640 px');
+  await dock.click();
+  assert.equal(await page.locator('#nav').evaluate((el) => el.inert), false);
   await page.evaluate(() => showView('report'));
   await settle();
   await shot('report-en-640.png');

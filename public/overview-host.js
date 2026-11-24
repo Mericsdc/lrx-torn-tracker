@@ -2,10 +2,11 @@
    layout, repair, access) live in overview-layout.js; each Torn player's saved set lives in the app config behind
    /api/overview-layouts. The cards keep the fixed IDs app.js renders into, whether or not their widget is shown:
    a widget outside the layout only gets the class `ow-off`. `hidden` on #ov-company belongs to company mode.
-   Premium tiles are created here and drawn from LRXOverviewWidgets (overview-widgets.js); each loads from its page's
+   Summary widgets are created here and drawn from LRXOverviewWidgets (overview-widgets.js); each loads from its page's
    endpoint only while the Overview is on screen, at most once a minute (see refresh()). */
 (() => {
   const L = window.LRXOverviewLayout, W = window.LRXOverviewWidgets;
+  const definitions = { ...W.free, ...W.premium };
   const grid = $('#ow-grid');
   const CACHE = 'tt.cache.overviewLayouts.'; // + Torn player ID: the last set the server confirmed for that player
   const CLASSIC = ['drug', 'edu', 'day', 'bars', 'battle', 'company']; // the fixed screen shown with the switch off
@@ -21,25 +22,27 @@
   // unsaved: the player changed the set since it was loaded and that change is still to be saved (or is being edited).
   // fallback: `current` grew from the default set, not from the player's cached or confirmed copy.
   let loadedFor = null, loading = null, stamp = 0, unsaved = false, fallback = true, saving = Promise.resolve(), hint = null;
-  const tiles = {}; // Premium widget id → (el, locked) => void: draws that tile
+  const tiles = {}; // widget id → (el, locked) => void: draws that tile
 
   const playerId = () => { const id = Number(state.overview?.player?.id); return Number.isInteger(id) && id > 0 ? id : null; };
   const cell = (id) => grid.querySelector(`:scope > .ow-w[data-widget="${id}"]`);
   function cached(id) { try { const raw = localStorage.getItem(CACHE + id); return raw == null ? null : L.normalize(JSON.parse(raw)); } catch { return null; } }
   function remember(id, set) { try { localStorage.setItem(CACHE + id, JSON.stringify(set)); } catch {} }
 
-  // 'off' without the Premium connection or its cards; a fresh grant without this module is a lapse; no fresh
-  // answer from the membership service yet (or a stale one) is 'unknown', never a lapse.
+  // The connection controls access. Hiding promotional cards only hides the locked previews.
   function access() {
-    if (!feat('app.premium') || !feat('app.premiumPromos')) return 'off';
+    if (!feat('app.premium')) return 'off';
     if (window.PremiumAccess?.can('overview_widgets')) return 'active';
+    if (!feat('app.premiumPromos')) return 'off';
     if (!window.PremiumAccess?.fresh()) return 'unknown';
     return 'lapsed';
   }
 
-  function premiumTile(id) {
+  function dataTile(id) {
     const el = document.createElement('article');
-    el.className = 'glass card ow-w ow-premium'; el.dataset.widget = id;
+    el.className = 'glass card ow-w ow-data';
+    el.classList.toggle('ow-premium', L.byId[id].tier === 'premium');
+    el.dataset.widget = id;
     return el;
   }
   function paintTile(el, w) {
@@ -47,7 +50,7 @@
     if (typeof render === 'function') { try { render(el, w.locked); } catch (e) { console.warn('[overview]', e); } }
   }
 
-  /* ---------- Premium tiles ---------- */
+  /* ---------- Summary widgets ---------- */
   // id → { at: last load attempt (Date.now()), busy, has, value, error }. Emptied for another player.
   let slots = {}, epoch = 0, timer = 0;
   const slot = (id) => (slots[id] ||= { at: -Infinity, busy: false, has: false, value: undefined, error: null });
@@ -73,7 +76,7 @@
   }
   // The title and body are made once and then only updated, so edit mode's controls (prepended) stay in place.
   function renderTile(id, el, locked) {
-    const def = W.premium[id], [trTitle, enTitle] = W.titles[id];
+    const def = definitions[id], [trTitle, enTitle] = W.titles[id];
     let head = el.querySelector(':scope > .card-head'), body = el.querySelector(':scope > .ow-t');
     if (!head || !body) {
       head?.remove(); body?.remove();
@@ -95,16 +98,16 @@
       body.removeAttribute('role'); body.removeAttribute('tabindex'); body.removeAttribute('aria-label');
     }
   }
-  for (const id of Object.keys(W.premium)) tiles[id] = (el, locked) => renderTile(id, el, locked);
-  const repaint = (id) => { const w = shown?.widgets.find((x) => x.id === id), el = w && cell(id); if (el?.classList.contains('ow-premium')) paintTile(el, w); };
-  const repaintAll = () => { for (const w of shown?.widgets || []) if (W.premium[w.id]) repaint(w.id); };
+  for (const id of Object.keys(definitions)) tiles[id] = (el, locked) => renderTile(id, el, locked);
+  const repaint = (id) => { const w = shown?.widgets.find((x) => x.id === id), el = w && cell(id); if (el?.classList.contains('ow-data')) paintTile(el, w); };
+  const repaintAll = () => { for (const w of shown?.widgets || []) if (definitions[w.id]) repaint(w.id); };
 
   // Loads the tiles that are due: only while the Overview is on screen, for an unlocked tile whose page is on, at most
   // once a minute each. The attempt time is kept whether the load succeeds or fails; a failure keeps the last data.
   function refresh() {
     if (state.view !== 'overview' || !trackerVisible() || !shown) return;
     for (const w of shown.widgets) {
-      const def = W.premium[w.id];
+      const def = definitions[w.id];
       if (!def?.load || w.locked || noteFor(def)) continue;
       const s = slot(w.id), now = Date.now();
       if (s.busy || now - s.at < AGAIN) continue;
@@ -123,17 +126,17 @@
 
   // A click on a tile with data (not on edit controls, a button or a link) opens its page; so does Enter on its body.
   function openWidgetTarget(el) {
-    const def = W.premium[el?.dataset?.widget];
+    const def = definitions[el?.dataset?.widget];
     if (typeof def?.open === 'function') def.open();
     else if (el?.dataset?.owView) showView(el.dataset.owView);
   }
   grid.addEventListener('click', (e) => {
-    const el = e.target.closest?.('#ow-grid > .ow-premium[data-ow-view]');
+    const el = e.target.closest?.('#ow-grid > .ow-data[data-ow-view]');
     if (!el || e.target.closest('.ow-ctl, button, a, input, select, [data-goto-view], [data-open-url]')) return;
     openWidgetTarget(el);
   });
   grid.addEventListener('keydown', (e) => {
-    const body = e.target.closest?.('#ow-grid > .ow-premium[data-ow-view] > .ow-t');
+    const body = e.target.closest?.('#ow-grid > .ow-data[data-ow-view] > .ow-t');
     if (e.key !== 'Enter' || body !== e.target) return;
     e.preventDefault();
     openWidgetTarget(body.parentElement);
@@ -154,20 +157,20 @@
     const mini = $('#mini-row'), home = cell(classic ? 'bars' : 'chips');
     if (mini.parentElement !== home) home.append(mini);
     const v = L.view(current, access());
-    // Premium tiles exist while their widget is in the layout (hidden by the classic switch, not removed).
+    // Summary widgets exist while their widget is in the layout. Classic mode hides them.
     const inLayout = new Set(v.widgets.map((w) => w.id));
-    for (const el of grid.querySelectorAll(':scope > .ow-premium')) if (!inLayout.has(el.dataset.widget)) el.remove();
+    for (const el of grid.querySelectorAll(':scope > .ow-data')) if (!inLayout.has(el.dataset.widget)) el.remove();
     // What is on screen. With the switch off that is today's fixed screen, so no Premium widget counts as shown.
     shown = classic ? { index: v.index, name: v.name, widgets: CLASSIC.map((id) => ({ id, size: L.byId[id].size, locked: null })) } : v;
     const ids = new Set(shown.widgets.map((w) => w.id));
     showHint(!classic && !shown.widgets.length);
     shown.widgets.forEach((w, i) => {
-      const el = cell(w.id) || premiumTile(w.id);
+      const el = cell(w.id) || dataTile(w.id);
       // Only a card out of place is moved: moving a card restarts its entrance animation and drops focus inside it.
       if (grid.children[i] !== el) grid.insertBefore(el, grid.children[i] || null);
       el.classList.remove('ow-off');
       el.dataset.size = w.size;
-      if (el.classList.contains('ow-premium')) paintTile(el, w);
+      if (el.classList.contains('ow-data')) paintTile(el, w);
     });
     for (const el of grid.querySelectorAll(':scope > .ow-w')) if (!ids.has(el.dataset.widget)) el.classList.add('ow-off');
     LRXProfileCard.paint(cell('profile'), LRXProfileCard.html(state.overview?.player));
@@ -245,7 +248,7 @@
   const O = window.LRXOverview = {
     current: () => current, access, shown: () => shown, owner: () => ownerId,
     commit, apply,
-    tiles, // Premium widget id → (el, locked) => void, one for each widget in LRXOverviewWidgets.premium
+    tiles,
     onApplied: [], // run after every apply(), e.g. to redraw edit controls
   };
 

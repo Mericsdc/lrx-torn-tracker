@@ -1,6 +1,5 @@
-/* The Overview widget catalogue: every widget's title and, for each Premium widget, what it needs, the page it opens,
-   how it loads and its markup at S, M and L. A widget only reads an endpoint its own page already calls (never a new
-   Torn request) and only displays it; overview-host.js decides when a tile may load. All Torn text goes through esc().
+/* The Overview widget catalogue: titles, settings, destinations, loaders and markup at each size.
+   Widgets reuse their source pages' endpoints. overview-host.js decides when a tile may load. All Torn text goes through esc().
    Optional fields: `off()` is a Settings switch beyond `needs`, `note()` another reason the tile shows a note instead. */
 (() => {
   const titles = {
@@ -9,6 +8,9 @@
     timers: ['Canlı sayaçlar', 'Live timers'],
     bars: ['Barlar', 'Bars'], chips: ['Durum çipleri', 'Status chips'], battle: ['Savaş gücü', 'Battle stats'],
     company: ['Şirket özeti', 'Company summary'],
+    wallet: ['Cüzdan ve kasa', 'Wallet and vault'], open_trades: ['Açık takaslar', 'Open trades'],
+    active_gym: ['Aktif spor salonu', 'Active gym'], drug_inventory: ['Envanterdeki ilaçlar', 'Drug inventory'],
+    equipment: ['Kuşanılan ekipman', 'Equipped gear'],
     gym: ['Gym kazancı', 'Gym gains'], networth: ['Networth', 'Networth'], travel: ['Seyahat kârı', 'Travel profit'],
     job: ['İş asistanı', 'Job assistant'], crimes: ['Suç merkezi', 'Crime hub'], jail: ['Jail bustları', 'Jail busts'],
     awards: ['Merit takibi', 'Merit tracker'], oc: ['Faction OC', 'Faction OC'], war: ['Savaş', 'War'],
@@ -381,6 +383,43 @@
   const loadTravelShared = () => sharedLoad('travel', () => api('/api/travel'));
   const loadFactionActShared = () => sharedLoad('faction:activity', () => api('/api/faction/activity'));
   const loadFactionWsShared = () => sharedLoad('faction:workspace', () => api('/api/faction/workspace?section=members'));
+  const loadMoney = () => sharedLoad('companion:money', () => api('/api/companion/money'));
+  const showValue = (v, format) => v == null ? '—' : esc(format(v));
+  const companionTarget = (name, view = 'tools') => () => { showView(view); $(name)?.scrollIntoView({ block: 'center' }); };
+
+  const free = {
+    wallet: {
+      needs: ['page.tools', 'companion.equipment'], view: 'tools', load: loadMoney,
+      html: (d) => main(showValue(d.wallet, money), tr('Cüzdan', 'Wallet')) + list([[tr('Kasa', 'Vault'), showValue(d.vault, money)]]),
+      open: companionTarget('#companion-equipment'),
+    },
+    open_trades: {
+      needs: ['page.tools', 'companion.trade'], view: 'tools', load: () => api('/api/companion/trades?category=ongoing'),
+      html: (d, size) => main(`${n0(d.rows.length)}${d.hasMore ? '+' : ''}`, tr('Açık takas', 'Open trades')) + more(size, d.rows.slice(0, 3).map((row) => {
+        const other = row.user?.id === sharedPlayer() ? row.trader : row.user;
+        return [esc(other?.name || '—'), `#${esc(row.id)}`];
+      })),
+      open: companionTarget('#companion-trade'),
+    },
+    active_gym: {
+      needs: ['page.gym', 'companion.gyms'], view: 'gym', load: () => api('/api/companion/gyms'),
+      html: (d, size) => main(esc(d.active || '—')) + more(size, [
+        ['strength', tr('Güç', 'Strength')], ['defense', tr('Savunma', 'Defense')],
+        ['speed', tr('Hız', 'Speed')], ['dexterity', tr('Çeviklik', 'Dexterity')],
+      ].flatMap(([stat, label]) => d.best?.[stat] ? [[label, esc(d.best[stat].names.join(', '))]] : [])),
+      open: companionTarget('#companion-gyms', 'gym'),
+    },
+    drug_inventory: {
+      needs: ['page.tools', 'companion.inventory'], view: 'tools', load: () => api('/api/companion/inventory?category=Drug'),
+      html: (d, size) => main(`${n0(d.rows.length)}${d.hasMore ? '+' : ''}`, tr('Eşya çeşidi', 'Item types')) + more(size, d.rows.slice(0, 4).map((row) => [esc(row.name), showValue(row.amount, n0)])),
+      open: companionTarget('#companion-inventory'),
+    },
+    equipment: {
+      needs: ['page.tools', 'companion.equipment'], view: 'tools', load: () => api('/api/companion/equipment'),
+      html: (d, size) => main(n0(d.rows.length), tr('Kuşanılan eşya', 'Equipped items')) + more(size, d.rows.slice(0, 4).map((row) => [esc(row.name), esc(row.rarity || '—')])),
+      open: companionTarget('#companion-equipment'),
+    },
+  };
 
   const premium = {
     gym: { needs: ['page.gym'], view: 'gym', load: () => api('/api/stats'), html: gym },
@@ -414,7 +453,7 @@
     },
     faction_balance: {
       needs: ['page.tools', 'companion.balance'], view: 'tools',
-      load: () => api('/api/companion/money'),
+      load: loadMoney,
       html: (d) => !d.faction ? main(tr('Bakiye görünmüyor', 'Balance unavailable')) :
         main(d.faction.money == null ? '—' : money(d.faction.money),
           (d.faction.points == null ? '—' : n0(d.faction.points)) + tr(' puan', ' points')),
@@ -450,7 +489,7 @@
     },
   };
 
-  window.LRXOverviewWidgets = Object.freeze({ titles: Object.freeze(titles), premium: Object.freeze(premium), clearShared });
+  window.LRXOverviewWidgets = Object.freeze({ titles: Object.freeze(titles), free: Object.freeze(free), premium: Object.freeze(premium), clearShared });
   // Premium page → Open: this module has no workbench; it is the Overview's edit mode.
   window.PremiumOpeners = window.PremiumOpeners || {};
   window.PremiumOpeners.overview_widgets = () => { showView('overview'); window.LRXOverviewEdit?.start(); };

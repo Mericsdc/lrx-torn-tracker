@@ -55,7 +55,7 @@ This is an independent project, not an official Torn product. Membership data ha
 
 ## Release notes
 
-Each version has its notes in [`docs/releases/`](docs/releases) and on the [website](https://lrxe8.com/torn-tracker#releases). See [v1.6.22](docs/releases/1.6.22.md) for the Companion update.
+Each version has its notes in [`docs/releases/`](docs/releases) and on the [website](https://lrxe8.com/torn-tracker#releases). See [v1.6.23](docs/releases/1.6.23.md) for changes to the navigation, Overview, Premium, and Bazaar.
 
 ## Project structure
 
@@ -90,7 +90,7 @@ npm run test:all   # all automated tests
 
 More in [docs/TESTING.md](docs/TESTING.md). The website is described in [docs/WEBSITE.md](docs/WEBSITE.md) and the membership service in [premium/README.md](premium/README.md).
 
-**Releasing:** bump the version in `package.json` and `package-lock.json`, add `docs/releases/<version>.md`, commit, then run `python tools/build-release.py` (or the manual *Publish release* workflow). It builds the Windows ZIP and the update package from the exact commit and checks them before anything is uploaded.
+**Releasing.** Update `package.json` and `package-lock.json`, add `docs/releases/<version>.md`, and push the commit. Push its matching `v<version>` tag or run the *Publish release* workflow from Actions. The workflow verifies the Windows ZIP and update package from that commit before publishing them. Run `python tools/build-release.py` to verify a build locally.
 
 The repository contains no API keys or personal data. `data/` and environment files are ignored by Git and never packaged.
 

@@ -1,8 +1,9 @@
-# Builds and publishes the version in package.json. Runs only when started by hand from the Actions tab.
-# Before running: bump package.json and package-lock.json, add docs/releases/<version>.md, commit and push.
+# Publishes the version in package.json when its version tag is pushed or the workflow is dispatched.
 name: Publish release
 on:
   workflow_dispatch:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
 permissions:
   contents: read
 concurrency:
@@ -10,6 +11,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   release:
+    if: github.repository == 'Mericsdc/lrx-torn-tracker'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -25,6 +27,9 @@ jobs:
         with:
           node-version: '24'
           cache: npm
+      - name: Verify release tag
+        if: github.ref_type == 'tag'
+        run: test "$GITHUB_REF_NAME" = "v$(node -p "require('./package.json').version")"
       - run: npm ci --ignore-scripts --no-fund
       - run: npm run check
       - run: npm run test:all
