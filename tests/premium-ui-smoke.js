@@ -127,8 +127,7 @@ async function desktop(tornId) {
   await bench.locator('[data-fx-action="close"]').click();
   await user.page.locator('#view-premium [data-feature-slot="travel_advanced"] .fx-entry').waitFor();
   assert.equal(await user.page.locator('.pm-collection .fx-entry').count(), 6);
-  // Motion: the entrance plays once, on fresh content after the view is shown; a refresh (the auto-refresh takes the same
-  // path) never plays or replays it. The fixtures start with Animations off (body.no-anim).
+  // A refresh keeps the previous membership visible even while the service is slow.
   const statusRoute = (url) => url.pathname === '/api/premium/status';
   const slowStatus = (ms) => async (route) => { await new Promise((r) => setTimeout(r, ms)); await route.continue(); };
   const stale = (page) => page.evaluate(() => { const el = document.querySelector('.pm-page'); if (el) el.dataset.stale = '1'; });
@@ -151,8 +150,8 @@ async function desktop(tornId) {
   assert.deepEqual([still.waiting, still.shown, still.arc, still.chapter], ['visible', 'visible', 'none', 'none'], 'Animations off: no hold and no entrance ' + JSON.stringify(still));
   await user.page.evaluate(() => document.body.classList.remove('no-anim'));
   const moving = await motion(user.page);
-  assert.equal(moving.waiting, 'hidden', 'the old page waits hidden for fresh content, so it never shows and then replays');
-  assert.deepEqual([moving.enter, moving.shown, moving.arc, moving.chapter], [true, 'visible', 'pmArc', 'pmRise'], 'the seal arc draws in and the chapters rise ' + JSON.stringify(moving));
+  assert.equal(moving.waiting, 'visible', 'the previous membership stays visible with animations enabled');
+  assert.deepEqual([moving.enter, moving.shown, moving.arc, moving.chapter], [false, 'visible', 'none', 'none'], 'returning to Premium does not replay the entrance ' + JSON.stringify(moving));
   assert.notEqual(moving.lift, '0s');
   await user.page.locator('.pm-page:not(.pm-enter):not([data-stale])').waitFor({ timeout: 4000 }); // dropped once played, so it never replays
   await stale(user.page);
@@ -167,8 +166,7 @@ async function desktop(tornId) {
   await user.page.locator('.pm-page:not([data-stale])').waitFor({ timeout: 5000 });
   assert.equal(await user.page.locator('.pm-page.pm-enter').count(), 0, 'an open Premium page does not replay the entrance');
   await user.page.unroute(statusRoute);
-  // A failed refresh after the view is shown brings the old page back at once (well before the hold's 1.5 s limit), and
-  // the next refresh does not play the entrance.
+  // A failed refresh leaves the existing membership on screen with a connection error.
   await user.page.route(statusRoute, (route) => route.fulfill({ status: 500, json: { code: 'PREMIUM_SERVICE_ERROR', error: 'Unavailable' } }));
   await stale(user.page); await reshow(user.page);
   await user.page.waitForFunction(() => document.querySelector('#premium-feedback.premium-error')?.textContent && getComputedStyle(document.querySelector('.pm-page')).visibility === 'visible', null, { timeout: 1000 });
@@ -176,7 +174,7 @@ async function desktop(tornId) {
   await user.page.locator('[data-premium-action="refresh"]').click();
   await user.page.locator('.pm-page:not([data-stale])').waitFor({ timeout: 5000 });
   assert.equal(await user.page.locator('.pm-page.pm-enter').count(), 0, 'no entrance after a failed refresh');
-  // A slow answer never leaves the page blank: the old page shows again after a moment, and the late paint does not replay.
+  // A slower response likewise leaves the membership visible until the next paint.
   await user.page.route(statusRoute, slowStatus(2500));
   await stale(user.page); await reshow(user.page);
   await user.page.waitForFunction(() => { const old = document.querySelector('.pm-page[data-stale]'); return !!old && getComputedStyle(old).visibility === 'visible'; }, null, { timeout: 2300 });
@@ -198,6 +196,18 @@ async function desktop(tornId) {
   assert.deepEqual([reduced.waiting, reduced.arc, reduced.chapter, reduced.lift], ['visible', 'none', 'none', '0s'], 'reduced motion: no hold, no entrance and no hover transitions ' + JSON.stringify(reduced));
   await user.page.emulateMedia({ reducedMotion: null });
   await user.page.evaluate(() => document.body.classList.add('no-anim'));
+  const unavailable = await user.context.newPage();
+  await unavailable.route('**/*', (route) => new URL(route.request().url()).origin === user.base ? route.continue() : route.abort());
+  await unavailable.route(statusRoute, (route) => route.fulfill({ status: 503, json: { code: 'PREMIUM_SERVICE_UNREACHABLE' } }));
+  await unavailable.goto(user.base + '/#premium');
+  await unavailable.locator('#auth-key').waitFor({ state: 'visible' });
+  await unavailable.evaluate(() => { document.querySelector('#auth-screen').hidden = true; document.body.classList.remove('auth-open'); showView('premium'); });
+  await unavailable.getByRole('heading', { name: 'Membership status unavailable' }).waitFor();
+  assert.match(await unavailable.locator('.pm-not-configured').textContent(), /Membership service is unreachable/);
+  await unavailable.unroute(statusRoute);
+  await unavailable.getByRole('button', { name: 'Try again' }).click();
+  await unavailable.locator('.pm-hero[data-state="active"]').waitFor();
+  await unavailable.close();
   await admin.page.locator('[data-premium-tab="members"]').click();
   await admin.page.locator('input[name="search"]').fill(String(tornId));
   await admin.page.locator('[data-premium-form="members"] [type="submit"]').click();

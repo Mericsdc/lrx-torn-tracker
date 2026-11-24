@@ -229,6 +229,14 @@ async function assertReport(lang) {
 
   const dock = page.locator('#dock-toggle');
   const mainWidth = () => page.locator('main.main').evaluate((el) => Math.round(el.getBoundingClientRect().width));
+  await page.setViewportSize({ width: 1100, height: 540 });
+  await page.waitForFunction(() => document.querySelector('#dock-toggle').getAttribute('aria-expanded') === 'false');
+  const nav = page.locator('#nav');
+  assert.deepEqual(await nav.evaluate((el) => [getComputedStyle(el).overflowX, getComputedStyle(el).scrollbarWidth]), ['hidden', 'none']);
+  await nav.locator('[data-view="settings"]').focus();
+  assert.ok(await nav.evaluate((el) => el.scrollTop > 0), 'keyboard focus can still scroll to the bottom of the dock');
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.waitForFunction(() => Math.round(document.querySelector('.sidebar').getBoundingClientRect().width) === 236);
   const expandedWidth = await mainWidth();
   await dock.click();
   await page.waitForFunction(() => Math.round(document.querySelector('.sidebar').getBoundingClientRect().width) === 64);

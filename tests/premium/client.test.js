@@ -21,7 +21,7 @@ test('automatic connection only sends keys to a configured secure service after 
   }
   const mismatch = createPremiumClient(() => key, { env: {}, defaultServiceUrl: 'https://premium.example', fetchImpl: async () => { calls++; return reply({ mode: 'test' }); } });
   await assert.rejects(mismatch.status(), e => e.code === 'PREMIUM_MODE_MISMATCH');
-  assert.equal(calls, 2, 'only public info, never auth or a key, is sent on a mode mismatch');
+  assert.equal(calls, 1, 'a mode mismatch stops at the public info request');
   await assert.rejects(disabled.proxy('https://evil.example', 'GET'), e => e.code === 'NOT_FOUND');
 });
 test('first app status automatically connects with no consent, remember flag or previous binding', async () => {
@@ -128,16 +128,38 @@ test('a reply that is not a JSON object is a service error, not a crash', async 
   }
 });
 test('failed automatic login backs off and recovers while free status stays available', async t => {
-  let now = Date.now(), logins = 0, down = true; t.mock.method(Date, 'now', () => now);
+  let now = Date.now(), logins = 0, infoReads = 0, down = true; t.mock.method(Date, 'now', () => now);
   const { options } = fixture({ fetchImpl: async url => {
     if (url.pathname === '/v1/auth/torn') { logins++; return down ? reply({ code: 'TORN_UNAVAILABLE' }, 503) : reply({ mode: 'live', token, tornId: 123456 }); }
+    if (url.pathname === '/v1/info') infoReads++;
     return reply({ mode: 'live', freeApiAccess: true });
   } });
   const bridge = createPremiumClient(() => key, options);
   assert.equal((await bridge.status()).connectionError, 'TORN_UNAVAILABLE');
   assert.equal((await bridge.status()).freeApiAccess, true); assert.equal(logins, 1);
+  assert.equal(infoReads, 1, 'the failed sign-in and the next status read share the public info');
   down = false; now += 60001;
   assert.equal((await bridge.status()).connected, true); assert.equal(logins, 2);
+});
+test('an unreachable Premium service is probed once and can recover after a short pause', async (t) => {
+  let now = Date.now(), down = true, probes = 0;
+  t.mock.method(Date, 'now', () => now);
+  const { options } = fixture({ fetchImpl: async (url) => {
+    if (url.pathname === '/v1/info') {
+      probes++;
+      if (down) throw new DOMException('Timed out', 'TimeoutError');
+    }
+    if (url.pathname === '/v1/auth/torn') return reply({ mode: 'live', token, tornId: 123456 });
+    return reply({ mode: 'live' });
+  } });
+  const bridge = createPremiumClient(() => key, options);
+  await assert.rejects(bridge.status(), { code: 'PREMIUM_SERVICE_UNREACHABLE' });
+  await assert.rejects(bridge.status(), { code: 'PREMIUM_SERVICE_UNREACHABLE' });
+  assert.equal(probes, 1);
+  now += 8_001;
+  down = false;
+  assert.equal((await bridge.status()).connected, true);
+  assert.equal(probes, 2);
 });
 test('legacy connection calls stay compatible; proxy auto-connects and preserves HTTPS paths', async () => {
   const { options, calls } = fixture({ defaultServiceUrl: 'https://lrxe8.com/torn-premium', getRemembered: () => ({ fingerprint: 'old', origin: 'https://other.example', premium: true }) });

@@ -369,7 +369,12 @@ function stampOverview(o, fallbackAt = Date.now()) {
 }
 const clockOrDate = (ms) => new Date(ms).toLocaleString(timeLocale(), Date.now() - ms > 20 * 3600_000
   ? { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' } : { hour: '2-digit', minute: '2-digit' });
-async function loadOverview(force = false) {
+let overviewRequest = null;
+function loadOverview(force = false) {
+  overviewRequest ??= requestOverview(force).finally(() => { overviewRequest = null; });
+  return force ? overviewRequest : overviewRequest.catch(() => {});
+}
+async function requestOverview(force) {
   try {
     const o = await api('/api/overview' + (force ? '?force=1' : ''));
     state.overview = o; stampOverview(o);
@@ -378,12 +383,17 @@ async function loadOverview(force = false) {
     renderOverview();
   } catch (e) {
     const settings = e.status === 412 ? ` <button class="btn sm" data-goto-view="settings">${tr('Ayarlar', 'Settings')}</button>` : '';
-    if (!state.overview) setAlert('overview', `<b>${tr('Kullanıcı verisi alınamadı:', 'Failed to load user data:')}</b>&nbsp;${esc(e.message)}${settings}`);
+    if (!state.overview) {
+      const retry = `<button type="button" class="btn sm" data-overview-retry>${tr('Tekrar dene', 'Try again')}</button>`;
+      $$('[data-sub="drug"], [data-sub="edu"]').forEach((el) => { el.textContent = '—'; });
+      setAlert('overview', `<b>${tr('Kullanıcı verisi alınamadı:', 'Failed to load user data:')}</b>&nbsp;${esc(e.message)} ${settings || retry}`);
+    }
     // Older data stays on screen: say so instead of letting it pass for live.
     else setAlert('overview', `<b>${tr('Veriler yenilenemedi:', 'Could not refresh:')}</b>&nbsp;${esc(e.message)} <span class="muted">${tr(`Ekrandaki veriler ${clockOrDate(state.overviewAt)} tarihli.`, `The data on screen is from ${clockOrDate(state.overviewAt)}.`)}</span>${settings}`, 'warn');
-    if (force) throw e; // a manual refresh reports the failure
+    throw e; // a manual refresh reports the failure
   }
 }
+$('#alert-area').addEventListener('click', (e) => { if (e.target.closest('[data-overview-retry]')) $('#refresh-btn').click(); });
 
 function setRing(card, frac, done) {
   const c = $(card + ' .ring-fg'), C = 326.73;
@@ -1443,12 +1453,16 @@ $('#ff-check').addEventListener('click', async () => {
 /* =========================================================
    BOOT
    ========================================================= */
-async function refreshAll(force = false) {
+let refreshing = null;
+function refreshAll(force = false) {
+  if (refreshing) return refreshing;
   const btn = $('#refresh-btn'); btn.classList.add('spin');
   const onWar = state.view === 'war';
-  const results = await Promise.allSettled([loadOverview(force), loadCompany(force), onWar && state.factionId ? loadTargets() : null, onWar ? loadWars() : null]);
-  btn.classList.remove('spin');
-  return results;
+  refreshing = Promise.allSettled([loadOverview(force), loadCompany(force), onWar && state.factionId ? loadTargets() : null, onWar ? loadWars() : null]).finally(() => {
+    refreshing = null;
+    btn.classList.remove('spin');
+  });
+  return refreshing;
 }
 $('#refresh-btn').addEventListener('click', async () => {
   const [overview] = await refreshAll(true);
@@ -2594,7 +2608,7 @@ function startApp(b, fresh = false) {
   }
 
   // 3. Live Torn API update
-  refreshAll(true);
+  refreshAll();
 
   // Görünürken sık, gizliyken seyrek (bildirim tahminleri için genel bakış yine de 2 dk'da bir tazelenir)
   setInterval(() => { if (trackerVisible() || Date.now() - (state.overviewAt || 0) > 120_000) loadOverview(false); }, 30_000);

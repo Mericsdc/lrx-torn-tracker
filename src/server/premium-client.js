@@ -9,7 +9,7 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
   const test = env.TORN_PREMIUM_TEST_MODE === '1';
   let base = null, invalid = false, session = null, generation = 0;
   let identityRevision = 0;
-  let reconnecting = null, retryAt = 0, connectionError = null;
+  let reconnecting = null, retryAt = 0, connectionError = null, publicInfo = null;
   if (configured) {
     try {
       base = serviceUrl(configured, { allowLoopbackHttp: test });
@@ -20,7 +20,8 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
     if (!base) throw bridgeError(invalid ? 'PREMIUM_SERVICE_URL_INVALID' : 'PREMIUM_SERVICE_NOT_CONFIGURED');
     let response;
     try {
-      response = await fetchImpl(new URL(path.replace(/^\//, ''), base), { method, redirect: 'error', signal: AbortSignal.timeout(25_000),
+      const statusRead = path === '/v1/info' || path === '/v1/me';
+      response = await fetchImpl(new URL(path.replace(/^\//, ''), base), { method, redirect: 'error', signal: AbortSignal.timeout(statusRead ? 8_000 : 25_000),
         headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}), ...headers },
         ...(body ? { body: JSON.stringify(body) } : {}) });
     } catch { throw bridgeError('PREMIUM_SERVICE_UNREACHABLE'); }
@@ -36,6 +37,9 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
         text += decoder.decode(value, { stream: true });
       }
       text += decoder.decode();
+    } catch (error) {
+      if (error.code === 'PREMIUM_RESPONSE_LIMIT') throw error;
+      throw bridgeError('PREMIUM_SERVICE_UNREACHABLE');
     } finally { reader.releaseLock(); }
     let data;
     try { data = JSON.parse(text); } catch { throw bridgeError('PREMIUM_SERVICE_RESPONSE'); }
@@ -49,7 +53,7 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
   function reset({ forget = true } = {}) {
     const previous = session; session = null; generation++;
     identityRevision++;
-    reconnecting = null; retryAt = 0; connectionError = null;
+    reconnecting = null; retryAt = 0; connectionError = null; publicInfo = null;
     if (forget) setRemembered(null);
     if (previous) request('/v1/auth/logout', { method: 'POST', body: {}, token: previous.token }).catch(() => {});
   }
@@ -59,12 +63,20 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
     return session;
   }
   const hasIdentity = () => test ? Number.isSafeInteger(Number(env.TORN_PREMIUM_TEST_TORN_ID)) && Number(env.TORN_PREMIUM_TEST_TORN_ID) > 0 : !!getKey();
+  function statusResult(data) {
+    return { ...data, configured: true, connected: !!session, connectionError: session ? null : connectionError?.code || null, serviceOrigin: base.origin, serviceUrl: base.href.replace(/\/$/, '') };
+  }
   async function status({ skipReconnect = false } = {}) {
     if (!base) return { configured: false, connected: false, code: invalid ? 'PREMIUM_SERVICE_URL_INVALID' : 'PREMIUM_SERVICE_NOT_CONFIGURED', freeApiAccess: true };
     if (session && session.fingerprint !== fingerprint()) reset();
-    if (!session && !skipReconnect && hasIdentity() && Date.now() >= retryAt) {
-      try { return await connect(); }
-      catch (error) { if (error.code === 'PREMIUM_IDENTITY_CHANGED') throw error; /* Free tools remain available during an outage. */ }
+    if (!session && !skipReconnect && hasIdentity()) {
+      if (Date.now() >= retryAt) {
+        try { return await connect(); }
+        catch (error) { if (error.code === 'PREMIUM_IDENTITY_CHANGED' || session) throw error; }
+      }
+      // Authentication already read public info. A retry should not immediately repeat the same failing request.
+      if (publicInfo) return statusResult(publicInfo);
+      if (connectionError) throw connectionError;
     }
     const stamp = generation;
     let data;
@@ -75,7 +87,7 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
     }
     if (stamp !== generation) throw bridgeError('PREMIUM_IDENTITY_CHANGED', 409);
     if ((data.mode === 'test') !== test) throw bridgeError('PREMIUM_MODE_MISMATCH');
-    return { ...data, configured: true, connected: !!session, connectionError: session ? null : connectionError, serviceOrigin: base.origin, serviceUrl: base.href.replace(/\/$/, '') };
+    return statusResult(data);
   }
   function connect() {
     if (session && session.fingerprint !== fingerprint()) reset();
@@ -83,7 +95,10 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
     if (reconnecting) return reconnecting;
     const stamp = generation;
     const pending = authenticate().catch((error) => {
-      if (stamp === generation) { retryAt = Date.now() + 60000; connectionError = error.code; }
+      if (stamp === generation) {
+        retryAt = Date.now() + (error.code === 'PREMIUM_SERVICE_UNREACHABLE' ? 8_000 : 60_000);
+        connectionError = error;
+      }
       throw error;
     }).finally(() => { if (reconnecting === pending) reconnecting = null; });
     reconnecting = pending;
@@ -93,8 +108,11 @@ function createPremiumClient(getKey, { env = process.env, defaultServiceUrl = ''
     // App login connects membership automatically. Never trust a renderer-supplied Torn ID.
     // Legacy notice/remember fields are accepted but are no longer prerequisites.
     const stamp = generation, keyFingerprint = fingerprint();
+    publicInfo = null;
     const info = await request('/v1/info');
     if ((info.mode === 'test') !== test) throw bridgeError('PREMIUM_MODE_MISMATCH');
+    if (stamp !== generation || keyFingerprint !== fingerprint()) throw bridgeError('PREMIUM_IDENTITY_CHANGED', 409);
+    publicInfo = info;
     if (!test && !getKey()) throw bridgeError('API_KEY_REQUIRED', 412);
     const result = await request(test ? '/v1/auth/test' : '/v1/auth/torn', { method: 'POST',
       headers: test ? { 'X-Premium-Test-Token': env.TORN_PREMIUM_TEST_TOKEN || '' } : {},

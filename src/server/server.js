@@ -216,11 +216,12 @@ const cache = new Map(); // key -> { t, ttl, data, promise }
 // Bumped whenever the API key changes: a Torn reply that was already on its way for the previous key
 // must not be cached or written into the new player's history.
 let keyGen = 0;
-function resetKeyCaches() { keyGen++; cache.clear(); ffCache.clear(); estCache.clear(); resetRosterState(); }
+let educationRetryAt = 0;
+function resetKeyCaches() { keyGen++; educationRetryAt = 0; cache.clear(); ffCache.clear(); estCache.clear(); resetRosterState(); }
 async function cached(key, ttl, loader) {
   const c = cache.get(key);
-  if (c && c.data !== undefined && Date.now() - c.t < ttl) return c.data;
   if (c && c.promise) return c.promise;
+  if (ttl > 0 && c && c.data !== undefined && Date.now() - c.t < ttl) return c.data;
   const gen = keyGen;
   const promise = (async () => {
     try {
@@ -239,6 +240,7 @@ async function cached(key, ttl, loader) {
 // Torn answered "too many requests" (error 5 or HTTP 429; the limit is per player, shared with every other tool
 // using the key): stop asking for half a minute instead of hammering a limited key. Requests fail fast meanwhile.
 let tornPausedUntil = 0;
+let tornConnectionFailure = null;
 const RATE_PAUSE_MS = 30_000;
 const rateLimited = () => new ApiError(T('Torn API istek sınırına ulaşıldı. Yarım dakika içinde kendiliğinden yeniden denenecek.', 'Torn API rate limit reached. It will be tried again by itself within half a minute.'), 5);
 // Body of a Torn API reply. The API is untrusted input: anything but a JSON object is unreadable.
@@ -251,21 +253,31 @@ function tornReply(res, text) {
   return json;
 }
 
-async function tornRaw(pathq, expectedGeneration = null) {
-  if (!config.apiKey) throw new ApiError(T('API key ayarlanmamış. Ayarlar sekmesinden ekleyin.', 'API key not set. Add it in Settings.'), 'NO_KEY');
+function checkTornAvailability() {
   if (Date.now() < tornPausedUntil) throw rateLimited();
+  if (tornConnectionFailure?.retryAt > Date.now()) throw tornConnectionFailure.error;
+}
+
+async function tornRaw(pathq, expectedGeneration = keyGen) {
+  if (!config.apiKey) throw new ApiError(T('API key ayarlanmamış. Ayarlar sekmesinden ekleyin.', 'API key not set. Add it in Settings.'), 'NO_KEY');
+  checkTornAvailability();
   await throttle();
-  if (expectedGeneration != null && expectedGeneration !== keyGen) throw Object.assign(new ApiError('Torn account changed', 'PLAYER_CHANGED'), { status: 409 });
-  if (Date.now() < tornPausedUntil) throw rateLimited(); // the limit was hit while this call waited its turn
+  if (expectedGeneration !== keyGen) throw Object.assign(new ApiError(T('Torn hesabı değişti.', 'Torn account changed.'), 'PLAYER_CHANGED'), { status: 409 });
+  checkTornAvailability(); // another caller may have hit a connection failure or the quota while this one waited
   const sep = pathq.includes('?') ? '&' : '?';
   const url = `https://api.torn.com/${pathq}${sep}key=${encodeURIComponent(config.apiKey)}&comment=TornTracker`;
   const started = Date.now();
   try {
     const res = await fetch(url, { headers: { 'User-Agent': 'TornTracker/1.0' }, signal: AbortSignal.timeout(20_000) });
     const out = tornReply(res, await res.text());
+    tornConnectionFailure = null;
     markSourceOk('torn', Date.now() - started);
     return out;
   } catch (err) {
+    if (err.name === 'TimeoutError' || err.name === 'AbortError' || (err instanceof TypeError && err.message === 'fetch failed')) {
+      // Several pages can ask Torn at once. Briefly reuse a transport failure while the connection recovers.
+      tornConnectionFailure = { error: err, retryAt: Date.now() + 8_000 };
+    }
     if (isTornSourceError(err)) markSourceErr('torn', err, Date.now() - started);
     else markSourceOk('torn', Date.now() - started); // Torn answered; the refusal is about this key, not the source
     throw err;
@@ -305,12 +317,8 @@ async function getEducationNames() {
 
 async function getOverview(force = false) {
   const q = 'user/?selections=profile,cooldowns,education,battlestats,bars,icons,personalstats,travel,money,timestamp';
-  if (force) cache.delete('torn:' + q);
   const gen = keyGen;
-  const [u, eduNames] = await Promise.all([
-    torn(q, 25_000),
-    getEducationNames().catch(() => history.eduNames || {}),
-  ]);
+  const u = await torn(q, force ? 0 : 25_000);
   if (gen !== keyGen) throw new ApiError(T('API key değişti, yeniden yükleniyor.', 'API key changed, reloading.'), 'KEY_CHANGED');
   // When Torn sent this reply. It may come from the 25 s cache, so the page must not take "now" for it:
   // every countdown and the TCT clock would run late by the cache age.
@@ -318,6 +326,11 @@ async function getOverview(force = false) {
   // The saved key can also change outside sign-in and Settings (config.json, TORN_API_KEY):
   // another player's records are never continued under this one.
   adoptPlayer(u.player_id);
+  const eduNames = history.eduNames || {};
+  if (Object.keys(eduNames).length <= 10 && Date.now() >= educationRetryAt) {
+    educationRetryAt = Date.now() + 120_000;
+    getEducationNames().catch(() => {}); // title lookup is optional; timers and bars can already be displayed
+  }
 
   const icons = u.icons || {};
   const iconList = Object.values(icons).map(String);
@@ -420,8 +433,7 @@ const dailyList = (obj) => Object.keys(obj || {}).sort().map((date) => ({ date, 
 
 async function getNetworth(force = false) {
   const q = 'user/?selections=networth';
-  if (force) cache.delete('torn:' + q);
-  const u = await torn(q, 5 * 60_000);
+  const u = await torn(q, force ? 0 : 5 * 60_000);
   const n = u.networth || {};
   const day = tctDate((n.timestamp || Date.now() / 1000) * 1000);
   history.networth ||= {};
@@ -743,8 +755,7 @@ function pruneUserHistory() {
 /* ------------------------------------------------------------------ */
 async function fetchCompany(force = false) {
   const q = 'company/?selections=profile,detailed,stock,employees,news';
-  if (force) cache.delete('torn:' + q);
-  const c = await torn(q, 60_000);
+  const c = await torn(q, force ? 0 : 60_000);
   recordCompany(c);
   return c;
 }
@@ -1829,8 +1840,7 @@ async function myIdNow() {
 
 // Erişim 10 dakika saklanır (her sayfa açılışında Torn'a tekrar sorulmaz)
 const factionAccess = (force = false) => {
-  if (force) cache.delete('faction-access');
-  return cached('faction-access', 10 * 60_000, async () => {
+  return cached('faction-access', force ? 0 : 10 * 60_000, async () => {
     const f = (await torn('v2/user/faction', 10 * 60_000)).faction;
     if (!f) return { inFaction: false, allowed: false };
     const [me, basic] = await Promise.all([myIdNow(), torn('v2/faction/basic', 3600_000).then((j) => j.basic)]);

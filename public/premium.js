@@ -5,6 +5,7 @@
   let snapshot = null, admin = null, memberPage = null, lastTest = null, firstTest = null;
   let tab = 'membership', loading = false, acting = false, selectedMember = null;
   let planQuantity = null, identityRevision = 0, statusUnavailable = false;
+  let refreshAfterIdentityChange = false, lastRefreshError = '';
   const filters = { search: '', filter: 'all', page: 1 };
   const locale = () => state.lang === 'tr' ? 'tr-TR' : 'en-GB';
   const date = (seconds) => seconds ? new Date(seconds * 1000).toLocaleString(locale(), { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -40,6 +41,7 @@
       PAYMENT_CHECK_IN_PROGRESS: tr('Ödeme kontrolü devam ediyor. Tamamlandıktan sonra yeniden deneyin.', 'A payment check is running. Retry when it has finished.'),
       PREMIUM_DISABLED: tr('Premium bağlantısı kapalı. Ayarlar → Genel → Uygulama bölümünden açabilirsiniz.', 'Premium connection is off. You can turn it on in Settings → General → App.'),
       PREMIUM_SERVICE_ERROR: tr('Üyelik servisi şu anda yanıt vermiyor. Biraz sonra yeniden deneyin.', 'The membership service is not responding right now. Please try again shortly.'),
+      PREMIUM_SERVICE_RESPONSE: tr('Üyelik servisi geçerli bir yanıt vermedi. Daha sonra tekrar deneyin.', 'The membership service returned an invalid response. Try again later.'),
       PREMIUM_IDENTITY_CHANGED: tr('Torn hesabı değişti. Premium ekranı yeniden yükleniyor.', 'The Torn account changed. Premium is reloading.'),
       TIMEOUT: tr('Üyelik servisi zamanında yanıt vermedi. Biraz sonra yeniden deneyin.', 'The membership service did not respond in time. Please try again shortly.'),
     })[code] || tr('İşlem tamamlanamadı: ', 'Action could not be completed: ') + code;
@@ -187,23 +189,8 @@
     const s = admin.settings;
     return `<section class="pm-surface">${sectionTitle(tr('KONTROL MERKEZİ', 'CONTROL CENTRE'), tr('Üyelik ayarları', 'Membership settings'))}${featurePermissions()}<details class="pm-setting" data-pm-details="pricing" open><summary>${tr('Fiyatlandırma', 'Pricing')}<span>${esc(s.xanax_price)} Xanax / ${esc(s.days_per_xanax)} ${tr('gün', 'days')}</span></summary><form data-premium-form="settings" class="pm-form"><input type="hidden" name="revision" value="${esc(s.revision)}">${field('xanax_price', 'Xanax', s.xanax_price, 'number', 'required min="1" max="1000"')}${field('days_per_xanax', tr('Karşılık gelen gün', 'Days per price unit'), s.days_per_xanax, 'number', 'required min="1" max="3650"')}${reason()}<button type="submit" class="btn pm-button pm-primary">${tr('Fiyatı kaydet', 'Save pricing')}</button></form><p class="pm-fine-print">${tr('Yeni fiyat bir saniye sonra yürürlüğe girer. Tamamlanan ödemeler değişmez.', 'The new price takes effect after one second. Completed awards remain unchanged.')}</p></details><details class="pm-setting" data-pm-details="automation"><summary>${tr('Otomatik kontrol', 'Automatic checks')}<span>${s.enabled ? tr('Açık', 'On') : tr('Duraklatıldı', 'Paused')}</span></summary><form data-premium-form="automation" class="pm-form"><input type="hidden" name="revision" value="${esc(s.revision)}">${field('check_interval', tr('Kontrol aralığı (saniye)', 'Interval (seconds)'), s.check_interval, 'number', 'required min="60" max="3600"')}<label class="pm-consent"><input type="checkbox" name="enabled" ${s.enabled ? 'checked' : ''}>${tr('Otomatik kontrol açık', 'Automatic checks enabled')}</label>${reason()}<button type="submit" class="btn pm-button pm-primary">${tr('Kaydet', 'Save')}</button></form><div class="pm-actions">${button('check', tr('Şimdi kontrol et', 'Check now'), 'pm-ghost')}</div></details><details class="pm-setting" data-pm-details="errors"><summary>${tr('Hatalar ve işlem kayıtları', 'Errors and audit trail')}<span>${esc(admin.errors.length)} ${tr('hata', 'errors')}</span></summary>${table([tr('Tarih', 'Date'), tr('Hata', 'Error')], admin.errors.map((r) => cell(date(r.created_at), r.code)))}${table([tr('Tarih', 'Date'), 'Torn ID', tr('İşlem', 'Action'), tr('Gerekçe', 'Reason')], admin.audit.map((r) => cell(date(r.created_at), r.actor_torn_id, r.action, r.reason)))}</details><details class="pm-setting" data-pm-details="privacy-requests"><summary>${tr('Gizlilik talepleri', 'Privacy requests')}<span>${esc(admin.privacyRequests.length)}</span></summary>${table(['Torn ID', tr('Tarih', 'Date'), tr('Durum', 'Status')], admin.privacyRequests.map((r) => cell(r.torn_id, date(r.requested_at), r.status)))}</details><details class="pm-setting" data-pm-details="baseline"><summary>${tr('Geçmiş boşluğunu yönet', 'History gap recovery')}</summary><p class="pm-muted">${tr('Eksik transferleri inceleyin. Yeni başlangıç, görülmemiş eski eventlerin atlanmasını onaylar.', 'Reconcile missing transfers first. A new baseline acknowledges skipping unseen old events.')}</p><form data-premium-form="rebaseline" class="pm-form"><label class="pm-consent"><input type="checkbox" name="acknowledgeSkippedTransfers" required>${tr('Atlanabilecek transferleri inceledim', 'I reconciled potentially skipped transfers')}</label>${reason()}<button type="submit" class="btn pm-button pm-ghost">${tr('Yeni başlangıç oluştur', 'Set new baseline')}</button></form></details></section>`;
   }
-  // The entrance (premium.css) plays once, on fresh content: the first paint after the view is shown or the identity
-  // changes. With motion on, a page still in the host waits hidden (.pm-hold) until that paint replaces it, for at most
-  // HOLD_MS, so a slow service never leaves the page blank.
-  const HOLD_MS = 1500;
-  let animateNext = true, holdTimer = 0;
-  function expectEntrance() {
-    animateNext = true; clearTimeout(holdTimer);
-    const hold = !prefersReducedMotion() && !!host.querySelector('.pm-page');
-    host.classList.toggle('pm-hold', hold);
-    if (hold) holdTimer = setTimeout(release, HOLD_MS);
-  }
-  // No fresh paint came in time (a failed or slow refresh, no snapshot): the held page shows again, and a page already
-  // in sight never plays the entrance on a later refresh. An empty host keeps it for its first real paint.
-  function release() {
-    clearTimeout(holdTimer); host.classList.remove('pm-hold');
-    if (host.querySelector('.pm-page')) animateNext = false;
-  }
+  // Animate the first verified view for this account. Returning to Premium keeps the last view visible.
+  let animateNext = true;
   // Once the entrance has played, or was cut short (the view hidden, motion switched off), .pm-enter goes, so it never replays.
   const ENTRANCE = new Set(['pmArc', 'pmRise']);
   const settle = (event) => {
@@ -212,13 +199,12 @@
     if (event.type === 'animationcancel' || !page.getAnimations({ subtree: true }).some((a) => ENTRANCE.has(a.animationName) && a.playState !== 'finished')) page.classList.remove('pm-enter');
   };
   host.addEventListener('animationend', settle); host.addEventListener('animationcancel', settle);
-  // Re-rendering must not collapse open sections or destroy an open module workbench. A notice has nothing to animate,
-  // so it takes the pending entrance without the class (which would otherwise never be dropped).
+  // Preserve open sections and workbenches across refreshes. Notices are drawn without an entrance animation.
   function paintHost(html, animated = true) {
     const opened = new Map([...host.querySelectorAll('details[data-pm-details]')].map((el) => [el.dataset.pmDetails, el.open]));
     const workbenches = [...host.querySelectorAll('[data-feature-open]')];
     host.innerHTML = `<div class="pm-page${animated && animateNext && !prefersReducedMotion() ? ' pm-enter' : ''}">${html}</div>`;
-    animateNext = false; clearTimeout(holdTimer); host.classList.remove('pm-hold');
+    if (animated) animateNext = false;
     for (const el of host.querySelectorAll('details[data-pm-details]')) if (opened.has(el.dataset.pmDetails)) el.open = opened.get(el.dataset.pmDetails);
     for (const old of workbenches) {
       const slot = host.querySelector(`[data-feature-slot="${CSS.escape(old.dataset.featureSlot)}"]`);
@@ -283,13 +269,24 @@
       if (!snapshot.account?.admin) { admin = null; memberPage = null; selectedMember = null; tab = 'membership'; }
       else if (tab !== 'membership') { await loadAdmin(); if (tab === 'members') await loadMembers(); }
       render();
-      if (snapshot.disabled) message('');
+      if (snapshot.disabled || (lastRefreshError && feedback.textContent === lastRefreshError)) message('');
+      lastRefreshError = '';
     } catch (e) {
       if (e.code === 'PREMIUM_IDENTITY_CHANGED') return;
       if (e.status === 401) { admin = null; memberPage = null; tab = 'membership'; try { if (await latest()) render(); } catch {} }
       if (snapshot?.disabled || e.code === 'PREMIUM_DISABLED') { message(''); return; }
-      message(errorText(e), true);
-    } finally { loading = false; if (animateNext) release(); }
+      if (!snapshot) {
+        paintHost(notice(tr('Üyelik durumu alınamadı', 'Membership status unavailable'), esc(errorText(e)), button('refresh', tr('Tekrar dene', 'Try again'), 'pm-primary')), false);
+      } else {
+        lastRefreshError = errorText(e);
+        message(lastRefreshError, true);
+      }
+    } finally {
+      loading = false;
+      const retry = refreshAfterIdentityChange && !snapshot && state.view === 'premium';
+      refreshAfterIdentityChange = false;
+      if (retry) refresh();
+    }
   }
   const scrollBehavior = () => prefersReducedMotion() ? 'auto' : 'smooth';
   function showSection(id) {
@@ -374,13 +371,15 @@
     acting = statusUnavailable = false;
     snapshot = admin = memberPage = lastTest = firstTest = selectedMember = null; tab = 'membership';
     Object.assign(filters, { search: '', filter: 'all', page: 1 });
-    host.replaceChildren(); expectEntrance(); message('');
-    if (state.view === 'premium') refresh();
+    host.replaceChildren(); animateNext = true; lastRefreshError = ''; message('');
+    if (state.view === 'premium') {
+      if (loading) refreshAfterIdentityChange = true;
+      else refresh();
+    }
   });
   // showView() also runs for the view already open (the active nav item, a locked module's link): that only refreshes.
-  let shownView = state.view;
   const previousView = window.onViewShown;
-  window.onViewShown = (v) => { previousView?.(v); const arrived = v === 'premium' && shownView !== 'premium'; shownView = v; if (v === 'premium') { if (arrived) expectEntrance(); refresh(); } };
+  window.onViewShown = (v) => { previousView?.(v); if (v === 'premium') refresh(); };
   const previousOverview = window.onOverviewRendered;
   window.onOverviewRendered = () => { previousOverview?.(); if (snapshot) paintProfile(); };
   const previousLang = window.onLangChanged;

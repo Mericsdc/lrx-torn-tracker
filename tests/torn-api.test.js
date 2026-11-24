@@ -15,6 +15,7 @@ const KEY = 'ResilientKey0001';
 fs.writeFileSync(path.join(temp, 'config.json'), JSON.stringify({ apiKey: KEY, features: { 'page.travel': false } }));
 
 let torn = 'ok', tornCalls = 0, feedback = 'ok', ffscouter = 'ok';
+let overviewCalls = 0, overviewDelay = 0, educationGate = null;
 let tornTime = null, xantaken = 1; // null: the real clock
 let keyInfo = { access_level: 3, access_type: 'Limited Access' };
 const feedbackPosts = [];
@@ -35,12 +36,17 @@ global.fetch = async (input, init = {}) => {
   }
   if (url.hostname !== 'api.torn.com') throw new Error('Unexpected external request: ' + url.hostname);
   tornCalls++;
+  if (torn === 'timeout') throw new DOMException('Timed out', 'TimeoutError');
   if (torn === 'null') return reply('null');
   if (torn === 'html') return reply('<html>Bad gateway</html>', 502);
   if (torn === 'http429') return reply('<html>Too many requests</html>', 429);
   if (torn === 'limit') return reply(JSON.stringify({ error: { code: 5, error: 'Too many requests' } }));
-  if (url.pathname === '/torn/') return reply(JSON.stringify({ education: {} }));
+  if (url.pathname === '/torn/') { if (educationGate) await educationGate; return reply(JSON.stringify({ education: {} })); }
   if (url.pathname === '/key/') return reply(JSON.stringify(keyInfo));
+  if (url.searchParams.get('selections')?.startsWith('profile,cooldowns')) {
+    overviewCalls++;
+    if (overviewDelay) await new Promise((resolve) => setTimeout(resolve, overviewDelay));
+  }
   if (torn === 'sparse') return reply(JSON.stringify({ player_id: 5, name: 'Sparse', icons: null, cooldowns: null, personalstats: null, status: null }));
   const user = { player_id: 5, name: 'Player', level: 10, timestamp: tornTime ?? Math.floor(Date.now() / 1000), cooldowns: { drug: 0 }, icons: {}, personalstats: { xantaken }, status: { state: 'Okay' } };
   Object.assign(user, { rank: 'Average Hustler', age: 1234, property: 'Private Island', awards: 120, married: { spouse_id: 7, spouse_name: 'Partner', duration: 300 },
@@ -66,6 +72,26 @@ after(async () => {
   const resolved = path.resolve(temp), root = path.resolve(os.tmpdir()) + path.sep;
   if (!resolved.startsWith(root) || !path.basename(resolved).startsWith('lrx-tornapi-tests-')) throw new Error('Unsafe test cleanup path');
   fs.rmSync(resolved, { recursive: true, force: true });
+});
+
+test('overview joins an overlapping refresh and responds before the education catalog', async () => {
+  let releaseEducation;
+  educationGate = new Promise((resolve) => { releaseEducation = resolve; });
+  overviewDelay = 50;
+  let timer;
+  try {
+    const result = Promise.all([request('/api/overview'), request('/api/overview?force=1')]);
+    const deadline = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Overview is blocked by the education catalog')), 1500); });
+    const replies = await Promise.race([result, deadline]);
+    assert.equal(overviewCalls, 1);
+    assert.ok(replies.every((r) => r.status === 200 && r.data.player.id === 5));
+    assert.equal(replies[0].data.fetchedAt, replies[1].data.fetchedAt);
+  } finally {
+    clearTimeout(timer);
+    overviewDelay = 0;
+    educationGate = null;
+    releaseEducation();
+  }
 });
 
 test('a reply with missing and null fields still gives an overview', async () => {
@@ -168,6 +194,19 @@ test('a Custom key that lacks selections the overview needs is accepted with the
   assert.equal(custom.status, 200); assert.deepEqual(custom.data.missingSelections, ['education', 'icons', 'personalstats', 'money']);
   keyInfo = { access_level: 3, access_type: 'Limited Access' };
   assert.deepEqual((await request('/api/auth', { apiKey: KEY })).data.missingSelections, []);
+});
+
+test('a Torn timeout briefly shares the error across views and then recovers', async (t) => {
+  const realNow = Date.now.bind(Date); let skew = 0;
+  t.mock.method(Date, 'now', () => realNow() + skew);
+  torn = 'timeout';
+  assert.equal((await request('/api/overview?force=1')).status, 504);
+  const calls = tornCalls;
+  torn = 'ok';
+  assert.equal((await request('/api/networth?force=1')).data.code, 'TIMEOUT');
+  assert.equal(tornCalls, calls);
+  skew += 8_001;
+  assert.equal((await request('/api/overview?force=1')).status, 200);
 });
 
 // Last: the pause it starts would otherwise spill into the tests above.

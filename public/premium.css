@@ -230,7 +230,6 @@ html[data-theme="light"] .pm-seal-number { background:none; color:var(--pm-accen
 /* Entrance: with motion on, premium.js adds .pm-enter to the first paint after the view is shown or the identity changes, and drops it once played. The seal arc
    draws in (628.32 is its circumference), the seal and the headline rise, then the sections in an 80 ms stagger. */
 /* A re-shown page waits out of sight for its fresh paint, so the entrance never follows a glimpse of the old page. */
-#premium-content.pm-hold { visibility:hidden; }
 @keyframes pmArc { from { stroke-dashoffset:628.32px; } to { stroke-dashoffset:0; } }
 @keyframes pmRise { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
 .pm-page.pm-enter .pm-seal-arc { animation:pmArc 1.2s ease-out both; }

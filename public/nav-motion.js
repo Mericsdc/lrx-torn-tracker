@@ -58,6 +58,12 @@
       ind.style.width = s.width;
       ind.style.height = s.height;
       nav.classList.toggle('nav-glide', true);
+      if (active !== last.item) {
+        if (box.y < nav.scrollTop) nav.scrollTop = box.y;
+        else if (box.y + box.h > nav.scrollTop + nav.clientHeight) nav.scrollTop = box.y + box.h - nav.clientHeight;
+        if (box.x < nav.scrollLeft) nav.scrollLeft = box.x;
+        else if (box.x + box.w > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = box.x + box.w - nav.clientWidth;
+      }
       if (move === 'jump') { void ind.offsetWidth; ind.style.transition = ''; } // land without a transition
       last = { shown: true, item: active, box };
     }
@@ -85,10 +91,13 @@
     if (!nav || !toggle) return;
     const app = nav.closest('.app');
     const compact = window.matchMedia('(max-width: 900px)');
+    const autoRail = window.matchMedia('(901px <= width <= 1150px)');
     const storageKey = 'tt.dock.collapsed';
-    let collapsed = false;
-    try { collapsed = localStorage.getItem(storageKey) === '1'; } catch {}
+    let preference = null;
+    try { preference = localStorage.getItem(storageKey); } catch {}
+    const isCollapsed = () => preference === '1' || (preference !== '0' && autoRail.matches);
     function render() {
+      const collapsed = isCollapsed();
       app.classList.toggle('dock-collapsed', collapsed);
       if (collapsed && compact.matches && nav.contains(document.activeElement)) toggle.focus();
       nav.inert = collapsed && compact.matches;
@@ -98,11 +107,12 @@
       toggle.setAttribute('aria-expanded', String(!collapsed));
     }
     toggle.addEventListener('click', () => {
-      collapsed = !collapsed;
-      try { localStorage.setItem(storageKey, collapsed ? '1' : '0'); } catch {}
+      preference = isCollapsed() ? '0' : '1';
+      try { localStorage.setItem(storageKey, preference); } catch {}
       render();
     });
     compact.addEventListener('change', render);
+    autoRail.addEventListener('change', render);
     new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
     render();
   }
