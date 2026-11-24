@@ -1,0 +1,12 @@
+/* Uses the same surface, text and controls as the Tracker. */
+.companion-fields { flex-wrap: wrap; align-items: end; }
+.companion-fields > .tl-field { flex: 1 1 132px; min-width: 0; }
+.companion-fields > .tl-field > .input { width: 100%; box-sizing: border-box; }
+.companion-result:empty { display: none; }
+.companion-result[aria-busy="true"] { opacity: .75; }
+#companion-palette { width: min(34rem, calc(100vw - 2rem)); box-sizing: border-box; max-height: 80vh; color: var(--text); background: var(--bg); }
+#companion-palette::backdrop { background: rgb(0 0 0 / .55); }
+#companion-palette input { width: 100%; box-sizing: border-box; }
+.companion-palette-list { display: grid; gap: .25rem; margin-top: .5rem; max-height: 46vh; overflow: auto; }
+.companion-palette-list [role="option"] { justify-content: flex-start; text-align: left; }
+.companion-palette-list [aria-selected="true"] { outline: 2px solid var(--accent, currentColor); outline-offset: -2px; }

@@ -106,6 +106,10 @@
     return CHAIN_MILESTONES.find((m) => n >= m) || null;
   }
 
+  function nextChainMilestone(hits, max) {
+    return CHAIN_MILESTONES.findLast((milestone) => milestone > hits && milestone <= max) ?? null;
+  }
+
   function summarizeChains(rawChains = []) {
     const arr = Array.isArray(rawChains)
       ? rawChains
@@ -237,6 +241,7 @@
     parseArmoryNews,
     buildActivityHeatmap,
     chainMilestone,
+    nextChainMilestone,
     summarizeChains,
     normalizeFactionTree,
     simulateUpgrades,

@@ -255,6 +255,7 @@ select { background: rgba(6, 8, 10, 0.8); color: var(--text); border: 1px solid 
 .bars { display: flex; flex-direction: column; gap: 13px; }
 .bar-row .bar-top { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; }
 .bar-row .bar-top span:first-child { color: var(--muted); font-weight: 600; letter-spacing: 0.2px; font-size: 12px; }
+.bar-recovery { margin-top: 4px; font-size: 11px; }
 .bar { height: 7px; border-radius: 3px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.04); overflow: hidden; position: relative; }
 .bar i { position: absolute; inset: 0 auto 0 0; border-radius: inherit; transition: width 0.5s ease; }
 /* Status rows (app.js): a panel of rows, the label on the left and the value on the right, in as many columns as fit.

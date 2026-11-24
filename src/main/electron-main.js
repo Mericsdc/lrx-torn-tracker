@@ -317,6 +317,12 @@ function main() {
   // sekmeye geçilince ya da pencere odağa gelince çalışır. Yalnızca sayfayı boyayanlar her zaman yüklenir.
   const tabViewed = (id) => id === activeTabId && !!mainWindow && !mainWindow.isDestroyed()
     && mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused();
+  const CHAT_PAGE = /^https:\/\/www\.torn\.com\//i;
+  function pauseChatHighlight(id) {
+    const wc = tabs.get(id)?.view.webContents;
+    if (!wc || wc.isDestroyed() || !CHAT_PAGE.test(wc.getURL())) return;
+    wc.executeJavaScript('window.__lrxChatHighlight?.setActive(false)', false).catch(() => {});
+  }
   /* executeJavaScript waits until the page is able to run the script. A tab that navigates in the meantime would
      run the queued helper, and the data sent with it (purchase costs, crime values), in the NEXT document,
      whatever site that is. Every injected script therefore checks where it is before it does anything. */
@@ -330,6 +336,8 @@ function main() {
     { name: 'war-helper', feature: 'torn.warHelper', match: /^https:\/\/www\.torn\.com\/factions\.php/i, after: (id) => warTick(id) },
     { name: 'fight-helper', feature: 'torn.liveFight', needsFocus: true, match: /^https:\/\/www\.torn\.com\/(loader|page)\.php\?(.*&)?sid=attack(&|#|$)/i },
     { name: 'company-stock', feature: 'torn.stockSync', needsFocus: true, match: STOCK_PAGE, run: syncStockDeliveries },
+    { name: 'chat-highlight', feature: 'companion.tornChat', defaultOff: true, needsFocus: true,
+      match: CHAT_PAGE, start: 'window.__lrxChatHighlight?.setActive(true)', stop: 'window.__lrxChatHighlight?.stop()' },
     // Suçlar: XP renkleri + $/N rozetleri + burglary notları (her biri ayrı ayardan açılıp kapanır)
     { name: 'crime-helper', feature: ['torn.crimeHelper', 'torn.crimeValue', 'torn.crimeRank', 'torn.burglaryHelper'], match: /^https:\/\/www\.torn\.com\/page\.php\?(.*&)?sid=crimes(&|#|$)/i,
       prelude: () => {
@@ -366,12 +374,15 @@ function main() {
     // Helpers read window.__lrxLang ('en' | 'tr') for the text they add to Torn pages; sent with each helper in one call
     const lang = `window.__lrxLang=${JSON.stringify(appLang())};`;
     for (const h of TORN_HELPERS) {
-      if (!h.match.test(url) || ![].concat(h.feature).some(featureEnabled) || (h.needsFocus && !tabViewed(id))) continue;
+      if (!h.match.test(url) || (h.needsFocus && !tabViewed(id))) continue;
+      const enabled = [].concat(h.feature).some((key) => featureEnabled(key, !h.defaultOff));
+      if (!enabled && !h.stop) continue;
       if (h.event && !seasonalActive(h.event)) continue; // etkinlik günü değil
       if (wc.isDestroyed() || wc.getURL() !== url) return; // the page changed meanwhile; its own load runs the helpers again
       try {
-        if (h.run) await h.run(wc, t, lang);
-        else await wc.executeJavaScript(onlyOn(h.match, lang + (h.prelude ? h.prelude() : '') + helperSrc(h.name)), false);
+        if (!enabled) await wc.executeJavaScript(onlyOn(h.match, h.stop), false);
+        else if (h.run) await h.run(wc, t, lang);
+        else await wc.executeJavaScript(onlyOn(h.match, lang + (h.prelude ? h.prelude() : '') + helperSrc(h.name) + '\n' + (h.start || '')), false);
         if (h.after) h.after(id);
       } catch (e) {
         // Navigating or reloading while a helper runs destroys its frame: expected, not an error
@@ -604,6 +615,7 @@ function main() {
   function markActive(id) {
     const prev = tabs.get(activeTabId);
     if (prev) prev.lastActive = Date.now(); // arka plana geçtiği an
+    if (activeTabId !== (id || 'tracker')) pauseChatHighlight(activeTabId);
     activeTabId = id || 'tracker';
     const t = tabs.get(activeTabId);
     if (t) { t.lastActive = Date.now(); wakeTab(t); }
@@ -809,9 +821,9 @@ function main() {
   const T = (trStr, enStr) => (appLang() === 'tr' ? trStr : enStr);
 
   var lastFeatures = null; // var: featureEnabled() is hoisted and may run before this line
-  function featureEnabled(key) {
+  function featureEnabled(key, defaultValue = true) {
     try { lastFeatures = JSON.parse(fs.readFileSync(path.join(persistentDataDir, 'config.json'), 'utf8')).features || {}; } catch {}
-    return lastFeatures?.[key] !== false;
+    return typeof lastFeatures?.[key] === 'boolean' ? lastFeatures[key] : defaultValue;
   }
 
   async function setupTornTools(tornSession) {
@@ -904,6 +916,10 @@ function main() {
 
       mainWindow.on('resize', layoutViews);
       mainWindow.on('focus', () => { if (tabs.has(activeTabId)) injectTornHelpers(activeTabId); });
+      const pauseChat = () => pauseChatHighlight(activeTabId);
+      mainWindow.on('blur', pauseChat);
+      mainWindow.on('minimize', pauseChat);
+      mainWindow.on('hide', pauseChat);
       mainWindow.on('maximize', layoutViews);
       mainWindow.on('unmaximize', layoutViews);
       mainWindow.on('restore', layoutViews);

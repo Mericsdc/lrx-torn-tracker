@@ -49,11 +49,13 @@ Five themes (Obsidian, Ocean, Forest, Amethyst, Light), English by default with 
 - **A switch for everything.** Every page, notification, helper, add-on and connection can be turned off in Settings.
 - **Log Out** in Settings removes the local key and ends the membership session.
 
+The Companion cards use the saved key with the official Torn API for company comparisons, market listings, trades, personal balances, gyms, inventory and equipment. Public and Minimal selections are used where available. Private trades and balances require Limited Access or the corresponding custom selections. Companion responses are cached in local process memory. Recorded training dates are retained in the existing local company report. The Companion sends its data only to the local Tracker window and reads from Torn. The chat highlighter runs locally on the focused Torn tab, keeps keywords for that page session and shares no chat data. The clipboard receives a trade summary or message when you choose Copy.
+
 This is an independent project, not an official Torn product. Membership data handling is described in [premium/PRIVACY.md](premium/PRIVACY.md).
 
 ## Release notes
 
-Each version has its notes in [`docs/releases/`](docs/releases) and on the [website](https://lrxe8.com/torn-tracker#releases). The latest is [v1.6.13](docs/releases/1.6.13.md).
+Each version has its notes in [`docs/releases/`](docs/releases) and on the [website](https://lrxe8.com/torn-tracker#releases). See [v1.6.22](docs/releases/1.6.22.md) for the Companion update.
 
 ## Project structure
 

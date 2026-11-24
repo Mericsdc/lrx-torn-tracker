@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/themes.css" />
   <link rel="stylesheet" href="/premium.css" />
   <link rel="stylesheet" href="/overview.css" />
+  <link rel="stylesheet" href="/companion.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <!-- Loaded as "print" so it never delays the first paint; theme-init.js switches it on once it has arrived. -->
@@ -187,6 +188,9 @@
         </div>
         <div class="top-actions">
           <div class="ow-head" id="ow-head" hidden></div>
+          <button class="btn glass-pill" id="companion-palette-open" type="button" aria-label="Quick navigation" aria-haspopup="dialog" aria-keyshortcuts="Control+K Alt+K Meta+K" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4.5 4.5"/></svg>
+          </button>
           <div class="toggle" id="lang-toggle" title="Language / Dil">
             <button data-lang="en" class="active">EN</button>
             <button data-lang="tr">TR</button>
@@ -340,6 +344,7 @@
           </div>
         </article>
         <div class="grid kpis" id="report-kpis"></div>
+        <article class="glass card" id="companion-director" hidden></article>
         <article class="glass card">
           <div class="card-head"><h3 data-i18n="report.tableTitle">Sales by Product</h3><span class="muted" data-i18n="report.tableSub">Last day · average of the last 7 records</span></div>
           <div class="tbl-wrap"><table class="tbl" id="report-table"></table></div>
@@ -404,14 +409,23 @@
 
       <!-- ===================== EXTRA FEATURES ===================== -->
       <section class="view" id="view-job"><div class="stack" id="job-body"></div></section>
-      <section class="view" id="view-gym"><div class="stack" id="gym-body"></div></section>
+      <section class="view" id="view-gym"><div class="stack" id="gym-body"></div><article class="glass card" id="companion-gyms" hidden></article></section>
       <section class="view" id="view-stocks"><div class="stack" id="stocks-body"></div></section>
       <section class="view" id="view-travel"><div class="stack" id="travel-body"></div><div data-feature-slot="travel_advanced"></div></section>
       <section class="view" id="view-level"><div class="stack" id="level-body"></div></section>
       <section class="view" id="view-guide"><div class="stack" id="guide-body"></div></section>
       <section class="view" id="view-crimes"><div class="stack" id="crimes-body"></div></section>
       <section class="view" id="view-awards"><div class="stack" id="awards-body"></div><div data-feature-slot="merits_optimizer"></div></section>
-      <section class="view" id="view-tools"><div class="stack" id="tools-body"></div><div data-feature-slot="events_advanced"></div><div data-feature-slot="helpers_advanced"></div></section>
+      <section class="view" id="view-tools"><div class="stack" id="tools-body"></div><div data-feature-slot="events_advanced"></div><div data-feature-slot="helpers_advanced"></div>
+        <div class="stack" id="companion-tools">
+          <article class="glass card" id="companion-market" hidden></article>
+          <article class="glass card" id="companion-trade" hidden></article>
+          <article class="glass card" id="companion-balance" hidden></article>
+          <article class="glass card" id="companion-inventory" hidden></article>
+          <article class="glass card" id="companion-chat" hidden></article>
+          <article class="glass card" id="companion-equipment" hidden></article>
+        </div>
+      </section>
       <section class="view" id="view-faction"><div class="stack" id="faction-body"></div></section>
 
       <!-- ===================== SETTINGS ===================== -->
@@ -683,5 +697,15 @@
   <script src="/company-advisor-ui.js"></script>
   <script src="/ops-ui.js"></script>
   <script src="/feedback.js"></script>
+  <dialog class="glass card" id="companion-palette" aria-labelledby="companion-palette-title">
+    <div class="card-head"><h2 id="companion-palette-title">Quick navigation</h2><button class="btn sm ghost" type="button" data-close-palette>Close</button></div>
+    <input class="input" type="search" maxlength="129" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="companion-palette-list" />
+    <div class="companion-palette-list" id="companion-palette-list" role="listbox"></div>
+    <p role="status" data-calculation hidden></p>
+  </dialog>
+  <script src="/companion-math.js"></script>
+  <script src="/companion-inventory.js"></script>
+  <script src="/companion-ui.js"></script>
+  <script src="/companion-palette.js"></script>
 </body>
 </html>

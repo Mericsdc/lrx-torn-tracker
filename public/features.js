@@ -48,6 +48,15 @@ const FEATURE_DEFS = [
   { group: 'pages', key: 'page.levelling', def: true, tr: ['Seviye 15 altı', "Baldr's Levelling Targets ve Başlangıç Rehberi · yalnızca seviye 15'in altındayken görünür"], en: ['Under level 15', "Baldr's Levelling Targets and Beginner Guide · shown only below level 15"] },
   { group: 'pages', key: 'page.company', def: true, tr: ['Şirket sayfaları', 'Stok, rapor, çalışanlar ve Finans şirket sekmesi (yalnızca direktör)'], en: ['Company pages', 'Stock, report, employees and the Finance company tab (directors only)'] },
   { group: 'pages', parent: 'page.company', key: 'company.advisor', def: true, tr: ['Pozisyon optimizasyonu', 'Çalışma statı formülüyle en verimli çalışan–rol eşleşmesi'], en: ['Position optimizer', 'Optimal employee-to-role assignment using Torn’s working-stat formula'] },
+  { group: 'pages', parent: 'page.company', key: 'companion.director', def: true, tr: ['Direktör özeti', 'Stok, gelir değişimi, train geçmişi ve benzer şirketler'], en: ['Director summary', 'Stock, revenue change, training history and comparable companies'] },
+  { group: 'pages', parent: 'page.tools', key: 'companion.market', def: true, tr: ['Pazar ve bazaar', 'Item Market teklifleri ve fiyat senaryosu'], en: ['Market and bazaar', 'Item Market offers and price scenarios'] },
+  { group: 'pages', parent: 'page.tools', key: 'companion.trade', def: true, tr: ['Ticaret', 'Torn API işlemleri, özet ve para önizlemesi'], en: ['Trades', 'Torn API trades, receipts and cash previews'] },
+  { group: 'pages', parent: 'page.tools', key: 'companion.balance', def: true, tr: ['Kişisel faction bakiyesi', 'Kendi faction para ve puan bakiyen'], en: ['Personal faction balance', 'Your own faction cash and points'] },
+  { group: 'pages', parent: 'page.gym', key: 'companion.gyms', def: true, tr: ['Gym karşılaştırması', 'Kullanılabilir gym’lerin stat katsayıları'], en: ['Gym comparison', 'Stat modifiers at available gyms'] },
+  { group: 'pages', parent: 'page.tools', key: 'companion.inventory', def: true, tr: ['Envanter', 'Eşya adetleri, takılı ve faction eşyaları'], en: ['Inventory', 'Item quantities, equipped and faction items'] },
+  { group: 'pages', parent: 'page.tools', key: 'companion.chat', def: true, tr: ['Sohbet taslağı', 'Pano için yerel mesaj taslağı'], en: ['Chat draft', 'Local message draft for the clipboard'] },
+  { group: 'pages', parent: 'page.tools', key: 'companion.equipment', def: true, tr: ['Ekipman ve kasa', 'Takılı eşyalar, bonuslar ve kişisel kasa'], en: ['Equipment and vault', 'Equipped items, bonuses and personal vault'] },
+  { group: 'app', key: 'companion.palette', def: true, tr: ['Hızlı erişim', 'Sayfa arama ve hesap makinesi · Ctrl+K / Alt+K'], en: ['Quick navigation', 'Page search and calculator · Ctrl+K / Alt+K'] },
 
   { group: 'notify', key: 'notify', def: true, master: true, tr: ['Masaüstü bildirimleri', 'Tümünü aç / kapat'], en: ['Desktop notifications', 'Turn all on / off'] },
   { group: 'notify', key: 'notify.energy', def: true, tr: ['Enerji doldu', ''], en: ['Energy full', ''] },
@@ -84,6 +93,7 @@ const FEATURE_DEFS = [
   { group: 'torn', key: 'torn.pokerHelper', def: true, tr: ['Poker oranları', "Hold'em masasında elin adı ve kazanma yüzdesi · tavsiye vermez, oynamaz"], en: ['Poker odds', "Hand name and win chance at the Hold'em table · no advice, never plays"] },
   { group: 'torn', key: 'torn.fastSlots', def: true, tr: ['Hızlı Slot', 'Kumarhane slotunda animasyonsuz spin · her tıklama tek spin'], en: ['Fast Slots', 'Casino slots without the reel animation · one spin per click'] },
   { group: 'torn', key: 'torn.stockSync', def: true, tr: ['Stok teslim süresini Torn\'dan oku', 'Şirket stok sayfasındaki "Delivered in" sayaçları'], en: ['Read stock delivery times from Torn', '"Delivered in" timers on the company stock page'] },
+  { group: 'torn', key: 'companion.tornChat', def: false, tr: ['Torn sohbet vurgusu', 'Açık sohbetlerde girilen kelimeleri yerel olarak işaretler'], en: ['Torn chat highlighting', 'Highlights entered keywords in visible chats locally'] },
   { group: 'torn', key: 'torn.sessionGuard', def: true, tr: ['Torn oturum koruması', "Oturum aktarıldıktan sonra Torn'un güvenlik anahtarını eşitler; böylece Torn sayfaları oturumunu kapatmaz (yeniden başlatınca)"], en: ['Torn session guard', "Keeps Torn's security token in sync after a session import so Torn pages don't log you out (after restart)"] },
 
   { group: 'events', event: 'easter', key: 'torn.eggFinder', def: true, tr: ['Yumurta bulucu', 'Baktığın sayfada yumurta varsa ortada büyütüp kırmızı çerçeveyle gösterir · tıklamaz'], en: ['Egg finder', 'If the page you are viewing has an egg, shows it enlarged in the middle with a red border · never clicks'] },

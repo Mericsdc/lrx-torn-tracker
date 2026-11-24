@@ -47,6 +47,7 @@ const widgetData = {
     myOc: { inOc: true, crime: { id: 77, name: 'Mob Mentality', difficulty: 3, status: 'Planning', readyAt: NOW + 7200, filled: 3, total: 4 }, slot: { role: 'Looter', cpr: 70, item: { name: 'Crowbar', ok: true } } } },
   '/api/wars': { faction: { id: 5, name: 'Example' }, wars: [{ type: 'Ranked War', id: '1', factionId: 99, name: MARK, score: 1200, myScore: 1500 }] },
   '/api/events': { seasonal: [], at: Date.now(), events: [{ title: 'Easter Egg Hunt', description: '', start: NOW + 3 * 86400 + 7200, end: NOW + 10 * 86400, exact: true, fixed: true }] },
+  '/api/companion/money': { observedAt: Date.now(), faction: { money: 3400, points: 6 } },
 };
 const WIDGET_PATHS = Object.keys(widgetData);
 const forbidden = []; // requests the widgets must never make, from every page in this run
@@ -311,6 +312,35 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   assert.ok(status.rows.every((r) => r.fits), 'S: every value fits on its row ' + JSON.stringify(status));
   assert.ok(Math.abs(status.gap) <= 2, 'S: the rows fill the card to its bottom ' + JSON.stringify(status));
   assert.ok(Math.abs(await bottomOf('#ow-grid > [data-widget="chips"]') - await bottomOf('#ow-grid > [data-widget="bars"]')) <= 2, 'Status ends with Bars');
+  const recovery = await page.evaluate(() => {
+    const o = state.overview, original = o.bars, oldAt = state.overviewAt, realNow = Date.now;
+    const sample = () => ['energy', 'nerve'].map((key) => {
+      const next = document.querySelector(`[data-next-tick="${key}"]`);
+      const full = document.querySelector(`[data-full="${key}"]`);
+      return [next.hidden ? null : next.textContent, full.textContent];
+    });
+    try {
+      state.overviewAt = Date.now() - 3000;
+      Date.now = () => state.overviewAt + 3000;
+      o.bars = { ...original, energy: { current: 145, maximum: 150, ticktime: 6, fulltime: 6 },
+        nerve: { current: 48, maximum: 50, ticktime: 4, fulltime: 304 } };
+      renderOverview();
+      const cached = sample();
+      Date.now = () => state.overviewAt + 7000;
+      tick();
+      const waiting = sample();
+      o.bars = { ...o.bars, energy: { current: 150, maximum: 150, ticktime: 599, fulltime: 0 } };
+      renderOverview();
+      return { cached, waiting, refreshed: sample() };
+    } finally {
+      Date.now = realNow; o.bars = original; state.overviewAt = oldAt; renderOverview();
+    }
+  });
+  assert.deepEqual(recovery, {
+    cached: [['Next recovery 00:00:03', '· full in 00:00:03'], ['Next recovery 00:00:01', '· full in 00:05:01']],
+    waiting: [['Next recovery awaiting refresh', ''], ['Next recovery awaiting refresh', '· full in 00:04:57']],
+    refreshed: [[null, '· full'], ['Next recovery awaiting refresh', '· full in 00:04:57']],
+  }, 'Energy and nerve account for cache age and wait for the API to confirm recovery');
   // traveling: the trip is shown once, in Status, as the route and a landing countdown with its TCT time (from the
   // overview's own travel data, no extra request); the Bars header and the profile card show no travel chip
   const landAt = Math.floor(Date.now() / 1000) + 33 * 60 + 28;
@@ -723,13 +753,14 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
       { id: 11, name: 'Alpha', level: 30, bs: 600, status: { state: 'Okay' } }, { id: 12, name: 'Beta', level: 20, bs: 200, status: { state: 'Hospital' } },
       { id: 13, name: 'Gamma', level: 50, bs: 5000, status: { state: 'Okay' } }] };
   });
-  const ALL = [['gym', 'L'], ['networth', 'M'], ['travel', 'L'], ['job', 'M'], ['crimes', 'L'], ['jail', 'M'], ['awards', 'M'], ['oc', 'M'], ['war', 'L'], ['events', 'M'], ['orders', 'L']];
+  const ALL = [['gym', 'L'], ['networth', 'M'], ['travel', 'L'], ['job', 'M'], ['crimes', 'L'], ['jail', 'M'], ['awards', 'M'], ['oc', 'M'], ['war', 'L'], ['events', 'M'], ['orders', 'L'], ['faction_balance', 'S']];
   await showSet(page, oneLayout(...ALL));
   for (const [id] of ALL) if (id !== 'orders') await tileReady(page, id);
   const expected = {
     gym: ['Speed +12,000 · Strength +10,000', 'Last 7 days'], job: ['42', '1 position fits'], crimes: ['1 shop without security', 'Burglary', "Sally's Sweet Shop"],
     jail: ['3 / 9', '512'], awards: ['Bar Breaker', '92%', 'Commit 80 more Theft offenses.', 'Protege', '275,340 players have it'], oc: ['3/4', 'Mob Mentality', 'Looter'],
     war: ['1,500 – 1,200', '2 suitable targets', MARK, 'Alpha'], events: ['Easter Egg Hunt', 'starts in 3d'], orders: ['Company mode only'],
+    faction_balance: ['$3,400', '6 points'],
   };
   for (const [id, parts] of Object.entries(expected)) {
     const text = await tileText(page, id);
@@ -943,7 +974,7 @@ const tileReady = (page, id) => until(page, (w) => !!document.querySelector(`#ow
   assert.equal(await fp.locator('#ow-add').getAttribute('aria-expanded'), 'true');
   assert.deepEqual(await drawer.locator('[data-add]:not([disabled])').evaluateAll((els) => els.map((el) => el.dataset.add)), ['day', 'timers', 'chips'], 'the free widgets not in the layout');
   const locked = drawer.locator('[data-add][disabled]');
-  assert.equal(await locked.count(), 20, 'every Premium widget is listed');
+  assert.equal(await locked.count(), 21, 'every Premium widget is listed');
   assert.equal(await locked.evaluateAll((els) => els.every((el) => el.textContent.includes('🔒') && el.textContent.includes('Premium'))), true, 'Premium items carry a lock and the note');
   assert.ok((await drawer.textContent()).includes('Premium 👑'));
   await drawer.locator('[data-add="gym"]').click({ force: true });

@@ -29,6 +29,7 @@ const travelRadar = require('../../public/travel-radar');
 const travelWorkspace = require('../../public/travel-workspace');
 const factionWorkspace = require('../../public/faction-workspace');
 const companyAdvisor = require('../../public/company-advisor');
+const { companionData, latestCompanyTraining } = require('./companion');
 const stocksMath = require('../../public/stocks-math');
 const rosterCacheMod = require('./roster-cache');
 
@@ -250,10 +251,11 @@ function tornReply(res, text) {
   return json;
 }
 
-async function tornRaw(pathq) {
+async function tornRaw(pathq, expectedGeneration = null) {
   if (!config.apiKey) throw new ApiError(T('API key ayarlanmamış. Ayarlar sekmesinden ekleyin.', 'API key not set. Add it in Settings.'), 'NO_KEY');
   if (Date.now() < tornPausedUntil) throw rateLimited();
   await throttle();
+  if (expectedGeneration != null && expectedGeneration !== keyGen) throw Object.assign(new ApiError('Torn account changed', 'PLAYER_CHANGED'), { status: 409 });
   if (Date.now() < tornPausedUntil) throw rateLimited(); // the limit was hit while this call waited its turn
   const sep = pathq.includes('?') ? '&' : '?';
   const url = `https://api.torn.com/${pathq}${sep}key=${encodeURIComponent(config.apiKey)}&comment=TornTracker`;
@@ -270,6 +272,18 @@ async function tornRaw(pathq) {
   }
 }
 const torn = (pathq, ttl = 30_000) => cached('torn:' + pathq, ttl, () => tornRaw(pathq));
+
+function companionRead(pathq, ttl) {
+  const key = 'companion:' + pathq;
+  const entries = [...cache].filter(([name]) => name.startsWith('companion:'));
+  if (!cache.has(key) && entries.length >= 128) {
+    const oldest = entries.filter(([, entry]) => !entry.promise).sort((a, b) => a[1].t - b[1].t)[0];
+    if (!oldest) throw Object.assign(new ApiError(T('Çok fazla istek bekliyor.', 'Too many requests are pending.'), 'BUSY'), { status: 503 });
+    cache.delete(oldest[0]);
+  }
+  const generation = keyGen;
+  return cached(key, ttl, async () => ({ data: await tornRaw('v2/' + pathq, generation), observedAt: Date.now() }));
+}
 
 /* ------------------------------------------------------------------ */
 /* Battle stats helpers                                                */
@@ -941,11 +955,12 @@ function buildCompanyReport(c) {
     return a;
   }, { sold: 0, revenue: 0, cogs: 0, profit: 0, inStock: 0, onOrder: 0, need: 0, orderCost: 0 });
 
+  const lastTrained = latestCompanyTraining(c.news, now);
   const employees = Object.entries(emps).map(([id, e]) => ({
     id: Number(id), name: e.name, position: e.position, days: e.days_in_company, wage: e.wage || 0,
     manual_labor: e.manual_labor, intelligence: e.intelligence, endurance: e.endurance,
     effectiveness: e.effectiveness || {}, addiction: e.effectiveness?.addiction ?? 0,
-    inactivity: e.effectiveness?.inactivity ?? 0,
+    inactivity: e.effectiveness?.inactivity ?? 0, lastTrainedAt: lastTrained.get(Number(id)) ?? null,
     lastAction: e.last_action, status: e.status,
     addictionHistory: (history.addiction[id] || []).slice(-14),
   })).sort((a, b) => a.addiction - b.addiction);
@@ -3415,6 +3430,13 @@ async function handleApi(req, res, url) {
     if (p === '/api/events') return send(res, 200, await getEvents(url.searchParams.get('force') === '1'));
     if (p === '/api/stocks') return send(res, 200, await getStockMarket(url.searchParams.get('force') === '1'));
     if (p === '/api/company/positions') return send(res, 200, await getCompanyPositions());
+    if (p.startsWith('/api/companion/')) {
+      if (req.method !== 'GET') return send(res, 405, { error: 'Method not allowed' });
+      const generation = keyGen;
+      const result = await companionData(p.slice('/api/companion/'.length), url.searchParams, companionRead);
+      if (generation !== keyGen) return send(res, 409, { error: 'Torn account changed', code: 'PLAYER_CHANGED' });
+      return send(res, 200, result);
+    }
     if (p === '/api/war/rankedwars') return send(res, 200, await getRankedWars(url.searchParams.get('force') === '1'));
     if (p === '/api/war/payout') return send(res, 200, await getRankedWarReport(url.searchParams.get('warId'), url.searchParams.get('force') === '1'));
     if (p === '/api/faction') {

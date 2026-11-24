@@ -438,8 +438,10 @@ function renderOverview() {
   $('#bars').innerHTML = barDef.map(([k, label, col]) => {
     const b = o.bars[k]; if (!b) return '';
     const w = Math.min(100, (b.current / b.maximum) * 100);
+    const recovery = k === 'energy' || k === 'nerve'
+      ? `<div class="bar-recovery muted mono" data-next-tick="${k}" hidden></div>` : '';
     return `<div class="bar-row"><div class="bar-top"><span>${label}</span><span class="mono">${n0(b.current)} / ${n0(b.maximum)} <span class="muted" data-full="${k}">${b.fulltime ? '· ' + human(b.fulltime) : '· ' + tr('dolu', 'full')}</span></span></div>
-      <div class="bar"><i style="width:${w}%;background:${col}"></i></div></div>`;
+      <div class="bar"><i style="width:${w}%;background:${col}"></i></div>${recovery}</div>`;
   }).join('');
 
   // Status: one row per value, the label on the left and the value on the right; the state is a colour (st-tq, st-ok
@@ -514,6 +516,21 @@ function tickUntil(root = document) {
     x.textContent = r > 0 ? (x.dataset.short ? shortClock(r) : clock(r)) : tr('çıktı', 'out');
   });
 }
+function paintBarRecovery(key, bar, elapsed) {
+  if (!bar) return;
+  const next = $("[data-next-tick='" + key + "']");
+  const full = $("[data-full='" + key + "']");
+  if (!next || !full) return;
+  const hasRoom = bar.current < bar.maximum;
+  const fullTime = Number.isFinite(bar.fulltime) ? bar.fulltime : -1;
+  const pending = tr('güncelleme bekleniyor', 'awaiting refresh');
+  const remaining = (seconds) => seconds > elapsed ? clock(Math.ceil(seconds - elapsed)) : pending;
+  next.hidden = !hasRoom || !Number.isFinite(bar.ticktime) || bar.ticktime < 0;
+  if (!next.hidden) next.textContent = tr('Sonraki yenilenme ', 'Next recovery ') + remaining(bar.ticktime);
+  if (!hasRoom) full.textContent = '· ' + tr('dolu', 'full');
+  else if (fullTime > elapsed) full.textContent = '· ' + tr('doluma ', 'full in ') + remaining(fullTime);
+  else full.textContent = next.hidden && fullTime >= 0 ? '· ' + pending : '';
+}
 function tick() {
   if (document.hidden) return; // görünmezken sayaç güncellemek boşuna CPU
   if (!trackerVisible()) {
@@ -550,6 +567,7 @@ function tick() {
   const o = state.overview;
   if (o) {
     const el = (now - state.overviewAt) / 1000;
+    for (const key of ['energy', 'nerve']) paintBarRecovery(key, o.bars[key], Math.max(0, el));
     // drug: drains against the longest cooldown seen (renderOverview keeps it in tt.drugMax)
     const d = Math.max(0, o.drug.cooldown - el);
     const max = Number(localStorage.getItem('tt.drugMax')) || 8 * 3600;
@@ -665,6 +683,7 @@ function renderCompany() {
   renderReport(c);
   renderEmployees(c);
   window.renderFinanceCompany?.(); // Finance page, Company tab (finance.js)
+  window.LRXCompanion?.renderDirector();
   $('#cover-days').value = String(c.coverDays);
   const bad = c.products.filter((p) => p.status === 'critical' || p.status === 'low').length;
   $('#badge-stock').hidden = !bad; $('#badge-stock').textContent = bad;

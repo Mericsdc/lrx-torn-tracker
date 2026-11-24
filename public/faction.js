@@ -1122,11 +1122,14 @@
     if (!fac.ch) return fac.chErr ? errorBox(fac.chErr) : loadingBox();
     const cur = fac.ch.current;
     const list = fac.ch.chains || [];
+    const nextBonus = cur && Number(cur.cooldown) <= 0 && LRXFactionTools.nextChainMilestone(Number(cur.current), Number(cur.max));
     const activeBanner = cur && Number(cur.current) > 0 ? `<article class="glass card">
       <div class="card-head wrap"><h3>🔥 ${tr('Aktif Chain', 'Active Chain')}</h3>
         <button class="btn sm ghost" type="button" data-open-url="${CHAIN_URL}" data-tab-label="Faction Chain">${tr('Torn\'da aç', 'Open in Torn')} ↗</button></div>
       <div class="grid kpis small">
-        ${kpi(tr('Vuruş', 'Hits'), `${n0(cur.current)} / ${n0(cur.max)}`, '', 'tq')}
+        ${kpi(tr('Vuruş', 'Hits'), `${n0(cur.current)} / ${n0(cur.max)}`,
+          nextBonus ? tr(`Sonraki bonus ${n0(nextBonus)} · ${n0(nextBonus - cur.current)} vuruş kaldı`,
+            `Next bonus ${n0(nextBonus)} · ${n0(nextBonus - cur.current)} hits left`) : '', 'tq')}
         ${kpi(tr('Zaman aşımı', 'Timeout'), cur.timeout > 0 ? human(cur.timeout) : '—', cur.timeout > 0 && cur.timeout < 90 ? tr('Dikkat! Chain düşebilir', 'Warning! Chain expiring soon') : '', cur.timeout > 0 && cur.timeout < 90 ? 'neg' : '')}
         ${kpi(tr('Çarpan', 'Modifier'), cur.modifier != null ? `×${Number(cur.modifier).toFixed(2)}` : '—')}
         ${kpi(tr('Cooldown', 'Cooldown'), cur.cooldown > 0 ? human(cur.cooldown) : tr('Yok', 'None'))}

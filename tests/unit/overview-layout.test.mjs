@@ -7,7 +7,7 @@ const DEFAULT_IDS = ['profile', 'timers', 'bars', 'chips', 'battle', 'company'];
 const FREE_IDS = ['profile', 'drug', 'edu', 'day', 'timers', 'bars', 'chips', 'battle', 'company'];
 const PREMIUM_IDS = [
   'gym', 'networth', 'travel', 'job', 'crimes', 'jail', 'awards', 'oc', 'war', 'events', 'orders',
-  'faction_member', 'faction_activity', 'faction_stats', 'faction_radar',
+  'faction_member', 'faction_activity', 'faction_balance', 'faction_stats', 'faction_radar',
   'travel_routes', 'travel_stock', 'travel_traffic', 'travel_planner', 'travel_history',
 ];
 const ids = (widgets) => widgets.map((w) => w.id);
@@ -62,7 +62,7 @@ describe('defaults and the widget catalogue', () => {
     for (const id of ['gym', 'travel', 'crimes', 'war', 'faction_activity', 'faction_radar', 'travel_routes', 'travel_planner']) {
       expect(row(id)).toEqual({ tier: 'premium', sizes: ['S', 'M', 'L'], size: 'M' });
     }
-    for (const id of ['networth', 'job', 'jail', 'awards', 'oc', 'events']) expect(row(id)).toEqual({ tier: 'premium', sizes: ['S', 'M'], size: 'S' });
+    for (const id of ['networth', 'job', 'jail', 'awards', 'oc', 'events', 'faction_balance']) expect(row(id)).toEqual({ tier: 'premium', sizes: ['S', 'M'], size: 'S' });
     expect(row('faction_member')).toEqual({ tier: 'premium', sizes: ['S', 'M'], size: 'M' });
     for (const id of ['orders', 'faction_stats', 'travel_stock', 'travel_traffic', 'travel_history']) {
       expect(row(id)).toEqual({ tier: 'premium', sizes: ['M', 'L'], size: 'M' });

@@ -14,6 +14,7 @@
     row('awards', 'premium', 'SM', 'S'), row('oc', 'premium', 'SM', 'S'), row('war', 'premium', 'SML', 'M'),
     row('events', 'premium', 'SM', 'S'), row('orders', 'premium', 'ML', 'M'),
     row('faction_member', 'premium', 'SM', 'M'), row('faction_activity', 'premium', 'SML', 'M'),
+    row('faction_balance', 'premium', 'SM', 'S'),
     row('faction_stats', 'premium', 'ML', 'M'), row('faction_radar', 'premium', 'SML', 'M'),
     row('travel_routes', 'premium', 'SML', 'M'), row('travel_stock', 'premium', 'ML', 'M'),
     row('travel_traffic', 'premium', 'ML', 'M'), row('travel_planner', 'premium', 'SML', 'M'),

@@ -14,6 +14,7 @@
     awards: ['Merit takibi', 'Merit tracker'], oc: ['Faction OC', 'Faction OC'], war: ['Savaş', 'War'],
     events: ['Etkinlik takvimi', 'Event calendar'], orders: ['Günlük sipariş önerisi', 'Daily order hint'],
     faction_member: ['Faction Üye Özeti', 'Faction Member Summary'],
+    faction_balance: ['Kişisel Faction Bakiyesi', 'Personal Faction Balance'],
     faction_activity: ['Faction Aktivite', 'Faction Activity'],
     faction_stats: ['Faction Stats', 'Faction Stats'],
     faction_radar: ['Faction Travel Radar', 'Faction Travel Radar'],
@@ -410,6 +411,14 @@
     faction_activity: {
       needs: ['page.faction', 'faction.activity'], view: 'faction', load: loadFactionActShared, html: factionActivity,
       open: () => window.openFactionTab?.('activity'),
+    },
+    faction_balance: {
+      needs: ['page.tools', 'companion.balance'], view: 'tools',
+      load: () => api('/api/companion/money'),
+      html: (d) => !d.faction ? main(tr('Bakiye görünmüyor', 'Balance unavailable')) :
+        main(d.faction.money == null ? '—' : money(d.faction.money),
+          (d.faction.points == null ? '—' : n0(d.faction.points)) + tr(' puan', ' points')),
+      open: () => { showView('tools'); $('#companion-balance')?.scrollIntoView({ block: 'center' }); },
     },
     faction_stats: {
       needs: ['page.faction', 'faction.stats'], view: 'faction', load: loadFactionWsShared, html: factionStats,
